@@ -14,7 +14,8 @@ never storing it, and writes a ROS 2 bag (zstd-compressed messages) with:
   /nclt/imu     sensor_msgs/Imu from ms25.csv (acceleration and angular rate, IMU frame,
                 z down); orientation unset
 
-With --start / --duration only that window (seconds after the first packet) is written.
+With --start / --duration only that window (seconds after the first packet) is written, or with
+--from-utime / --to-utime the window between two NCLT UTIMEs.
 `bench_report/data/long_term_2026-11/rko_lio_nclt.yaml` holds the matching extrinsics.
 
   convert_nclt_session.py VEL_TAR MS25_CSV OUT_DIR [--point-step 2] [--start S] [--duration D]
@@ -130,6 +131,10 @@ def main() -> int:
     parser.add_argument('--point-step', type=int, default=2)
     parser.add_argument('--start', type=float, default=0.)
     parser.add_argument('--duration', type=float, default=float('inf'))
+    parser.add_argument('--from-utime', type=int,
+                        help='window start as an NCLT UTIME (us); overrides --start')
+    parser.add_argument('--to-utime', type=int,
+                        help='window end as an NCLT UTIME (us); overrides --duration')
     args = parser.parse_args()
 
     typestore = get_typestore(Stores.ROS2_HUMBLE)
@@ -176,8 +181,10 @@ def main() -> int:
             for utime, hits in packets(archive.extractfile(member)):
                 if first is None:
                     first = utime
-                    begin = first + int(args.start * 1e6)
-                    end = begin + args.duration * 1e6
+                    begin = args.from_utime if args.from_utime is not None else \
+                        first + int(args.start * 1e6)
+                    end = args.to_utime if args.to_utime is not None else \
+                        begin + args.duration * 1e6
                 if utime < begin:
                     continue
                 if utime >= end:
