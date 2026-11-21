@@ -819,3 +819,44 @@ produced, cannot add it back. The review removed some points that the S1 referen
 new structure. One chain at the margin on development data is not enough to change the
 product. A further check would need a fresh public holdout, since the LUH holdout ground
 truth is open.
+
+### New structure after an update: what the development N proxy measures (2026-11-21)
+
+The development N proxy (S6 → S3 against S1 mapped alone) is about 10% for every variant, so
+it looked as if the update loses most new structure. It does not measure that. S1 is layout A
+(the poster corridor) and S3 layout B (L-shaped walls, tables); S1's non-TLS points are mostly
+structure that layout B does not have. Two references built from S3 itself, in the store
+frame of the S6 → S3 store, show what the update keeps:
+
+- **S3 alone:** S3's points farther than 0.20 m from the TLS, people included.
+- **S3, both halves:** of those, the points within 0.10 m of a point from the other half of
+  S3 (submaps split at the middle), thinned to 0.10 m, so most passing people drop out.
+
+| S6 → S3 export | G (%) | N, S1 proxy (%) | N, S3 alone (%) | N, S3 both halves (%) |
+| --- | ---: | ---: | ---: | ---: |
+| no change masks | 55.91 | — | 99.86 | 99.86 |
+| old-map removal only | 41.47 | — | 99.86 | 99.86 |
+| `--filter-new-points` (arm A above) | 29.55 | 11.04 | 55.79 | 91.28 |
+| `--refine-visibility` | 26.96 | — | — | 85.61 |
+| arm A + agent review (arm B above) | 27.52 | 9.55 | 49.62 | 83.14 |
+
+On S3 → S6, `--refine-visibility` gave G = 11.92% against 14.45% for `--filter-new-points`,
+with S = 100.57%.
+
+- Old-map removal never touches the update's own points. The persistence filter keeps 91%
+  of the new structure S3 saw in both halves, and drops much of what it saw only once.
+- The agent review removed new structure: 91% → 83% on the both-halves reference. Its
+  development result above was scored on the S1 proxy and should be read with this.
+- The L5 N measure (another session of the same layout mapped alone, everything farther than
+  0.20 m from the TLS) counts that session's people and its briefly seen points as new
+  structure. Against S3 itself, a perfect update could reach only what S3's own points
+  support, about 56% with this filter; N ≥ 0.90 against such a reference cannot be met by
+  any update that removes people. A holdout N needs a reference that keeps only structure
+  confirmed across time.
+- In S6 most cells farther than 0.20 m from the TLS form a diffuse cloud over the open hall
+  (10–15 pedestrians), and their per-cell hit, miss and hit-span counts overlap those of
+  S3's furniture: no threshold on per-cell votes separated the two in an offline table over
+  the recorded votes (`NewPointEvidence.cells()`). The remaining gap is G in layout C, not N.
+
+Replays used the same pre-update stores (`store rollback` of the scored stores) and
+reproduced the scored exports byte for byte.
