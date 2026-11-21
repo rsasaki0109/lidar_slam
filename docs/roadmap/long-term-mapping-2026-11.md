@@ -860,3 +860,40 @@ with S = 100.57%.
 
 Replays used the same pre-update stores (`store rollback` of the scored stores) and
 reproduced the scored exports byte for byte.
+
+### Ghosts after an update to layout C: what G counts (2026-11-21)
+
+G counts every map point farther than 0.10 m from the empty-hall TLS. On S3 → S6 the map
+points were split by the store's own points: **static, not in the TLS** when the S3 session
+and both halves of S6 (submaps split at the middle) have points within 0.10 m. Layout B
+structure cannot be seen by S6, and a person rarely stands at one spot in both halves. The
+remainder is **removable**: what a correct update could drop.
+
+| S3 → S6 export | G (%) | static, not in the TLS (%) | removable (%) |
+| --- | ---: | ---: | ---: |
+| no change masks | 55.56 | 5.97 | 49.59 |
+| old-map removal only | 44.10 | 7.16 | 36.94 |
+| `--filter-new-points` (arm A) | 14.45 | 8.11 | 6.33 |
+| `--refine-visibility` | 11.92 | 7.45 | 4.47 |
+| arm A + agent review (arm B) | 13.91 | 8.40 | 5.51 |
+
+With `--refine-visibility`, the removable part was about one third old (S3) points and two
+thirds S6 points, per store point thinned to 0.10 m per session. Half of those S6 points lie
+in one area beside the start of the S6 path. Their filter cells were hit over a median span
+of 114 s of the 122 s session (median 64 hits): objects present for all of S6, missing from S3
+and from the TLS, below 1.1 m for 90% of them. An update has to keep them. Only about a tenth of
+the removable S6 points had a hit span under 10 s, the signature of a passer-by.
+
+What an update could still remove is therefore about 2% of the map: the old S3 points that the
+S6 scans never saw through (about 2.1% of thinned store points) and the few passers-by
+(about 0.4%). G ≤ 2%, the L5 target, can only be checked if the reference counts structure
+that is static but absent from the TLS as correct. The next
+evaluation should therefore not use the empty-hall scan alone.
+
+- **G:** a ghost is a point farther than 0.10 m from the TLS and from every other session of
+  the same layout mapped alone; LUH has three sessions per layout C (S5, S6, S7).
+- **N:** the reference is the new structure that two other sessions of the same layout show
+  (both within 0.10 m), not one session's points farther than 0.20 m from the TLS.
+
+Both need data that is not yet open for a blind run; the LUH holdout ground truth is open since
+L5, so the next formal measurement needs another public dataset with repeated layouts.
