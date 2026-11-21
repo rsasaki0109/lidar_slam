@@ -44,26 +44,42 @@ SCAN_US = 100_000
 
 
 class Resuming:
-    """File-like reader over an HTTP URL that resumes with Range requests after errors."""
+    """File-like reader over an HTTP URL that resumes with Range requests after errors or a
+    connection closed before the end of the file."""
 
-    def __init__(self, url: str, retries: int = 20):
-        self.url, self.retries, self.offset = url, retries, 0
+    def __init__(self, url: str, retries: int = 50):
+        self.url, self.retries, self.offset, self.size = url, retries, 0, None
         self._open()
 
     def _open(self):
         request = urllib.request.Request(self.url, headers={'Range': f'bytes={self.offset}-'})
         self.handle = urllib.request.urlopen(request, timeout=120)
+        if self.size is None:
+            total = self.handle.headers.get('Content-Range', '').rpartition('/')[2]
+            self.size = int(total) if total.isdigit() else \
+                int(self.handle.headers.get('Content-Length', 0)) or None
 
     def read(self, size=-1):
+        chunks, wanted = [], size
         for attempt in range(self.retries):
             try:
-                data = self.handle.read(size)
-                self.offset += len(data)
-                return data
+                data = self.handle.read(wanted)
             except OSError as error:  # connection reset, timeout
                 print(f'stream error at {self.offset}: {error}; resuming', file=sys.stderr)
-                time.sleep(min(60, 2 ** attempt))
-                self._open()
+                data = None
+            if data:
+                self.offset += len(data)
+                chunks.append(data)
+                if wanted < 0 or len(data) == wanted:
+                    return b''.join(chunks)
+                wanted -= len(data)
+                continue
+            if self.size is not None and self.offset >= self.size:
+                return b''.join(chunks)
+            if data is not None:
+                print(f'stream closed at {self.offset} of {self.size}; resuming', file=sys.stderr)
+            time.sleep(min(60, 2 ** min(attempt, 6)))
+            self._open()
         raise RuntimeError('too many stream errors')
 
 
