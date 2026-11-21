@@ -8,6 +8,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -335,6 +336,26 @@ public:
     }
     return mask;
   }
+
+  // Per-cell votes for diagnostics: key, hits and misses, and the first hit (representative).
+  std::tuple<Eigen::Matrix<std::int32_t, Eigen::Dynamic, 3, Eigen::RowMajor>,
+    Eigen::Matrix<std::int64_t, Eigen::Dynamic, 2, Eigen::RowMajor>,
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> cells() const
+  {
+    Eigen::Matrix<std::int32_t, Eigen::Dynamic, 3, Eigen::RowMajor> keys(cells_.size(), 3);
+    Eigen::Matrix<std::int64_t, Eigen::Dynamic, 2, Eigen::RowMajor> votes(cells_.size(), 2);
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor> points(cells_.size(), 3);
+    Eigen::Index row = 0;
+    for (const auto & [key, cell] : cells_) {
+      keys.row(row) << key[0], key[1], key[2];
+      votes.row(row) << cell.hits, cell.misses;
+      points.row(row) << cell.representative[0], cell.representative[1], cell.representative[2];
+      ++row;
+    }
+    return {keys, votes, points};
+  }
+
+  std::int64_t frames() const {return frame_;}
 
 private:
   bool supported(const changes::Point & point) const
