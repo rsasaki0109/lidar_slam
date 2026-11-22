@@ -1,0 +1,25 @@
+{
+ "match_m": 0.5,
+ "references": [
+  {
+   "map": "runs/h_ref1/map.pcd",
+   "icp_median_residual_m": 0.16122669023957123,
+   "correction_m": 2.06764509334348
+  },
+  {
+   "map": "runs/h_ref2/map.pcd",
+   "icp_median_residual_m": 0.14728604008288576,
+   "correction_m": 1.099489236513593
+  }
+ ],
+ "align_target": "stores/h_C/export/map.pcd",
+ "points_after": 413640,
+ "points_before": 195113,
+ "ghost_points": 60613,
+ "G": 0.14653563485156174,
+ "persistent_points": 183421,
+ "S": 0.9999781922462532,
+ "new_points": 9640,
+ "N": 0.6715767634854771,
+ "G_before": 0.09332028106789399
+}
