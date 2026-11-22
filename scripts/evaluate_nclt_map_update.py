@@ -7,7 +7,9 @@ the store frame:
 
 - Each reference map is placed in the store frame by its ground-truth fit (``--ref-init``,
   a 4x4 JSON matrix: reference map frame -> store frame) and then refined by point-to-plane ICP
-  against the update's export, on points above the ground.
+  against the update's export, on points above the ground (``--align-to before``: the map before
+  the update; ``--align-target MAP``: one map shared by every arm, such as the append arm's
+  export, which holds both the old and the new structure).
 - The region is the points within ``--radius`` m (XY) of the update path and of both reference
   paths, between ``--min-height`` and ``--max-height`` m above the local ground (the lowest
   point of all maps in each 2 m cell).
@@ -101,6 +103,9 @@ def main() -> int:
     parser.add_argument('--align-to', choices=('after', 'before'), default='after',
                         help='ICP target for the references: the export (default) or the map '
                              'before the update (one alignment shared by every arm)')
+    parser.add_argument('--align-target', type=Path,
+                        help='ICP target for the references, overriding --align-to: a map shared '
+                             'by every arm, e.g. the append arm\'s export (old and new structure)')
     parser.add_argument('--radius', type=float, default=10.)
     parser.add_argument('--min-height', type=float, default=.3)
     parser.add_argument('--max-height', type=float, default=3.)
@@ -110,10 +115,14 @@ def main() -> int:
     d = args.match
     before, after = load(args.before), load(args.after)
     refs, paths, report = [], [], {'match_m': d, 'references': []}
+    if args.align_target is not None:
+        target = load(args.align_target)
+        report['align_target'] = str(args.align_target)
+    else:
+        target = after if args.align_to == 'after' else before
     for map_path, tum, init in args.ref:
         points = load(Path(map_path))
         init = np.asarray(json.loads(Path(init).read_text()), dtype=float)
-        target = after if args.align_to == 'after' else before
         matrix, residual = icp(points[::4], target[::2], init)
         refs.append(transform(points, matrix))
         paths.append(transform(path_xyz(Path(tum)), matrix))
