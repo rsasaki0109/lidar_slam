@@ -132,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument('--filter-new-points', action='store_true',
                       help='detect changes and filter new points without repeated scan support')
     live.add_argument('--refine-visibility', action='store_true',
-                      help='use complete ray evidence for new submaps (experimental)')
+                      help='detect changes and filter new points with complete ray evidence '
+                           '(recommended change mode; experimental)')
     store = sub.add_parser(
         'store', help='a long-term map store: info, export, rollback, and reviewed edits')
     store.add_argument('action', choices=['info', 'export', 'rollback', 'candidates', 'edit',

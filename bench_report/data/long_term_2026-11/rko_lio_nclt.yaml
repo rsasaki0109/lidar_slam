@@ -1,0 +1,20 @@
+# RKO-LIO for NCLT sessions converted with scripts/convert_nclt_session.py: Velodyne HDL-32E
+# (mounted upside down) and Microstrain 3DM-GX3-45. NCLT's body frame is x forward, y right,
+# z down; base_link here is that frame turned 180 degrees about x (z up). Extrinsics from the
+# NCLT paper, Table 4 (x_body,vel and x_body,imu).
+lidar_topic: /nclt/points
+imu_topic: /nclt/imu
+base_frame: base_link
+extrinsic_imu2base_quat_xyzw_xyz: [1.0, 0.0, 0.0, 0.0, -0.11, 0.18, 0.71]
+extrinsic_lidar2base_quat_xyzw_xyz: [0.70273, 0.71142, -0.003992, -0.00598, 0.002, 0.004, 0.957]
+initialization_phase: true
+deskew: true
+voxel_size: 0.5
+min_range: 1.0
+max_range: 80.0
+double_downsample: true
+max_iterations: 50
+convergence_criterion: 3.0e-05
+icp_keypoint_voxel_multiplier: 2.25
+initialization_max_gyro_rad_s: 0.02
+max_correspondence_distance: 0.5

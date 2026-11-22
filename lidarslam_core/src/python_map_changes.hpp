@@ -8,6 +8,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -284,8 +285,10 @@ public:
       auto & cell = cells_[changes::voxel(point)];
       if (cell.hits++ == 0) {
         cell.representative = point;
+        cell.first_hit = frame_;
       }
       cell.last_hit = frame_;
+      cell.trailing_misses = 0;
     }
     for (const auto & point : rays) {
       changes::traceFree(origin, point, [&](const auto & key) {
@@ -296,6 +299,7 @@ public:
         auto & cell = found->second;
         if (cell.last_hit != frame_ && cell.last_miss != frame_) {
           ++cell.misses;
+          ++cell.trailing_misses;
           cell.last_miss = frame_;
         }
       });
@@ -336,6 +340,28 @@ public:
     return mask;
   }
 
+  // Per-cell votes for diagnostics: key; hits, misses, first and last hit frame and misses since
+  // the last hit; and the first hit point (the representative).
+  std::tuple<Eigen::Matrix<std::int32_t, Eigen::Dynamic, 3, Eigen::RowMajor>,
+    Eigen::Matrix<std::int64_t, Eigen::Dynamic, 5, Eigen::RowMajor>,
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor>> cells() const
+  {
+    Eigen::Matrix<std::int32_t, Eigen::Dynamic, 3, Eigen::RowMajor> keys(cells_.size(), 3);
+    Eigen::Matrix<std::int64_t, Eigen::Dynamic, 5, Eigen::RowMajor> votes(cells_.size(), 5);
+    Eigen::Matrix<double, Eigen::Dynamic, 3, Eigen::RowMajor> points(cells_.size(), 3);
+    Eigen::Index row = 0;
+    for (const auto & [key, cell] : cells_) {
+      keys.row(row) << key[0], key[1], key[2];
+      votes.row(row) << cell.hits, cell.misses, cell.first_hit, cell.last_hit,
+        cell.trailing_misses;
+      points.row(row) << cell.representative[0], cell.representative[1], cell.representative[2];
+      ++row;
+    }
+    return {keys, votes, points};
+  }
+
+  std::int64_t frames() const {return frame_;}
+
 private:
   bool supported(const changes::Point & point) const
   {
@@ -362,6 +388,7 @@ private:
   {
     changes::Point representative{};
     std::int64_t hits{0}, misses{0}, last_hit{-1}, last_miss{-1};
+    std::int64_t first_hit{-1}, trailing_misses{0};
   };
 
   std::unordered_map<changes::Voxel, State, changes::VoxelHash> cells_;

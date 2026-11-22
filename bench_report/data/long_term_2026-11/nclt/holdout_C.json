@@ -1,0 +1,24 @@
+{
+ "match_m": 0.5,
+ "references": [
+  {
+   "map": "runs/h_ref1/map.pcd",
+   "icp_median_residual_m": 0.15574672423313557,
+   "correction_m": 2.0824218776864756
+  },
+  {
+   "map": "runs/h_ref2/map.pcd",
+   "icp_median_residual_m": 0.14816250601321296,
+   "correction_m": 1.267323929423204
+  }
+ ],
+ "points_after": 386941,
+ "points_before": 194009,
+ "ghost_points": 38556,
+ "G": 0.09964309804337096,
+ "persistent_points": 136988,
+ "S": 1.0,
+ "new_points": 25679,
+ "N": 0.9911600919038903,
+ "G_before": 0.1589153080527192
+}

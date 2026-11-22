@@ -758,3 +758,251 @@ Each milestone is one reviewable change with its own checks.
 - **One dataset.** All public data with a known changed layout and a reference scan found so far
   is this one hall. Static-structure checks on other multi-session data (no change expected) are
   added when it is downloaded again; they can only lower confidence, not replace the holdout.
+
+## Agent review, development trial (preregistered 2026-11-19, before any measurement)
+
+Question: does reviewing an update's candidates with the map review tools
+(`docs/map-review.md`, `python -m lidarslam mcp`) improve the map over the automatic change
+detection alone? Development data only (S1, S3, S6); no holdout data is used.
+
+- **Stores.** Two chains, each a base session in an empty store and one update, both with
+  `live --start-near-first-submap --detect-changes --filter-new-points` (walking backend preset,
+  `rko_lio_luh_os1.yaml`, column step 2): S3 → S6 (update to layout C) and S6 → S3 (update to
+  layout B).
+- **Arms.** A: the store's export after the update, no edits. B: the same store after one
+  agent review, committed as one `agent:claude` edit.
+- **Reviewer.** Claude, through `lidarslam.map_review.Review` only (the MCP tools'
+  implementation: `info`, `list_candidates`, `describe`, `view_region`, `decide`,
+  `decide_box`, `commit`). It sees no TLS, total-station or other reference data and no score
+  until its edit is committed. Budget: the 20 largest candidates of each kind (60 per chain),
+  in list order; it may leave any undecided. It decides from the tool's numbers and pictures with
+  the instructions of the MCP server (`lidarslam/mcp_server.py`, `INSTRUCTIONS`) as written at
+  this commit.
+- **Measures.** `scripts/evaluate_luh_map_update.py` with the full TLS cloud
+  (`Reference_Map_TLS.pcd`, md5 `231eb6939447570e407ebad56029e151`), the L5 hall polygon and
+  floor (−1.39 m), the update's path, and the store-to-TLS transform fitted once per chain
+  from the base session's odometry against its total-station positions (Umeyama, rigid). G
+  and S on both chains; N on S6 → S3 against S1 mapped alone (the development N proxy).
+- **Rule.** Review helps on a chain if, against A, G falls by at least 0.02 (absolute) while S
+  stays at least 0.97 and, on S6 → S3, N falls by no more than 0.02. Both chains are reported
+  whatever the outcome, with the decisions and the time the review took.
+
+### Agent review, development results (2026-11-19)
+
+Both reviews were committed before any TLS or total-station data was read. The
+store-to-TLS fits used 1,183 (S3) and 1,218 (S6) matched poses, with 3.7 cm and 1.6 cm RMSE;
+the S1 reference fit 1,626 poses at 3.8 cm. The TLS md5 matched. "Before" is the base session
+exported alone.
+
+| Chain | Arm | G (%) | S (%) | N (%) | Map points in region |
+| --- | --- | ---: | ---: | ---: | ---: |
+| S3 → S6 | A, no edits | 14.45 | 100.71 | — | 34,463 |
+| S3 → S6 | B, agent edit | 13.91 | 100.66 | — | 34,085 |
+| S6 → S3 | A, no edits | 29.55 | 100.79 | 11.04 | 41,205 |
+| S6 → S3 | B, agent edit | 27.52 | 100.81 | 9.55 | 39,851 |
+
+Decisions (60 candidates per chain): S3 → S6 kept 13, removed 34, left 13 undecided
+(16,801 voxels in the edit); S6 → S3 kept 19, removed 31, left 10 undecided (13,701 voxels).
+Removing a `removed_old` or `suppressed_new` candidate only confirms the evidence; the map
+changes come from keeps on those kinds and removes on `added`. The review time was not
+recorded.
+
+Under the rule:
+
+- **S3 → S6: does not help.** G fell by 0.0054, below 0.02. S held.
+- **S6 → S3: helps, at the margin.** G fell by 0.0203. S held at 100.81%. N fell by 0.0149,
+  within 0.02.
+
+Both arms leave G far above the 2% L5 target, and N on S6 → S3 is about 10% in both: the
+automatic update misses most new structure, and review, which only sees what the update
+produced, cannot add it back. The review removed some points that the S1 reference counts as
+new structure. One chain at the margin on development data is not enough to change the
+product. A further check would need a fresh public holdout, since the LUH holdout ground
+truth is open.
+
+### New structure after an update: what the development N proxy measures (2026-11-21)
+
+The development N proxy (S6 → S3 against S1 mapped alone) is about 10% for every variant, so
+it looked as if the update loses most new structure. It does not measure that. S1 is layout A
+(the poster corridor) and S3 layout B (L-shaped walls, tables); S1's non-TLS points are mostly
+structure that layout B does not have. Two references built from S3 itself, in the store
+frame of the S6 → S3 store, show what the update keeps:
+
+- **S3 alone:** S3's points farther than 0.20 m from the TLS, people included.
+- **S3, both halves:** of those, the points within 0.10 m of a point from the other half of
+  S3 (submaps split at the middle), thinned to 0.10 m, so most passing people drop out.
+
+| S6 → S3 export | G (%) | N, S1 proxy (%) | N, S3 alone (%) | N, S3 both halves (%) |
+| --- | ---: | ---: | ---: | ---: |
+| no change masks | 55.91 | — | 99.86 | 99.86 |
+| old-map removal only | 41.47 | — | 99.86 | 99.86 |
+| `--filter-new-points` (arm A above) | 29.55 | 11.04 | 55.79 | 91.28 |
+| `--refine-visibility` | 26.96 | — | — | 85.61 |
+| arm A + agent review (arm B above) | 27.52 | 9.55 | 49.62 | 83.14 |
+
+On S3 → S6, `--refine-visibility` gave G = 11.92% against 14.45% for `--filter-new-points`,
+with S = 100.57%.
+
+- Old-map removal never touches the update's own points. The persistence filter keeps 91%
+  of the new structure S3 saw in both halves, and drops much of what it saw only once.
+- The agent review removed new structure: 91% → 83% on the both-halves reference. Its
+  development result above was scored on the S1 proxy and should be read with this.
+- The L5 N measure (another session of the same layout mapped alone, everything farther than
+  0.20 m from the TLS) counts that session's people and its briefly seen points as new
+  structure. Against S3 itself, a perfect update could reach only what S3's own points
+  support, about 56% with this filter; N ≥ 0.90 against such a reference cannot be met by
+  any update that removes people. A holdout N needs a reference that keeps only structure
+  confirmed across time.
+- In S6 most cells farther than 0.20 m from the TLS form a diffuse cloud over the open hall
+  (10–15 pedestrians), and their per-cell hit, miss and hit-span counts overlap those of
+  S3's furniture: no threshold on per-cell votes separated the two in an offline table over
+  the recorded votes (`NewPointEvidence.cells()`). The remaining gap is G in layout C, not N.
+
+Replays used the same pre-update stores (`store rollback` of the scored stores) and
+reproduced the scored exports byte for byte.
+
+### Ghosts after an update to layout C: what G counts (2026-11-21)
+
+G counts every map point farther than 0.10 m from the empty-hall TLS. On S3 → S6 the map
+points were split by the store's own points: **static, not in the TLS** when the S3 session
+and both halves of S6 (submaps split at the middle) have points within 0.10 m. Layout B
+structure cannot be seen by S6, and a person rarely stands at one spot in both halves. The
+remainder is **removable**: what a correct update could drop.
+
+| S3 → S6 export | G (%) | static, not in the TLS (%) | removable (%) |
+| --- | ---: | ---: | ---: |
+| no change masks | 55.56 | 5.97 | 49.59 |
+| old-map removal only | 44.10 | 7.16 | 36.94 |
+| `--filter-new-points` (arm A) | 14.45 | 8.11 | 6.33 |
+| `--refine-visibility` | 11.92 | 7.45 | 4.47 |
+| arm A + agent review (arm B) | 13.91 | 8.40 | 5.51 |
+
+With `--refine-visibility`, the removable part was about one third old (S3) points and two
+thirds S6 points, per store point thinned to 0.10 m per session. Half of those S6 points lie
+in one area beside the start of the S6 path. Their filter cells were hit over a median span
+of 114 s of the 122 s session (median 64 hits): objects present for all of S6, missing from S3
+and from the TLS, below 1.1 m for 90% of them. An update has to keep them. Only about a tenth of
+the removable S6 points had a hit span under 10 s, the signature of a passer-by.
+
+What an update could still remove is therefore about 2% of the map: the old S3 points that the
+S6 scans never saw through (about 2.1% of thinned store points) and the few passers-by
+(about 0.4%). G ≤ 2%, the L5 target, can only be checked if the reference counts structure
+that is static but absent from the TLS as correct. The next
+evaluation should therefore not use the empty-hall scan alone.
+
+- **G:** a ghost is a point farther than 0.10 m from the TLS and from every other session of
+  the same layout mapped alone; LUH has three sessions per layout C (S5, S6, S7).
+- **N:** the reference is the new structure that two other sessions of the same layout show
+  (both within 0.10 m), not one session's points farther than 0.20 m from the TLS.
+
+Both need data that is not yet open for a blind run; the LUH holdout ground truth is open since
+L5, so the next formal measurement needs another public dataset with repeated layouts.
+
+## NCLT map-update evaluation (preregistered 2026-11-22, before the holdout run)
+
+LUH's holdout ground truth is open since L5, and its empty-hall TLS cannot tell a ghost from
+static structure missing from the scan (above). The next measurement uses the University of
+Michigan North Campus Long-Term dataset ([NCLT](https://robots.engin.umich.edu/nclt/), ODbL 1.0,
+Carlevaris-Bianco et al., IJRR 2016): 27 sessions of one campus over 15 months, a Velodyne
+HDL-32E and a Microstrain IMU, and SLAM ground-truth poses. References are other sessions, not a
+scan of the true scene.
+
+### Data and preparation
+
+- `scripts/convert_nclt_session.py` streams each session's Velodyne archive and writes a ROS 2
+  bag with every 6th return (disk); `bench_report/data/long_term_2026-11/rko_lio_nclt.yaml` holds
+  the extrinsics. Odometry parameters were not tuned.
+- Area: the 150 m square at x −180…−30 m, y −585…−435 m (NCLT local frame), the window with the
+  most 10 m cells visited by all eight chain sessions. Each session keeps its longest pass
+  through it, ±10 s (`bench_report/data/long_term_2026-11/nclt/windows.json`). Only 1 Hz
+  ground-truth positions were used to pick the area and the windows.
+- The update bag starts at the first ground-truth position within 1.5 m of the base pass
+  (`trim.py`), because startup registration searches stored keyframes within 3 m for 10 s.
+- **Known start:** the update's `--initial-pose` comes from ground truth: the base session's
+  odometry and the update mapped alone are each fitted to their ground truth (rigid), and the
+  update's pose at its first scan is carried into the store frame (`prior.py`). R (finding the
+  start) is not measured here.
+
+### Chains
+
+| Chain | Base | Update | References |
+| --- | --- | --- | --- |
+| development | 2012-01-15 | 2012-05-26 | 2012-05-11, 2012-06-15 |
+| holdout | 2012-02-18 | 2012-11-16 | 2012-11-04, 2012-11-17 |
+
+### Arms
+
+- **C:** `live --store --initial-pose` (no change detection: the update is appended).
+- **A:** C plus `--detect-changes --filter-new-points`.
+- **B:** C plus `--detect-changes --refine-visibility`.
+
+Each arm starts from a copy of the same base store.
+
+### Measures (`scripts/evaluate_nclt_map_update.py`, d = 0.5 m)
+
+Each reference session is mapped alone, placed in the store frame by its ground-truth fit and
+refined by point-to-plane ICP against the arm's export. Points are scored within 10 m (XY) of the
+update path and of both reference paths, 0.3–3.0 m above the local ground (lowest point per 2 m
+cell).
+
+- **Ghost points:** export points with no point of either reference within d. G is their share.
+- **S:** coverage of persistent structure (reference 1 within d of reference 2 and of the map
+  before the update), after divided by before.
+- **N:** share of new structure (reference 1 within d of reference 2, farther than 2d from the map
+  before) that the export covers within d.
+
+d = 0.5 m was chosen on the development chain, where ICP left a median residual of 0.13–0.18 m
+and d = 0.3 m counted 14% of the base map as ghost.
+
+Development (d = 0.5 m):
+
+| Arm | Ghost points | vs C | G (%) | S | N (%) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| C | 20,813 | 1.00 | 3.52 | 1.000 | 94.93 |
+| A | 12,513 | 0.60 | 2.88 | 0.998 | 83.62 |
+| B | 12,554 | 0.60 | 2.82 | 0.999 | 89.43 |
+
+### Decision rule (holdout)
+
+An arm (A or B) **helps on NCLT** when, on the holdout chain, its ghost points are at most 0.75 of
+arm C's, S ≥ 0.97 and N ≥ 0.85. If both help, the one with the higher N is preferred. The
+result is reported whatever it is, with G for every arm. It decides between the two change
+modes; it does not by itself make the long-term mode the default.
+
+### NCLT holdout results (2026-11-22)
+
+All three arms anchored with the known start; the update bag started 11 s into its window.
+ICP moved the references by 1.3–2.3 m from their ground-truth placement (median residual
+0.15–0.18 m).
+
+| Arm | Ghost points | vs C | G (%) | S | N (%) | Rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| C, append | 38,556 | 1.00 | 9.96 | 1.000 | 99.12 | — |
+| A, `--filter-new-points` | 17,052 | 0.44 | 5.73 | 0.994 | 71.16 | fails N |
+| B, `--refine-visibility` | 24,898 | 0.65 | 8.04 | 0.999 | 93.48 | **helps** |
+
+Under the preregistered rule, **B helps on NCLT** and A does not (N below 0.85). B is the
+preferred change mode.
+
+The preregistered measure aligns the references to each arm's export separately. Reference 1
+moved 1.98–2.28 m depending on the arm, so the scored region and the new-structure reference
+differ between arms: A had 2,569 new-structure points against 20,490 for B and 25,679 for C, and
+its map before the update counted 2.4% ghost against 12.8% and 15.9%. A post-hoc check (not
+preregistered) aligned both references once to the map before the update and scored every arm
+against that same placement:
+
+| Chain | Arm | Ghost points | vs C | S | N (%) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| holdout | C | 80,645 | 1.00 | 1.000 | 35.53 |
+| holdout | A | 37,875 | 0.47 | 0.993 | 32.32 |
+| holdout | B | 41,168 | 0.51 | 0.993 | 33.14 |
+| development | C | 122,107 | 1.00 | 1.000 | 86.51 |
+| development | A | 56,608 | 0.46 | 0.994 | 77.43 |
+| development | B | 65,029 | 0.53 | 0.994 | 80.15 |
+
+With the shared placement the references sit on the old map rather than on the update, so even
+append keeps only 36% of the holdout's new structure: N is then limited by how well the update
+is placed, not by the change mode. What holds in every analysis: both change modes cut ghost
+points to about half of append (0.44–0.65) with S ≥ 0.99, and B keeps more new structure than
+A (by 2.7–22 points of N). The absolute N depends on the reference placement; a placement that
+uses the update's own map and the old map together is the next fix to the measure.

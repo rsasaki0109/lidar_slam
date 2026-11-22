@@ -693,7 +693,9 @@ void bind_backend(py::module_ & m)
   py::class_<NewPoints>(m, "NewPointEvidence")
   .def(py::init<>())
   .def("observe", &NewPoints::observe)
-  .def("suppression_mask", &NewPoints::suppressionMask);
+  .def("suppression_mask", &NewPoints::suppressionMask)
+  .def("cells", &NewPoints::cells)
+  .def("frames", &NewPoints::frames);
   py::class_<StoreRelocalizer>(m, "StoreRelocalizer")
   .def(py::init<const std::vector<std::string> &, const std::vector<Eigen::Matrix4d> &,
     const std::vector<StoreRelocalizer::Windows> &,

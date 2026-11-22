@@ -1,8 +1,12 @@
 # Review Map Updates
 
 When a long-term map store takes a new session (`python -m lidarslam live ... --store STORE
---detect-changes`), the change detection removes old points it saw through and holds back new
-points it saw only briefly. It is not always right: on the LUH development and holdout data it
+--refine-visibility`), the change detection removes old points it saw through and holds back new
+points it saw only briefly. Of the change modes, `--refine-visibility` is the recommended one: on
+a held-out NCLT update it halved the points no later session confirms (0.65 of a plain append)
+and kept 93% of the new structure, where `--filter-new-points` kept 71%
+([plan](roadmap/long-term-mapping-2026-11.md#nclt-holdout-results-2026-11-22)). Both stay
+experimental. It is not always right: on the LUH development and holdout data it
 left ghosts and missed new structure ([long-term mapping plan](roadmap/long-term-mapping-2026-11.md),
 L5). The review step lets a person, or an agent, look at what changed and decide.
 
