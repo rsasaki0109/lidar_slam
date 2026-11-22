@@ -1164,3 +1164,28 @@ data (660 s and 498 s for 480 s): a session that drives away from the store woul
 real time. Bounding the search cost (fewer candidates per search, or a pause after repeated
 failures) is the next change before the mode can leave experimental; it needs its own check that
 the in-area anchors above still hold.
+
+### Bounding the search outside the stored area (development, 2026-11-22)
+
+A profile of the 2012-09-28 run outside the stored area: 157 of 176 searches had no candidate
+under the Scan Context gate and took 0.06 s; the other 19 registered 1–8 candidates at 6–10 s
+each and found nothing, 700 s in all. Since `b837593`, a search that registers candidates and
+finds nothing doubles the wait before the next search (data time, from 2 s), and a found
+candidate resets it. The cap was chosen on the development store only, with two new runs outside
+it (`anywhere_dev_out_windows.json`: the first 480 s of the longest stretch of 2012-05-11 and of
+2012-06-15 at least 100 m from the 2012-01-15 pass):
+
+| Cap | Anchored after (05-11 / 06-15 / 05-26) | Processing outside the store (05-11 / 06-15, 480 s each) |
+| --- | --- | --- |
+| 2 s (no back-off) | 87.1 / 135.5 / 3.4 s | 83 / 283 s |
+| **8 s** (`b4d097e`) | 92.8 / 141.0 / 3.4 s | 82 / 133 s |
+| 16 s | 149.2 / 141.0 / 3.4 s | 81 / 69 s |
+| 32 s | 233.5 / 141.0 / 3.4 s | 82 / 72 s |
+
+All development anchors stayed correct under the calibrated check. With the 8 s cap the eight
+runs of the second holdout were repeated (`anywhere_backoff_holdout2_recheck.jsonl`; a regression
+check on data already used, not a new holdout): the four in-area runs gave the same anchors as
+before (3.4–6.6 s, `converged_apart` ≤ 0.01 m), and the four runs outside the store did not
+anchor and took 62, 146, 306 and 182 s for 480 s of data (before: 53, 345, 660 and 498 s). The
+mode stays experimental: it now keeps up with real time on these runs, on this machine, but a
+search that registers candidates still blocks the session for up to a minute.
