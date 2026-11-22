@@ -1033,3 +1033,22 @@ The ground-truth placement itself is only good to 1–2 m here (reference sessio
 1.3–2.3 m of ICP correction above), so the offsets show the anchors are in the right place,
 not how accurate they are. A holdout run with a preregistered rule (anchor rate, wrong anchors
 checked by ICP against the stored map) is still to come.
+
+### Holdout check of `--relocalize-anywhere` (preregistered 2026-11-22, before the run)
+
+The method is frozen as committed in `75c20ee4` (Scan Context gate 0.18, one search per 2 s,
+two agreeing searches within 0.5 m and 2°). Its thresholds were chosen on the development store
+only; the holdout sessions below have not been run with it.
+
+- **Store:** the NCLT holdout base store (2012-02-18 pass, `h_store`).
+- **Sessions:** 2012-11-04, 2012-11-16 (from its first scan, not trimmed) and 2012-11-17, each
+  `live --store COPY --relocalize-anywhere` with no initial pose, odometry and backend parameters
+  as in the NCLT evaluation.
+- **Correct anchor:** both (a) the session path placed by the anchor lies within 3.0 m RMS of the
+  same path placed by ground truth (each session's and the base's odometry fitted rigidly to their
+  NCLT ground truth; that placement is itself good to 1–2 m), and (b) point-to-plane ICP of the
+  session's map, placed by the anchor, against the stored base map moves it by at most 1.0 m with
+  a median residual of at most 0.3 m.
+- **Rule:** the mode works on the holdout if every session anchors correctly within 180 s of
+  data and no session anchors wrongly. A session that never anchors is a miss, not a wrong anchor;
+  a wrong anchor fails the rule outright. Anchor time and processing time are reported.
