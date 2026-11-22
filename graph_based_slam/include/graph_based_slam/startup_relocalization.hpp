@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -85,24 +86,85 @@ public:
     constexpr double radius_squared = 25.0;
     const auto origin = reference_.front().frame.translation();
     if (!launch_descriptors_) {
-      launch_descriptors_.emplace();
-      for (std::size_t i = 0; i < reference_.size(); ++i) {
-        const auto & frame = reference_[i];
-        if (!frame.points.empty() &&
-          (frame.frame.translation() - origin).squaredNorm() <= radius_squared)
-        {
-          launch_descriptors_->emplace_back(i, detail::scanContext(frame, config_));
-        }
-      }
+      launch_descriptors_ = descriptors(origin, radius_squared);
+    }
+    return matchSeeds(
+      query, *launch_descriptors_, origin, radius_squared,
+      std::numeric_limits<double>::infinity());
+  }
+
+  // Scan Context distances of the closest stored keyframes (index, distance, sector shift).
+  std::vector<std::tuple<double, std::size_t, int>> rankAnywhere(
+    const Keyframe & query,
+    std::size_t count)
+  {
+    if (!all_descriptors_) {
+      all_descriptors_ = descriptors(Eigen::Vector3d::Zero(),
+          std::numeric_limits<double>::infinity());
     }
     const auto descriptor = detail::scanContext(query, config_);
     std::vector<std::tuple<double, std::size_t, int>> seeds;
-    for (const auto & [i, target] : *launch_descriptors_) {
+    for (const auto & [i, target] : *all_descriptors_) {
+      const auto ranked = ScanContext::distanceWithAlignment(descriptor, target);
+      seeds.emplace_back(ranked.distance, i, ranked.shift);
+    }
+    const auto end = seeds.begin() + std::min(count, seeds.size());
+    std::partial_sort(seeds.begin(), end, seeds.end());
+    seeds.erase(end, seeds.end());
+    return seeds;
+  }
+
+  // Search every stored keyframe: the eight closest Scan Context candidates are each verified
+  // by registration (with corroboration from a neighbouring keyframe), and the match is refused
+  // when two verified candidates disagree.
+  std::optional<Match> matchAnywhere(const Keyframe & query)
+  {
+    if (query.points.empty() || reference_.empty()) {
+      return std::nullopt;
+    }
+    const auto unbounded = std::numeric_limits<double>::infinity();
+    if (!all_descriptors_) {
+      all_descriptors_ = descriptors(Eigen::Vector3d::Zero(), unbounded);
+    }
+    // Candidates farther than this in Scan Context distance are not registered: on NCLT they
+    // were nearly always places the store does not hold.
+    constexpr double max_descriptor_distance = 0.18;
+    return matchSeeds(
+      query, *all_descriptors_, Eigen::Vector3d::Zero(), unbounded, max_descriptor_distance);
+  }
+
+private:
+  using Descriptors = std::vector<std::pair<std::size_t, ScanContext::Descriptor>>;
+
+  Descriptors descriptors(const Eigen::Vector3d & origin, double radius_squared) const
+  {
+    Descriptors result;
+    for (std::size_t i = 0; i < reference_.size(); ++i) {
+      const auto & frame = reference_[i];
+      if (!frame.points.empty() &&
+        (frame.frame.translation() - origin).squaredNorm() <= radius_squared)
+      {
+        result.emplace_back(i, detail::scanContext(frame, config_));
+      }
+    }
+    return result;
+  }
+
+  std::optional<Match> matchSeeds(
+    const Keyframe & query, const Descriptors & targets, const Eigen::Vector3d & origin,
+    double radius_squared, double max_descriptor_distance)
+  {
+    const auto descriptor = detail::scanContext(query, config_);
+    std::vector<std::tuple<double, std::size_t, int>> seeds;
+    for (const auto & [i, target] : targets) {
       const auto ranked = ScanContext::distanceWithAlignment(descriptor, target);
       seeds.emplace_back(ranked.distance, i, ranked.shift);
     }
     const auto end = seeds.begin() + std::min<std::size_t>(8, seeds.size());
     std::partial_sort(seeds.begin(), end, seeds.end());
+    if (seeds.empty() || std::get<0>(seeds.front()) > max_descriptor_distance) {
+      return std::nullopt;
+    }
     const auto source = prepare(query);
     if (source.cloud->empty()) {
       return std::nullopt;
@@ -110,7 +172,9 @@ public:
     std::optional<Match> consensus;
     for (auto it = seeds.begin(); it != end; ++it) {
       const auto [distance, i, shift] = *it;
-      (void)distance;
+      if (distance > max_descriptor_distance) {
+        break;
+      }
       Eigen::Isometry3d initial = reference_[i].frame;
       initial.rotate(Eigen::AngleAxisd(shift * 2.0 * M_PI / ScanContext::NUM_SECTORS,
         Eigen::Vector3d::UnitZ()));
@@ -128,7 +192,6 @@ public:
     return consensus;
   }
 
-private:
   std::optional<Match> matchPrepared(
     const detail::Prepared & source, const Eigen::Isometry3d & prior)
   {
@@ -244,7 +307,8 @@ private:
   JoinConfig config_;
   std::vector<Keyframe> reference_;
   std::vector<std::optional<detail::Prepared>> prepared_;
-  std::optional<std::vector<std::pair<std::size_t, ScanContext::Descriptor>>> launch_descriptors_;
+  std::optional<Descriptors> launch_descriptors_;
+  std::optional<Descriptors> all_descriptors_;
 };
 
 }  // namespace graphslam::multisession

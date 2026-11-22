@@ -1,5 +1,6 @@
 """Causal observations and append-only removal decisions for a map store."""
 
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ from lidarslam import _core
 from lidarslam.relocalization import pose_matrix
 
 EVIDENCE_FILE = 'map_change_evidence.npz'
+PENDING_LIMIT = 600
 
 
 class MapChanges:
@@ -19,7 +21,10 @@ class MapChanges:
         self.evidence = _core.MapChangeEvidence(directories, poses)
         self.refined_visibility = refine_visibility
         self.extrinsic = extrinsic
-        self.pending = []
+        # Scans wait here until the session is anchored. A search that keeps running
+        # (relocalize_anywhere) keeps only the latest ones: earlier submaps then have no
+        # change evidence.
+        self.pending = deque(maxlen=PENDING_LIMIT)
         self.new_evidence = None
         if refine_visibility:
             self.new_evidence = _core.RefinedNewPointEvidence()

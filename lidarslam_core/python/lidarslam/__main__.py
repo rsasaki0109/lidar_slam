@@ -123,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
                          help='startup odometry frame in the store frame, as a pose')
     startup.add_argument('--start-near-first-submap', action='store_true',
                          help='search a launch area within 5 m of the first stored submap')
+    startup.add_argument('--relocalize-anywhere', action='store_true',
+                         help='search the whole store for the session start, for as long as the '
+                              'session runs (experimental)')
     live.add_argument('--track-store', action='store_true',
                       help='after startup, try experimental loop factors against the stored map')
     live.add_argument('--track-shared-surfaces', action='store_true',
@@ -222,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
         summary = live_module.replay(args.log, load_odometry_parameters(args.odometry_params),
                                      backend_params, args.out, realtime=args.realtime,
                                      speed=args.speed, store=args.store, initial_pose=args.initial_pose,
+                                     relocalize_anywhere=args.relocalize_anywhere,
                                      track_store=args.track_store,
                                      track_shared_surfaces=args.track_shared_surfaces,
                                      detect_changes=args.detect_changes,

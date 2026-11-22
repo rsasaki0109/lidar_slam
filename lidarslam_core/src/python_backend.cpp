@@ -395,6 +395,19 @@ public:
     return py::make_tuple(result->reference, Eigen::Matrix4d(result->pose.matrix()));
   }
 
+  std::vector<std::tuple<double, std::size_t, int>> rankAnywhere(
+    const Eigen::Ref<const Eigen::MatrixX3f> & points, std::size_t count)
+  {
+    return matcher_.rankAnywhere(keyframe(points), count);
+  }
+
+  py::object matchAnywhere(const Eigen::Ref<const Eigen::MatrixX3f> & points)
+  {
+    const auto result = matcher_.matchAnywhere(keyframe(points));
+    if (!result) {return py::none();}
+    return py::make_tuple(result->reference, Eigen::Matrix4d(result->pose.matrix()));
+  }
+
   // An absent reference denotes a registration to the joint shared-surface map.
   using Reference = std::optional<std::size_t>;
   using Observation = std::tuple<std::size_t, Reference, Eigen::Matrix4d>;
@@ -705,6 +718,8 @@ void bind_backend(py::module_ & m)
   .def("match", &StoreRelocalizer::match, py::arg("points"), py::arg("prior"))
   .def("match_with_reference", &StoreRelocalizer::matchWithReference)
   .def("match_near_launch", &StoreRelocalizer::matchNearLaunch)
+  .def("match_anywhere", &StoreRelocalizer::matchAnywhere)
+  .def("rank_anywhere", &StoreRelocalizer::rankAnywhere)
   .def("session_poses", &StoreRelocalizer::sessionPoses)
   .def("optimize_tracking", &StoreRelocalizer::optimizeTracking)
   .def_static("thin", &StoreRelocalizer::thin);

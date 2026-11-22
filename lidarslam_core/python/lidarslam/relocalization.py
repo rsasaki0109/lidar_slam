@@ -77,6 +77,16 @@ class KeyframeWindows:
             self._spool.close()
 
 
+ANYWHERE_INTERVAL_SEC = 2.0
+
+
+def _agrees(a, b, meters, degrees):
+    """Two rigid transforms within a distance and a yaw difference."""
+    yaw = np.arctan2(a[1, 0], a[0, 0]) - np.arctan2(b[1, 0], b[0, 0])
+    return (np.linalg.norm(a[:3, 3] - b[:3, 3]) <= meters and
+            abs(np.arctan2(np.sin(yaw), np.cos(yaw))) <= np.deg2rad(degrees))
+
+
 def tracked_poses(directory):
     """Read optional absolute keyframe poses of a stored session."""
     path = Path(directory) / 'store_submap_poses.npy'
@@ -86,8 +96,16 @@ def tracked_poses(directory):
 class StartupRelocalization:
     """Verify an initial pose and optionally track it with fixed-reference loop factors."""
 
-    def __init__(self, aligned_sessions, initial_pose, track=False, shared_surfaces=False):
+    def __init__(self, aligned_sessions, initial_pose, track=False, shared_surfaces=False,
+                 anywhere=False):
         self.prior = pose_matrix(initial_pose) if initial_pose is not None else None
+        if anywhere and initial_pose is not None:
+            raise ValueError('choose either an initial pose or a search anywhere')
+        # Search every stored keyframe for as long as the session runs; accept only when two
+        # keyframes give the same session transform.
+        self.anywhere = anywhere
+        self._candidate = None
+        self._last_search = -np.inf
         directories, transforms = zip(*aligned_sessions)
         windows = []
         for directory in directories:
@@ -124,7 +142,7 @@ class StartupRelocalization:
         stamp = header.stamp.sec + header.stamp.nanosec * 1e-9
         if self.first_stamp is None:
             self.first_stamp = stamp
-        elif stamp - self.first_stamp > 10:
+        elif stamp - self.first_stamp > 10 and not self.anywhere:
             self.expired = True
 
     def _match(self, frame, odometry, local_map, points):
@@ -134,8 +152,12 @@ class StartupRelocalization:
             prior = self.transform @ local_map @ np.linalg.inv(odometry) @ frame
         else:
             return
-        result = (self.matcher.match_near_launch(points) if prior is None
-                  else self.matcher.match_with_reference(points, prior))
+        if prior is not None:
+            result = self.matcher.match_with_reference(points, prior)
+        elif self.anywhere:
+            result = self.matcher.match_anywhere(points)
+        else:
+            result = self.matcher.match_near_launch(points)
         if result is None:
             return
         reference, proposal = result
@@ -155,6 +177,11 @@ class StartupRelocalization:
                 return
             reference = None
         else:
+            if self.active and self.anywhere:
+                # A search of the whole store takes seconds: try one keyframe per interval.
+                if stamp - self._last_search < ANYWHERE_INTERVAL_SEC:
+                    return
+                self._last_search = stamp
             if self.active and self.prior is None:
                 # Describe the incoming window at the same density as the stored archive.
                 level_from_body = np.linalg.inv(frame) @ odometry
@@ -163,6 +190,11 @@ class StartupRelocalization:
             if match is None:
                 return
             reference, observed = match
+        if self.transform is None and self.anywhere:
+            candidate = observed @ np.linalg.inv(local_map)
+            if self._candidate is None or not _agrees(self._candidate, candidate, .5, 2.):
+                self._candidate = candidate
+                return
         if self.transform is None:
             self.transform = observed @ np.linalg.inv(local_map)
             self._initial_odometry = observed @ np.linalg.inv(odometry)

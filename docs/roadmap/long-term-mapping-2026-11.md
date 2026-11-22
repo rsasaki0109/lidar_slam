@@ -1006,3 +1006,30 @@ is placed, not by the change mode. What holds in every analysis: both change mod
 points to about half of append (0.44–0.65) with S ≥ 0.99, and B keeps more new structure than
 A (by 2.7–22 points of N). The absolute N depends on the reference placement; a placement that
 uses the update's own map and the old map together is the next fix to the measure.
+
+## Start an update anywhere in the store (development, 2026-11-22)
+
+Startup registration only searched stored keyframes within 3 m of a given pose, or within 5 m
+of the first stored submap, for the first 10 s of data; on NCLT the update had to be trimmed and
+given a ground-truth start. `live --relocalize-anywhere` (experimental) instead:
+
+- ranks every stored keyframe by Scan Context distance and registers only candidates closer
+  than 0.18 (NCLT development: correct top candidates had median distance 0.13 and 90% below
+  0.19; wrong ones median 0.23, mostly places the store does not hold), with the existing
+  corroboration by a neighbouring keyframe and refusal when two verified candidates disagree;
+- tries one keyframe every 2 s of data for as long as the session runs, and anchors only when
+  two such searches give session transforms within 0.5 m and 2°;
+- keeps at most 600 queued scans for change detection while it searches.
+
+Development, store = 2012-01-15 (NCLT), each session from its first scan, no initial pose:
+
+| Session | Anchored after | Path offset from the ground-truth placement (RMS, max) | Processing |
+| --- | ---: | --- | ---: |
+| 2012-05-11 | 87.1 s | 1.48 m, 3.79 m | 196 s for 504 s of data |
+| 2012-06-15 | 135.5 s | 1.33 m, 3.58 m | 132 s for 520 s |
+| 2012-05-26 (from +83 s) | 3.4 s | 0.52 m, 0.74 m | 81 s for 457 s |
+
+The ground-truth placement itself is only good to 1–2 m here (reference sessions needed
+1.3–2.3 m of ICP correction above), so the offsets show the anchors are in the right place,
+not how accurate they are. A holdout run with a preregistered rule (anchor rate, wrong anchors
+checked by ICP against the stored map) is still to come.
