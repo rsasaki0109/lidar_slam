@@ -79,9 +79,10 @@ class KeyframeWindows:
 
 ANYWHERE_INTERVAL_SEC = 2.0
 # After a search that registered candidates and found nothing, the next one waits twice as long
-# (up to this, in data time): registering a candidate costs seconds, and outside the stored area
-# such searches made a session fall behind real time. A found candidate resets the interval.
-ANYWHERE_MAX_INTERVAL_SEC = 32.0
+# (up to this, in data time; chosen on the NCLT development store): registering a candidate
+# costs seconds, and outside the stored area such searches made a session fall behind real
+# time. A found candidate resets the interval.
+ANYWHERE_MAX_INTERVAL_SEC = 8.0
 # Scan Context distance below which match_anywhere registers a candidate (C++ matchAnywhere).
 ANYWHERE_DESCRIPTOR_GATE = 0.18
 

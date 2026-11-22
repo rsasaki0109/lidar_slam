@@ -55,8 +55,8 @@ def test_failed_registrations_back_off_to_the_maximum() -> None:
     search, matcher = searcher()
     feed(search, matcher, 0.0, 200.0)
     gaps = np.diff(matcher.searches)
-    assert list(gaps[:4]) == [4.0, 8.0, 16.0, 32.0]
-    assert set(gaps[4:]) == {relocalization.ANYWHERE_MAX_INTERVAL_SEC}
+    assert list(gaps[:2]) == [4.0, 8.0]
+    assert set(gaps[2:]) == {relocalization.ANYWHERE_MAX_INTERVAL_SEC}
 
 
 def test_searches_without_a_candidate_keep_the_interval() -> None:
