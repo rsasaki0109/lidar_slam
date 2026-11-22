@@ -1077,3 +1077,65 @@ The mode stays experimental. A next check would preregister a criterion calibrat
 development store, for example that ICP from the anchor and ICP from the ground-truth placement
 converge to the same pose, on sessions not used here, and would add sessions that never enter
 the stored area (no anchor expected).
+
+### Calibrating the anchor check on the development store (2026-11-22)
+
+`scripts/evaluate_relocalize_anywhere.py` compares an anchor (`store_from_session`) with two
+things: the ground-truth placement `T_g` (base and session odometry each fitted rigidly to NCLT
+ground truth) and point-to-plane ICP of the session's map against the base map, run once from
+the anchor (`M_a`) and once from `T_g` (`M_g`). `converged_apart` is the RMS distance between the
+session's odometry positions placed by `M_a` and by `M_g`, and the angle of `M_a·M_g⁻¹`.
+
+Development store 2012-01-15, the three development sessions of the table above re-run with the
+frozen method (anchored after 87.1 s, 135.5 s and 3.4 s; offsets 1.45, 1.27 and 0.36 m RMS from
+the ground-truth placement). Each anchor was also replaced by perturbed copies
+(`anywhere_perturb_grid.txt`: XY shifts of 0.5–5 m in four directions, yaw turns of 2–10° about
+the path's centroid, and shift-and-turn combinations; 38 per session,
+`bench_report/data/long_term_2026-11/nclt/anywhere_calibration_dev.jsonl`):
+
+| Start (3 sessions) | n | `converged_apart` (m) | Offset from `T_g` (m RMS) | ICP median residual (m) |
+| --- | ---: | ---: | ---: | ---: |
+| the anchor | 3 | 0.000 | 0.36–1.45 | 0.136–0.192 |
+| shift 0.5–2 m | 48 | 0.000 | 0.31–2.84 | 0.136–0.192 |
+| turn 2° | 6 | 0.000 | 1.83–3.03 | 0.136–0.192 |
+| shift 3 m | 12 | 0.000–1.155 | 2.72–3.75 | 0.136–0.230 |
+| shift 5 m | 12 | 3.34–4.70 | 4.71–5.66 | 0.220–0.267 |
+| turn 5° (with 0–2 m shift) | 30 | 1.64–5.06 | 4.77–6.68 | 0.196–0.268 |
+| turn 10° | 6 | 8.58–10.70 | 9.68–11.98 | 0.228–0.261 |
+
+ICP from any start within 2 m and 2° of the anchor reaches exactly the pose ICP reaches from the
+ground-truth placement; from 5 m or 5° it never does (at least 1.6 m apart, with a higher
+residual); 3 m is the edge of the basin. So "ICP from the anchor and from the ground truth
+converge to the same pose" is a check that the anchor lies within about 2–3 m and 2° of the best
+fit to the stored map. It cannot tell anchors closer than that apart, which the 1–2 m ground
+truth cannot either. The old 1.0 m bound on the ICP correction would have called 39 of the 57
+starts within 2 m and 2° wrong.
+
+### Second holdout check of `--relocalize-anywhere` (preregistered 2026-11-22, before the run)
+
+Method frozen as in `75c20ee4` (unchanged since). Store: the NCLT holdout base store (2012-02-18
+pass, `h_store`), odometry and backend parameters as in the NCLT evaluation. No session below
+has been run with the method; their ground truth has been used only at 1 Hz, as positions, to
+choose the windows.
+
+- **Sessions** (`select_anywhere_holdout.py`, `anywhere_holdout2_windows.json`): for each of four
+  periods (2012-01–02, 03–05, 06–09, 2012-10–2013-04), the NCLT session not used so far with the
+  longest pass through the evaluation square: 2012-02-02, 2012-03-17, 2012-09-28, 2012-10-28.
+  - **In-area run:** that pass ±10 s (510–1,109 s), from its first scan, no start pose.
+  - **Out-of-area run:** in the same session, the first 480 s of its longest stretch that stays at
+    least 100 m (XY) from every ground-truth position of the stored base pass (closest approach
+    100.0–238.1 m). The store holds nothing of these places, so no anchor is expected.
+- Each run: `live --store COPY --relocalize-anywhere` (`run_anywhere.sh`), then
+  `evaluate_relocalize_anywhere.py` against the base map (`holdout_anywhere2.sh`).
+- **Correct anchor:** `converged_apart` ≤ 0.25 m and ≤ 0.5°, and the anchor's offset from the
+  ground-truth placement ≤ 4.0 m RMS (on the development store every start within 2 m and 2°
+  was ≤ 3.03 m and every start 5 m or 5° off was ≥ 4.71 m). Any other anchor is **wrong**, in an
+  in-area or an out-of-area run.
+- **Rule:** the mode works on this holdout if every in-area run anchors correctly within 180 s of
+  data and no run (in-area or out-of-area) anchors wrongly. A run that never anchors is a miss,
+  not a wrong anchor; one wrong anchor fails the rule outright. Anchor time, processing time and
+  every measure above are reported for all eight runs, whatever the outcome.
+
+Not part of the rule: under this check the three sessions of the first holdout would all count
+as correct (ICP from the anchor and from the ground truth converged 0.00 m apart; offsets
+0.80–1.07 m). That observation shaped the check, which is why it is tested on new sessions.
