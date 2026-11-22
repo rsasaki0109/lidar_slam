@@ -897,3 +897,74 @@ evaluation should therefore not use the empty-hall scan alone.
 
 Both need data that is not yet open for a blind run; the LUH holdout ground truth is open since
 L5, so the next formal measurement needs another public dataset with repeated layouts.
+
+## NCLT map-update evaluation (preregistered 2026-11-22, before the holdout run)
+
+LUH's holdout ground truth is open since L5, and its empty-hall TLS cannot tell a ghost from
+static structure missing from the scan (above). The next measurement uses the University of
+Michigan North Campus Long-Term dataset ([NCLT](https://robots.engin.umich.edu/nclt/), ODbL 1.0,
+Carlevaris-Bianco et al., IJRR 2016): 27 sessions of one campus over 15 months, a Velodyne
+HDL-32E and a Microstrain IMU, and SLAM ground-truth poses. References are other sessions, not a
+scan of the true scene.
+
+### Data and preparation
+
+- `scripts/convert_nclt_session.py` streams each session's Velodyne archive and writes a ROS 2
+  bag with every 6th return (disk); `bench_report/data/long_term_2026-11/rko_lio_nclt.yaml` holds
+  the extrinsics. Odometry parameters were not tuned.
+- Area: the 150 m square at x −180…−30 m, y −585…−435 m (NCLT local frame), the window with the
+  most 10 m cells visited by all eight chain sessions. Each session keeps its longest pass
+  through it, ±10 s (`bench_report/data/long_term_2026-11/nclt/windows.json`). Only 1 Hz
+  ground-truth positions were used to pick the area and the windows.
+- The update bag starts at the first ground-truth position within 1.5 m of the base pass
+  (`trim.py`), because startup registration searches stored keyframes within 3 m for 10 s.
+- **Known start:** the update's `--initial-pose` comes from ground truth: the base session's
+  odometry and the update mapped alone are each fitted to their ground truth (rigid), and the
+  update's pose at its first scan is carried into the store frame (`prior.py`). R (finding the
+  start) is not measured here.
+
+### Chains
+
+| Chain | Base | Update | References |
+| --- | --- | --- | --- |
+| development | 2012-01-15 | 2012-05-26 | 2012-05-11, 2012-06-15 |
+| holdout | 2012-02-18 | 2012-11-16 | 2012-11-04, 2012-11-17 |
+
+### Arms
+
+- **C:** `live --store --initial-pose` (no change detection: the update is appended).
+- **A:** C plus `--detect-changes --filter-new-points`.
+- **B:** C plus `--detect-changes --refine-visibility`.
+
+Each arm starts from a copy of the same base store.
+
+### Measures (`scripts/evaluate_nclt_map_update.py`, d = 0.5 m)
+
+Each reference session is mapped alone, placed in the store frame by its ground-truth fit and
+refined by point-to-plane ICP against the arm's export. Points are scored within 10 m (XY) of the
+update path and of both reference paths, 0.3–3.0 m above the local ground (lowest point per 2 m
+cell).
+
+- **Ghost points:** export points with no point of either reference within d. G is their share.
+- **S:** coverage of persistent structure (reference 1 within d of reference 2 and of the map
+  before the update), after divided by before.
+- **N:** share of new structure (reference 1 within d of reference 2, farther than 2d from the map
+  before) that the export covers within d.
+
+d = 0.5 m was chosen on the development chain, where ICP left a median residual of 0.13–0.18 m
+and d = 0.3 m counted 14% of the base map as ghost.
+
+Development (d = 0.5 m):
+
+| Arm | Ghost points | vs C | G (%) | S | N (%) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| C | 20,813 | 1.00 | 3.52 | 1.000 | 94.93 |
+| A | 12,513 | 0.60 | 2.88 | 0.998 | 83.62 |
+| B | 12,554 | 0.60 | 2.82 | 0.999 | 89.43 |
+
+### Decision rule (holdout)
+
+An arm (A or B) **helps on NCLT** when, on the holdout chain, its ghost points are at most 0.75 of
+arm C's, S ≥ 0.97 and N ≥ 0.85. If both help, the one with the higher N is preferred. The
+result is reported whatever it is, with G for every arm. It decides between the two change
+modes; it does not by itself make the long-term mode the default.
