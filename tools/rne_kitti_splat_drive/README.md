@@ -15,6 +15,25 @@ only inside an RNE checkout):
    machine without a GPU, set `VK_ICD_FILENAMES` to Mesa lavapipe.
 
 `kitti0018.rne.splat.toml` rotates the z-up SLAM frame -90 deg about X into RNE's y-up
-frame. RNE draws the splat through an sRGB view of its hybrid target, which encodes the splat's
-(already sRGB) colours a second time and washes them out. `0001-*.patch` fixes that in RNE
-(the splat is drawn through a non-sRGB view of the same texture); apply it with `git am`.
+frame. Two RNE patches fix its splat colour pass; apply them with `git am`:
+
+- `0001-*.patch`: the splat was drawn through an sRGB view of the hybrid target, encoding
+  its (already sRGB) colours twice and washing them out.
+- `0002-*.patch`: wgpu-3dgs-viewer 0.2 takes 2f as the focal length for the 2D covariance
+  and an `exp(-q^2)` falloff, so every splat was sqrt(2) too wide; a per-splat size of
+  1/sqrt(2) cancels it. With it, visloc-rs localizes 115 of 172 RNE front-camera frames
+  (median 5 cm); before it, none.
+
+## Visual-localization closed loop (`161_kitti_splat_visloc_loop`, `visloc_loop.rs`)
+
+The car steers on its estimated pose: dead reckoning from wheel speed and steering (2 %
+scale error, 0.003 rad/s yaw-rate bias) between visual fixes, a fix every 0.5 s from the
+front camera rendered at the true pose by visloc-rs `gsplat_render_server` and localized by
+`basalt_euroc_localize_demo` (`--min-inliers 15`) against a map built from splat renders at
+the SLAM camera poses (`render_tum_seq.py`, `tum_rgbd_save_map --keep-world`). Fixes more
+than 3 m from the estimate are rejected.
+
+| run (KITTI 0018, first 290 m, 7 m/s) | visual fixes | cross-track mean / max | estimate error mean / max |
+|---|---|---|---|
+| odometry only | - | 5.55 / 17.17 m | 5.97 / 17.37 m |
+| visual closed loop | 65 / 86 | 0.07 / 0.71 m | 0.13 / 0.82 m |

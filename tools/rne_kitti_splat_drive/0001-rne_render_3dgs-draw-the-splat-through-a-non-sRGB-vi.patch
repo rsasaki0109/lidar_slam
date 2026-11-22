@@ -1,8 +1,8 @@
 From 51df9836578e25c970f6f631635bfdf33e116a94 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sun, 22 Nov 2026 15:02:30 +0000
-Subject: [PATCH] rne_render_3dgs: draw the splat through a non-sRGB view of
- the hybrid target
+Subject: [PATCH 1/2] rne_render_3dgs: draw the splat through a non-sRGB view
+ of the hybrid target
 
 3DGS colours are display-referred sRGB; writing them through the Rgba8UnormSrgb view encoded
 them a second time and washed the background out.
