@@ -15,6 +15,6 @@ only inside an RNE checkout):
    machine without a GPU, set `VK_ICD_FILENAMES` to Mesa lavapipe.
 
 `kitti0018.rne.splat.toml` rotates the z-up SLAM frame -90 deg about X into RNE's y-up
-frame. RNE draws the splat into an sRGB target without undoing the splat's sRGB colours, so
-images come out washed out; until that is fixed in RNE, convert the PLY's colours to linear
-first (the `f_dc` term exactly, the `f_rest` terms to first order).
+frame. RNE draws the splat through an sRGB view of its hybrid target, which encodes the splat's
+(already sRGB) colours a second time and washes them out. `0001-*.patch` fixes that in RNE
+(the splat is drawn through a non-sRGB view of the same texture); apply it with `git am`.
