@@ -98,6 +98,9 @@ def main() -> int:
     parser.add_argument('--ref', nargs=3, action='append', required=True,
                         metavar=('MAP', 'PATH_TUM', 'INIT_JSON'))
     parser.add_argument('--match', type=float, default=.20)
+    parser.add_argument('--align-to', choices=('after', 'before'), default='after',
+                        help='ICP target for the references: the export (default) or the map '
+                             'before the update (one alignment shared by every arm)')
     parser.add_argument('--radius', type=float, default=10.)
     parser.add_argument('--min-height', type=float, default=.3)
     parser.add_argument('--max-height', type=float, default=3.)
@@ -110,7 +113,8 @@ def main() -> int:
     for map_path, tum, init in args.ref:
         points = load(Path(map_path))
         init = np.asarray(json.loads(Path(init).read_text()), dtype=float)
-        matrix, residual = icp(points[::4], after[::2], init)
+        target = after if args.align_to == 'after' else before
+        matrix, residual = icp(points[::4], target[::2], init)
         refs.append(transform(points, matrix))
         paths.append(transform(path_xyz(Path(tum)), matrix))
         report['references'].append({'map': map_path, 'icp_median_residual_m': residual,

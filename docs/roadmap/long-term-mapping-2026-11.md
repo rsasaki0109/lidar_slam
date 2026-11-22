@@ -968,3 +968,41 @@ An arm (A or B) **helps on NCLT** when, on the holdout chain, its ghost points a
 arm C's, S ≥ 0.97 and N ≥ 0.85. If both help, the one with the higher N is preferred. The
 result is reported whatever it is, with G for every arm. It decides between the two change
 modes; it does not by itself make the long-term mode the default.
+
+### NCLT holdout results (2026-11-22)
+
+All three arms anchored with the known start; the update bag started 11 s into its window.
+ICP moved the references by 1.3–2.3 m from their ground-truth placement (median residual
+0.15–0.18 m).
+
+| Arm | Ghost points | vs C | G (%) | S | N (%) | Rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| C, append | 38,556 | 1.00 | 9.96 | 1.000 | 99.12 | — |
+| A, `--filter-new-points` | 17,052 | 0.44 | 5.73 | 0.994 | 71.16 | fails N |
+| B, `--refine-visibility` | 24,898 | 0.65 | 8.04 | 0.999 | 93.48 | **helps** |
+
+Under the preregistered rule, **B helps on NCLT** and A does not (N below 0.85). B is the
+preferred change mode.
+
+The preregistered measure aligns the references to each arm's export separately. Reference 1
+moved 1.98–2.28 m depending on the arm, so the scored region and the new-structure reference
+differ between arms: A had 2,569 new-structure points against 20,490 for B and 25,679 for C, and
+its map before the update counted 2.4% ghost against 12.8% and 15.9%. A post-hoc check (not
+preregistered) aligned both references once to the map before the update and scored every arm
+against that same placement:
+
+| Chain | Arm | Ghost points | vs C | S | N (%) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| holdout | C | 80,645 | 1.00 | 1.000 | 35.53 |
+| holdout | A | 37,875 | 0.47 | 0.993 | 32.32 |
+| holdout | B | 41,168 | 0.51 | 0.993 | 33.14 |
+| development | C | 122,107 | 1.00 | 1.000 | 86.51 |
+| development | A | 56,608 | 0.46 | 0.994 | 77.43 |
+| development | B | 65,029 | 0.53 | 0.994 | 80.15 |
+
+With the shared placement the references sit on the old map rather than on the update, so even
+append keeps only 36% of the holdout's new structure: N is then limited by how well the update
+is placed, not by the change mode. What holds in every analysis: both change modes cut ghost
+points to about half of append (0.44–0.65) with S ≥ 0.99, and B keeps more new structure than
+A (by 2.7–22 points of N). The absolute N depends on the reference placement; a placement that
+uses the update's own map and the old map together is the next fix to the measure.
