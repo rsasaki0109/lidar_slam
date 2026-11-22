@@ -1139,3 +1139,28 @@ choose the windows.
 Not part of the rule: under this check the three sessions of the first holdout would all count
 as correct (ICP from the anchor and from the ground truth converged 0.00 m apart; offsets
 0.80–1.07 m). That observation shaped the check, which is why it is tested on new sessions.
+
+#### Second holdout results (2026-11-22)
+
+All eight runs as preregistered (`holdout_anywhere2.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | ICP correction (median residual) | `converged_apart` | Verdict | Processing / data |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| 2012-02-02 in-area | 4.0 s | 0.62 | 0.24 m (0.16 m) | 0.000 m, 0.00° | correct | 129 s / 1,109 s |
+| 2012-03-17 in-area | 3.4 s | 0.76 | 0.81 m (0.17 m) | 0.000 m, 0.00° | correct | 75 s / 510 s |
+| 2012-09-28 in-area | 5.7 s | 1.01 | 0.54 m (0.17 m) | 0.000 m, 0.00° | correct | 78 s / 531 s |
+| 2012-10-28 in-area | 6.6 s | 1.04 | 0.73 m (0.19 m) | 0.010 m, 0.01° | correct | 77 s / 616 s |
+| 2012-02-02 out-of-area | — | — | — | — | no anchor | 53 s / 480 s |
+| 2012-03-17 out-of-area | — | — | — | — | no anchor | 345 s / 480 s |
+| 2012-09-28 out-of-area | — | — | — | — | no anchor | 660 s / 480 s |
+| 2012-10-28 out-of-area | — | — | — | — | no anchor | 498 s / 480 s |
+
+**Under the preregistered rule the mode works on this holdout:** every in-area run anchored
+correctly within 7 s of data, and no run anchored wrongly; none of the four runs outside the
+stored area anchored.
+
+Outside the stored area the search never stops, and two of the four runs took longer than their
+data (660 s and 498 s for 480 s): a session that drives away from the store would fall behind
+real time. Bounding the search cost (fewer candidates per search, or a pause after repeated
+failures) is the next change before the mode can leave experimental; it needs its own check that
+the in-area anchors above still hold.
