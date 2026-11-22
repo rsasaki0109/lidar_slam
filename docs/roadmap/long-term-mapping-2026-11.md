@@ -1006,3 +1006,74 @@ is placed, not by the change mode. What holds in every analysis: both change mod
 points to about half of append (0.44–0.65) with S ≥ 0.99, and B keeps more new structure than
 A (by 2.7–22 points of N). The absolute N depends on the reference placement; a placement that
 uses the update's own map and the old map together is the next fix to the measure.
+
+## Start an update anywhere in the store (development, 2026-11-22)
+
+Startup registration only searched stored keyframes within 3 m of a given pose, or within 5 m
+of the first stored submap, for the first 10 s of data; on NCLT the update had to be trimmed and
+given a ground-truth start. `live --relocalize-anywhere` (experimental) instead:
+
+- ranks every stored keyframe by Scan Context distance and registers only candidates closer
+  than 0.18 (NCLT development: correct top candidates had median distance 0.13 and 90% below
+  0.19; wrong ones median 0.23, mostly places the store does not hold), with the existing
+  corroboration by a neighbouring keyframe and refusal when two verified candidates disagree;
+- tries one keyframe every 2 s of data for as long as the session runs, and anchors only when
+  two such searches give session transforms within 0.5 m and 2°;
+- keeps at most 600 queued scans for change detection while it searches.
+
+Development, store = 2012-01-15 (NCLT), each session from its first scan, no initial pose:
+
+| Session | Anchored after | Path offset from the ground-truth placement (RMS, max) | Processing |
+| --- | ---: | --- | ---: |
+| 2012-05-11 | 87.1 s | 1.48 m, 3.79 m | 196 s for 504 s of data |
+| 2012-06-15 | 135.5 s | 1.33 m, 3.58 m | 132 s for 520 s |
+| 2012-05-26 (from +83 s) | 3.4 s | 0.52 m, 0.74 m | 81 s for 457 s |
+
+The ground-truth placement itself is only good to 1–2 m here (reference sessions needed
+1.3–2.3 m of ICP correction above), so the offsets show the anchors are in the right place,
+not how accurate they are. A holdout run with a preregistered rule (anchor rate, wrong anchors
+checked by ICP against the stored map) is still to come.
+
+### Holdout check of `--relocalize-anywhere` (preregistered 2026-11-22, before the run)
+
+The method is frozen as committed in `75c20ee4` (Scan Context gate 0.18, one search per 2 s,
+two agreeing searches within 0.5 m and 2°). Its thresholds were chosen on the development store
+only; the holdout sessions below have not been run with it.
+
+- **Store:** the NCLT holdout base store (2012-02-18 pass, `h_store`).
+- **Sessions:** 2012-11-04, 2012-11-16 (from its first scan, not trimmed) and 2012-11-17, each
+  `live --store COPY --relocalize-anywhere` with no initial pose, odometry and backend parameters
+  as in the NCLT evaluation.
+- **Correct anchor:** both (a) the session path placed by the anchor lies within 3.0 m RMS of the
+  same path placed by ground truth (each session's and the base's odometry fitted rigidly to their
+  NCLT ground truth; that placement is itself good to 1–2 m), and (b) point-to-plane ICP of the
+  session's map, placed by the anchor, against the stored base map moves it by at most 1.0 m with
+  a median residual of at most 0.3 m.
+- **Rule:** the mode works on the holdout if every session anchors correctly within 180 s of
+  data and no session anchors wrongly. A session that never anchors is a miss, not a wrong anchor;
+  a wrong anchor fails the rule outright. Anchor time and processing time are reported.
+
+#### Holdout results (2026-11-22)
+
+| Session | Anchored after | Offset from the ground-truth placement (RMS) | ICP correction (median residual) | Preregistered verdict |
+| --- | ---: | ---: | ---: | --- |
+| 2012-11-04 | 6.1 s | 0.80 m | 1.29 m (0.16 m) | wrong (ICP > 1.0 m) |
+| 2012-11-16 | 15.1 s | 1.07 m | 1.48 m (0.18 m) | wrong (ICP > 1.0 m) |
+| 2012-11-17 | 25.0 s | 0.83 m | 0.28 m (0.15 m) | correct |
+
+All three sessions anchored from their first scan without a start pose, in 6–25 s of data;
+processing took 74–92 s for 440–570 s of data. **Under the preregistered rule the mode fails**:
+two sessions exceed the 1.0 m ICP bound, which the rule counts as wrong anchors.
+
+A post-hoc check (not preregistered) ran the same ICP from the ground-truth placement as well.
+In all three sessions the two ICP runs converged to the same pose (0.00 m apart), and ICP moved
+the ground-truth placement by 2.12, 1.35 and 1.28 m. So the 1.0 m bound fails the ground-truth
+placement too: ICP of a whole 400–570 s session map against the base map finds a best fit about
+1–2 m away from any single anchor, and the bound did not separate right from wrong anchors. No
+anchor was shown to be wrong. The bound was not checked on the development store before it was
+written, which is the mistake.
+
+The mode stays experimental. A next check would preregister a criterion calibrated on the
+development store, for example that ICP from the anchor and ICP from the ground-truth placement
+converge to the same pose, on sessions not used here, and would add sessions that never enter
+the stored area (no anchor expected).

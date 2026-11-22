@@ -1,0 +1,18 @@
+# RKO-LIO for KITTI raw drives fetched with scripts/fetch_kitti_raw_drive.py: Velodyne HDL-64E
+# (sync scans) and the 100 Hz OXTS IMU (base_link = OXTS body frame). Extrinsic from the KITTI
+# calibration, as in bench_report/data/kitti/raw05_2026-10-31/rig_kitti_raw.yaml.
+lidar_topic: /kitti/velo
+imu_topic: /kitti/imu
+base_frame: base_link
+extrinsic_imu2base_quat_xyzw_xyz: [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+extrinsic_lidar2base_quat_xyzw_xyz: [-0.007412088, 0.001015086, 0.000385188, 0.999971941, 0.810543972, -0.307054372, 0.802723995]
+initialization_phase: true
+deskew: false
+voxel_size: 0.25
+min_range: 0.7
+max_range: 100.0
+double_downsample: true
+max_iterations: 50
+convergence_criterion: 3.0e-05
+icp_keypoint_voxel_multiplier: 2.25
+initialization_max_gyro_rad_s: 0.02

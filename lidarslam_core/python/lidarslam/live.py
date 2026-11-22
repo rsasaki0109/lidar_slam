@@ -52,6 +52,8 @@ class Session:
     ``refine_visibility`` also counts free space before the first hit for new submaps.
     ``start_near_first_submap`` searches for a verified startup pose within 5 m of the first
     stored submap, when the operator knows that the recording starts in that area.
+    ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
+    and anchors once two keyframes agree on the session's place in the store.
     """
 
     def __init__(self, odometry_params: dict[str, Any], backend_params: dict[str, Any],
@@ -61,12 +63,14 @@ class Session:
                  initial_pose: list[float] | None = None,
                  track_store: bool = False, track_shared_surfaces: bool = False,
                  detect_changes: bool = False, filter_new_points: bool = False,
-                 start_near_first_submap: bool = False, refine_visibility: bool = False):
+                 start_near_first_submap: bool = False, refine_visibility: bool = False,
+                 relocalize_anywhere: bool = False):
         filter_new_points = filter_new_points or refine_visibility
         detect_changes = detect_changes or filter_new_points
-        if initial_pose is not None and start_near_first_submap:
-            raise ValueError('choose either initial_pose or start_near_first_submap')
-        localize = initial_pose is not None or start_near_first_submap
+        if sum([initial_pose is not None, start_near_first_submap, relocalize_anywhere]) > 1:
+            raise ValueError('choose one of initial_pose, start_near_first_submap and '
+                             'relocalize_anywhere')
+        localize = initial_pose is not None or start_near_first_submap or relocalize_anywhere
         if (track_store or track_shared_surfaces) and not localize:
             raise ValueError('store tracking requires a startup pose or launch-area search')
         self.out = Path(out_dir)
@@ -99,7 +103,8 @@ class Session:
             aligned = self._store._aligned_sessions()
             self._startup = StartupRelocalization(aligned, initial_pose,
                                                    track=track_store or track_shared_surfaces,
-                                                   shared_surfaces=track_shared_surfaces)
+                                                   shared_surfaces=track_shared_surfaces,
+                                                   anywhere=relocalize_anywhere)
             if detect_changes:
                 from lidarslam.map_changes import MapChanges
                 self._changes = MapChanges([path for path, _ in aligned],
@@ -274,7 +279,8 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
            initial_pose: list[float] | None = None,
            track_store: bool = False, track_shared_surfaces: bool = False,
            detect_changes: bool = False, filter_new_points: bool = False,
-           start_near_first_submap: bool = False, refine_visibility: bool = False) -> dict[str, Any]:
+           start_near_first_submap: bool = False, refine_visibility: bool = False,
+           relocalize_anywhere: bool = False) -> dict[str, Any]:
     """Plays a sensor log into a :class:`Session` and writes its live trajectory and timing.
 
     With ``realtime`` each message is handed over no earlier than its log time after the first
@@ -303,6 +309,7 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
                       track_shared_surfaces=track_shared_surfaces, detect_changes=detect_changes,
                       filter_new_points=filter_new_points,
                       start_near_first_submap=start_near_first_submap,
+                      relocalize_anywhere=relocalize_anywhere,
                       refine_visibility=refine_visibility)
     topics = [session.lidar_topic, session.imu_topic]
     with SensorLog(log_path) as sensor_log:
