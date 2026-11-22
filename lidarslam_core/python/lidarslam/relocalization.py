@@ -78,6 +78,12 @@ class KeyframeWindows:
 
 
 ANYWHERE_INTERVAL_SEC = 2.0
+# After a search that registered candidates and found nothing, the next one waits twice as long
+# (up to this, in data time): registering a candidate costs seconds, and outside the stored area
+# such searches made a session fall behind real time. A found candidate resets the interval.
+ANYWHERE_MAX_INTERVAL_SEC = 32.0
+# Scan Context distance below which match_anywhere registers a candidate (C++ matchAnywhere).
+ANYWHERE_DESCRIPTOR_GATE = 0.18
 
 
 def _agrees(a, b, meters, degrees):
@@ -106,6 +112,7 @@ class StartupRelocalization:
         self.anywhere = anywhere
         self._candidate = None
         self._last_search = -np.inf
+        self._search_interval = ANYWHERE_INTERVAL_SEC
         directories, transforms = zip(*aligned_sessions)
         windows = []
         for directory in directories:
@@ -179,7 +186,7 @@ class StartupRelocalization:
         else:
             if self.active and self.anywhere:
                 # A search of the whole store takes seconds: try one keyframe per interval.
-                if stamp - self._last_search < ANYWHERE_INTERVAL_SEC:
+                if stamp - self._last_search < self._search_interval:
                     return
                 self._last_search = stamp
             if self.active and self.prior is None:
@@ -187,6 +194,14 @@ class StartupRelocalization:
                 level_from_body = np.linalg.inv(frame) @ odometry
                 points = body_points @ level_from_body[:3, :3].T + level_from_body[:3, 3]
             match = self._match(frame, odometry, local_map, points)
+            if self.active and self.anywhere:
+                if match is not None:
+                    self._search_interval = ANYWHERE_INTERVAL_SEC
+                else:
+                    ranked = self.matcher.rank_anywhere(points, 1)
+                    if ranked and ranked[0][0] <= ANYWHERE_DESCRIPTOR_GATE:
+                        self._search_interval = min(2 * self._search_interval,
+                                                    ANYWHERE_MAX_INTERVAL_SEC)
             if match is None:
                 return
             reference, observed = match
