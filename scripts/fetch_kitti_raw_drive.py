@@ -177,7 +177,6 @@ def main() -> int:
                 (args.out / 'calib' / Path(member).name).write_bytes(calib.read(member))
 
     sync = zipfile.ZipFile(HttpFile(f'{BASE}/{name}/{name}_sync.zip'))
-    # A second reader for the images, so that alternating image and LiDAR reads keep their caches.
     sync_images = zipfile.ZipFile(HttpFile(f'{BASE}/{name}/{name}_sync.zip'))
     prefix = f'{args.date}/{name}_sync/'
     velo_stamps = stamps(sync.read(prefix + 'velodyne_points/timestamps.txt'))
@@ -197,35 +196,41 @@ def main() -> int:
     writer.open()
     velo = writer.add_connection('/kitti/velo', 'sensor_msgs/msg/PointCloud2', typestore=typestore)
     imu = writer.add_connection('/kitti/imu', 'sensor_msgs/msg/Imu', typestore=typestore)
-    messages = []
-    for i, stamp in enumerate(oxts_stamps):
-        if window[0] <= stamp <= window[1]:
-            values = np.array(extract.read(f'{xprefix}data/{i:010d}.txt').split(), dtype=float)
-            messages.append((stamp, 'imu', values))
-    for i in frames:
-        messages.append((velo_stamps[i], 'velo', i))
-    messages.sort(key=lambda m: (m[0], m[1] != 'imu'))
+
+    # The archives store each folder's files in no particular order, so members are read in
+    # archive order (one sequential pass over the range) and written to the bag as they come;
+    # bag readers return messages sorted by time.
+    def in_archive_order(archive, names):
+        offsets = {i.filename: i.header_offset for i in archive.infolist()}
+        return sorted(names, key=lambda item: offsets[item[0]])
+
+    wanted = [(f'{xprefix}data/{i:010d}.txt', i) for i, stamp in enumerate(oxts_stamps)
+              if window[0] <= stamp <= window[1]]
+    for member, i in in_archive_order(extract, wanted):
+        values = np.array(extract.read(member).split(), dtype=float)
+        writer.write(imu, oxts_stamps[i], typestore.serialize_cdr(
+            imu_message(typestore, oxts_stamps[i], values), 'sensor_msgs/msg/Imu'))
+
     written = 0
-    for stamp, kind, payload in messages:
-        if kind == 'imu':
-            writer.write(imu, stamp, typestore.serialize_cdr(imu_message(typestore, stamp, payload),
-                                                             'sensor_msgs/msg/Imu'))
-            continue
-        raw = np.frombuffer(sync.read(f'{prefix}velodyne_points/data/{payload:010d}.bin'),
-                            dtype='<f4').reshape(-1, 4)
+    for member, i in in_archive_order(
+            sync, [(f'{prefix}velodyne_points/data/{i:010d}.bin', i) for i in frames]):
+        raw = np.frombuffer(sync.read(member), dtype='<f4').reshape(-1, 4)
         cloud = voxel_downsample(raw, args.voxel)
-        writer.write(velo, stamp, typestore.serialize_cdr(cloud_message(typestore, stamp, cloud),
-                                                          'sensor_msgs/msg/PointCloud2'))
-        if (payload - args.first) % args.image_step == 0:
-            png = sync_images.read(f'{prefix}image_02/data/{payload:010d}.png')
-            Image.open(io.BytesIO(png)).convert('RGB').save(
-                images / f'{payload:010d}.jpg', quality=args.jpeg_quality)
+        writer.write(velo, velo_stamps[i], typestore.serialize_cdr(
+            cloud_message(typestore, velo_stamps[i], cloud), 'sensor_msgs/msg/PointCloud2'))
         written += 1
         if written % 200 == 0:
-            print(f'{written}/{len(frames)} frames', flush=True)
+            print(f'{written}/{len(frames)} LiDAR frames', flush=True)
+
+    shots = [(f'{prefix}image_02/data/{i:010d}.png', i) for i in frames
+             if (i - args.first) % args.image_step == 0]
+    for n, (member, i) in enumerate(in_archive_order(sync_images, shots), start=1):
+        Image.open(io.BytesIO(sync_images.read(member))).convert('RGB').save(
+            images / f'{i:010d}.jpg', quality=args.jpeg_quality)
+        if n % 200 == 0:
+            print(f'{n}/{len(shots)} image frames', flush=True)
     writer.close()
-    print(f'{written} LiDAR frames, {sum(m[1] == "imu" for m in messages)} IMU samples, '
-          f'images every {args.image_step}')
+    print(f'{written} LiDAR frames, {len(wanted)} IMU samples, {len(shots)} images')
     return 0
 
 
