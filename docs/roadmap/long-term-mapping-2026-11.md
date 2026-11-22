@@ -1052,3 +1052,28 @@ only; the holdout sessions below have not been run with it.
 - **Rule:** the mode works on the holdout if every session anchors correctly within 180 s of
   data and no session anchors wrongly. A session that never anchors is a miss, not a wrong anchor;
   a wrong anchor fails the rule outright. Anchor time and processing time are reported.
+
+#### Holdout results (2026-11-22)
+
+| Session | Anchored after | Offset from the ground-truth placement (RMS) | ICP correction (median residual) | Preregistered verdict |
+| --- | ---: | ---: | ---: | --- |
+| 2012-11-04 | 6.1 s | 0.80 m | 1.29 m (0.16 m) | wrong (ICP > 1.0 m) |
+| 2012-11-16 | 15.1 s | 1.07 m | 1.48 m (0.18 m) | wrong (ICP > 1.0 m) |
+| 2012-11-17 | 25.0 s | 0.83 m | 0.28 m (0.15 m) | correct |
+
+All three sessions anchored from their first scan without a start pose, in 6–25 s of data;
+processing took 74–92 s for 440–570 s of data. **Under the preregistered rule the mode fails**:
+two sessions exceed the 1.0 m ICP bound, which the rule counts as wrong anchors.
+
+A post-hoc check (not preregistered) ran the same ICP from the ground-truth placement as well.
+In all three sessions the two ICP runs converged to the same pose (0.00 m apart), and ICP moved
+the ground-truth placement by 2.12, 1.35 and 1.28 m. So the 1.0 m bound fails the ground-truth
+placement too: ICP of a whole 400–570 s session map against the base map finds a best fit about
+1–2 m away from any single anchor, and the bound did not separate right from wrong anchors. No
+anchor was shown to be wrong. The bound was not checked on the development store before it was
+written, which is the mistake.
+
+The mode stays experimental. A next check would preregister a criterion calibrated on the
+development store, for example that ICP from the anchor and ICP from the ground-truth placement
+converge to the same pose, on sessions not used here, and would add sessions that never enter
+the stored area (no anchor expected).
