@@ -85,7 +85,7 @@ ANYWHERE_INTERVAL_SEC = 2.0
 # time. A found candidate resets the interval.
 ANYWHERE_MAX_INTERVAL_SEC = 8.0
 # Scan Context distance below which match_anywhere registers a candidate (C++ matchAnywhere).
-ANYWHERE_DESCRIPTOR_GATE = 0.18
+ANYWHERE_DESCRIPTOR_GATE = 0.26
 
 
 def _agrees(a, b, meters, degrees):

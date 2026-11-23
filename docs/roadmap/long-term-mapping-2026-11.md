@@ -1490,3 +1490,34 @@ work of 0.18 (with the background worker this delays searches, not tracking).
 Next: a preregistered check of gate 0.26 with v2 as the anchor check and the anchor time
 counted from entering the store (ground truth, decided before the run), on sessions not used
 so far; the remaining unused NCLT sessions are few, so a new part of the campus is likely needed.
+
+### Check of the Scan Context gate at 0.26 in a new part of the campus (preregistered 2026-11-23, before the run)
+
+The development replay above raised the gate of `matchAnywhere` from 0.18 to 0.26
+(`startup_relocalization.hpp`, `ANYWHERE_DESCRIPTOR_GATE`). This check decides whether that
+holds on data not used for it. Everything below is fixed before any of these runs.
+
+- **Data.** Only NCLT sessions never used so far, in a new 150 m square that does not overlap the
+  old one, chosen from 1 Hz ground-truth positions only (`select_anywhere_gate.py`,
+  `anywhere_gate_windows.json`): x −60…90 m, y −260…−110 m.
+  - Store: 2012-01-08 (its pass ±10 s, 468 s).
+  - Sessions: 2012-02-04, 2012-02-12, 2012-02-19, 2012-04-29, 2013-01-10, 2013-04-05.
+  - Each gives an in-area run (its pass ±10 s; 412, 370, 431, 228, 227 and 250 s) and an
+    out-of-area run (480 s, 2013-01-10 255 s; at least 100 m from the store's path).
+- **Runs** (`holdout_anywhere_gate.sh`), as in the live checks: `live --relocalize-anywhere
+  --realtime` on a copy of the store, in-area and out-of-area runs of a session in parallel.
+- **Entering the store.** The first ground-truth position of the run within 5 m (XY) of a
+  ground-truth position of the store's window. A run that never comes that close is reported and
+  left out of (a).
+- **Anchor check v2**, as defined above (`--gt-starts` with `anywhere_gt_starts.txt`): an anchor
+  is correct when ICP from it reaches the best fit near the ground truth (within 0.25 m and 0.5°)
+  and it lies within 4.0 m RMS of the ground-truth placement.
+- **Rule.**
+  - **(a)** Every in-area run that enters the store anchors, correctly by v2, within 60 s of data
+    after entering it.
+  - **(b)** No run anchors wrongly: no anchor that v2 finds wrong, and no anchor in an
+    out-of-area run.
+  - **(c)** Every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s.
+
+  The gate stays at 0.26 only if (a), (b) and (c) all hold; otherwise it goes back to 0.18. The
+  result is reported whatever the outcome, with the anchor time from the start of each run as well.
