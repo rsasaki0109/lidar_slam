@@ -1546,3 +1546,37 @@ it did not make anchoring prompt either. The development replay credited 0.26 mo
 (2012-03-31); here three of six in-area runs were slow or never anchored with it. Why they did
 not anchor (no candidate under the gate, or candidates that registration rejected) is not known
 from this run and would be a post-hoc question on data that is now used.
+
+#### Why the gate-0.26 check failed (post hoc, 2026-11-23)
+
+Not preregistered; these sessions are used now. Three in-area runs were recorded again with every
+keyframe's search input (`record_anywhere_queries.py`) and diagnosed
+(`registration_diagnosis.py`: the session placed in the store by ICP from the ground truth;
+`anywhere_gate_posthoc.jsonl`):
+
+- **Registration is not what fails.** From its true pose, `match_with_reference` verifies 33 of
+  36, 9 of 12 and 118 of 120 sampled in-store keyframes (2012-02-12, 2012-04-29, 2012-02-04), and
+  most in-store keyframes with a candidate under 0.18 have a correct one (within 3 m and 20°).
+- **The real-time search with the wide gate is.** The same inputs replayed in line anchor early,
+  and the shipped gate in real time does too:
+
+  | Session | Check (0.26, real time) | In line, 0.26 | In line, 0.18 | Real time, 0.18 |
+  | --- | ---: | ---: | ---: | ---: |
+  | 2012-02-04 | 83.0 s | 3.4 s | 3.4 s | 6.8 s |
+  | 2012-02-12 | none | 77.1 s | 86.1 s | 89.4 s |
+  | 2012-04-29 | none | (not finished) | 226.0 s | — |
+
+  At 0.26 a search registers several times as many candidates (development: 4–25×), each taking
+  seconds; with the search on the worker the next search waits for it, so in real time far
+  fewer keyframes are searched. 2012-02-12 is in the store only briefly (about 73–90 s, then from
+  about 298 s), and two agreeing searches did not fit. The wider gate made the real-time mode
+  worse, not better; the development replay, in line, could not show this.
+- **"Entering the store" overstated the time in it.** 2012-04-29 first comes within 5 m of the
+  store's path at 70.4 s but is in the store for only a few seconds then and again from about
+  207 s to its end (228 s); its in-line anchor at 226 s is late by the rule, but there was little
+  to anchor on. A future rule should count seconds of data in the store, not seconds since first
+  entering it.
+
+The gate stays at 0.18. What limits `--relocalize-anywhere` live is search cost per keyframe in
+real time, which a later change could bound (for example, register only the closest few
+candidates per search), checked in real time.
