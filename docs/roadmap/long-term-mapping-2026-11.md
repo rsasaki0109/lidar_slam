@@ -1366,3 +1366,30 @@ sessions of the first live check also excluded; `anywhere_live2_windows.json`):
   (`holdout_anywhere_live2.sh`): every in-area run anchors correctly within 180 s of data; no run
   anchors wrongly; every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s. Reported whatever
   the outcome.
+
+#### Second live check results (2026-11-23)
+
+All six runs as preregistered (`holdout_anywhere_live2.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | `converged_apart` | Verdict | Pose lag p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| 2012-03-31 in-area (466 s) | 175.4 s | 2.20 | 3.169 m, 3.00° | **wrong** | 0.026 / 0.072 s |
+| 2012-08-04 in-area (425 s) | **222.7 s** | 1.11 | 0.000 m | correct, late | 0.038 / 0.109 s |
+| 2013-02-23 in-area (369 s) | 7.0 s | 0.55 | 0.000 m | correct | 0.044 / 0.101 s |
+| 2012-03-31 out-of-area (480 s) | — | — | — | no anchor | 0.030 / 0.079 s |
+| 2012-08-04 out-of-area (480 s) | — | — | — | no anchor | 0.032 / 0.074 s |
+| 2013-02-23 out-of-area (480 s) | — | — | — | no anchor | 0.041 / 0.112 s |
+
+(c) now holds on every run (max pose lag 0.11 s), so the backend worker does what it was for. But
+(a) fails (2012-08-04 anchored after 222.7 s, beyond 180 s; 2012-03-31 anchored wrongly) and (b)
+fails (the 2012-03-31 anchor). **Under the preregistered rule the mode does not work live on this
+store**, and it stays experimental.
+
+Post hoc, about the 2012-03-31 anchor (not a change of verdict): ICP from the anchor moved it by
+0.13 m to a median residual of 0.131 m, while ICP from the ground-truth placement moved that by
+1.67 m to a higher residual, 0.169 m, 3.2 m and 3.0° away. The anchor is the better fit to the
+stored map by this measure, so the calibrated check, which takes the ground-truth start as the
+reference basin, may have called a good anchor wrong; it may equally be a wrong place that fits
+well. The check cannot tell these apart, which is its limit: the ground-truth placement is only
+good to 1–2 m and a few degrees. The late anchors (175 s and 223 s, against 7–48 s on the other
+five in-area runs of both live checks) are the other open point.
