@@ -1436,3 +1436,175 @@ check 2), whose anchor is itself the best fit (median residual 0.131 m against 0
 the ground-truth starts). v2 must be preregistered before it decides anything; with it, the open
 point of `--relocalize-anywhere` is the late anchors on the 2012-01-22 store (the Scan Context
 gate), not wrong anchors.
+
+### The Scan Context gate across seasons (development, 2026-11-23)
+
+Post hoc on sessions already used (the development store and every run of the second holdout
+and both live checks are development data now), not a check of anything. Each of 25 sessions
+(`anywhere_gate_jobs.txt`) was run once with every keyframe's search input saved and no search
+(`record_anywhere_queries.py`); until a session anchors these inputs do not depend on the search.
+`gate_study.py` then replays `--relocalize-anywhere` in line at gates 0.18–0.26: the same
+candidates, registration, consensus, back-off and two-search agreement, each candidate registered
+once for all gates. At 0.18 the replay gives the current code's anchor time exactly (2012-05-11:
+92.79 s replayed and run; 2012-06-15: 140.98 s against 141.0 s). `gate_analysis.py` places every
+verified candidate and anchor against the ground-truth placement and marks a search in the store
+when the ground truth puts its keyframe within 5 m of the base session's path
+(`anywhere_gate_study.jsonl`).
+
+**No gate up to 0.26 gave a wrong candidate.** Of the 271 verified candidates of the replayed
+searches (counted once per gate), none was more than 4 m RMS from the ground-truth placement and
+none was found outside the store; none of the 12 out-of-area runs anchored at any gate. Registration, not the gate, keeps
+wrong places out on these data.
+
+**Anchor time counts time outside the store.** Several "in-area" windows start outside the
+stored area: 2012-08-04 (second live check) enters it after 75.2 s, 2012-05-11 and 2012-06-15
+after about 80 s. Seconds from entering the store to the anchor, 13 in-area runs:
+
+| Run | Enters store | 0.18 | 0.20 | 0.22 | 0.24 | 0.26 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2012-03-31 (live 2, winter store) | 9.7 s | **242.3** | 96.1 | 161.8 | 88.7 | 10.2 |
+| 2012-08-04 (live 2, winter store) | 75.2 s | 51.2 | 136.5 | 24.0 | 24.0 | 49.0 |
+| 2012-06-15 (development) | 79.6 s | 61.4 | 61.4 | 58.1 | 58.1 | 55.9 |
+| 2012-05-26 (development) | 0.1 s | 53.0 | 10.3 | 10.3 | 15.9 | 15.9 |
+| 9 other runs | 0.1–21.1 s | 3.3–12.6 | 3.3–11.0 | 3.3–13.8 | 3.3–11.6 | 3.3–13.1 |
+| median / max | | 7.1 / 242.3 | 7.1 / 136.5 | 7.4 / 161.8 | 8.6 / 88.7 | 8.0 / 55.9 |
+
+All anchors are within 2.32 m RMS of the ground-truth placement (the 2.3 m one is the 2012-03-31
+placement that v2 found to be the best fit). The time is not monotonic in the gate: a higher
+gate also lets more searches that find nothing double the wait (up to 8 s), so the searches
+that fall in the store change. Only 0.26 keeps every run within 60 s of entering the store, and
+that rests mostly on one run (2012-03-31).
+
+**Cost.** Candidates under the gate that a search registers (an upper bound: a disagreement
+stops early), all runs:
+
+| Gate | In-area searches / candidates | Out-of-area searches / candidates |
+| --- | --- | --- |
+| 0.18 | 193 / 113 | 1311 / 100 |
+| 0.22 | 137 / 266 | 621 / 1127 |
+| 0.26 | 94 / 522 | 604 / 2567 |
+
+A registration takes seconds, so out of the store 0.26 costs about 25 times the registration
+work of 0.18 (with the background worker this delays searches, not tracking).
+
+Next: a preregistered check of gate 0.26 with v2 as the anchor check and the anchor time
+counted from entering the store (ground truth, decided before the run), on sessions not used
+so far; the remaining unused NCLT sessions are few, so a new part of the campus is likely needed.
+
+### Check of the Scan Context gate at 0.26 in a new part of the campus (preregistered 2026-11-23, before the run)
+
+The development replay above raised the gate of `matchAnywhere` from 0.18 to 0.26
+(`startup_relocalization.hpp`, `ANYWHERE_DESCRIPTOR_GATE`). This check decides whether that
+holds on data not used for it. Everything below is fixed before any of these runs.
+
+- **Data.** Only NCLT sessions never used so far, in a new 150 m square that does not overlap the
+  old one, chosen from 1 Hz ground-truth positions only (`select_anywhere_gate.py`,
+  `anywhere_gate_windows.json`): x −60…90 m, y −260…−110 m.
+  - Store: 2012-01-08 (its pass ±10 s, 468 s).
+  - Sessions: 2012-02-04, 2012-02-12, 2012-02-19, 2012-04-29, 2013-01-10, 2013-04-05.
+  - Each gives an in-area run (its pass ±10 s; 412, 370, 431, 228, 227 and 250 s) and an
+    out-of-area run (480 s, 2013-01-10 255 s; at least 100 m from the store's path).
+- **Runs** (`holdout_anywhere_gate.sh`), as in the live checks: `live --relocalize-anywhere
+  --realtime` on a copy of the store, in-area and out-of-area runs of a session in parallel.
+- **Entering the store.** The first ground-truth position of the run within 5 m (XY) of a
+  ground-truth position of the store's window. A run that never comes that close is reported and
+  left out of (a).
+- **Anchor check v2**, as defined above (`--gt-starts` with `anywhere_gt_starts.txt`): an anchor
+  is correct when ICP from it reaches the best fit near the ground truth (within 0.25 m and 0.5°)
+  and it lies within 4.0 m RMS of the ground-truth placement.
+- **Rule.**
+  - **(a)** Every in-area run that enters the store anchors, correctly by v2, within 60 s of data
+    after entering it.
+  - **(b)** No run anchors wrongly: no anchor that v2 finds wrong, and no anchor in an
+    out-of-area run.
+  - **(c)** Every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s.
+
+  The gate stays at 0.26 only if (a), (b) and (c) all hold; otherwise it goes back to 0.18. The
+  result is reported whatever the outcome, with the anchor time from the start of each run as well.
+
+#### Results of the gate-0.26 check (2026-11-23)
+
+All twelve runs as preregistered (`holdout_anywhere_gate.jsonl`):
+
+| Session | In-area run | Enters store | Anchored after | After entering | v2 | Offset from `T_g` | Out-of-area run |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| 2012-02-04 | 412 s | 0.1 s | 83.0 s | **82.9 s** | correct | 0.25 m | no anchor |
+| 2012-02-12 | 370 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2012-02-19 | 431 s | 98.3 s | 141.0 s | 42.7 s | correct | 1.17 m | no anchor |
+| 2012-04-29 | 228 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2013-01-10 | 227 s | 0.1 s | 6.8 s | 6.7 s | correct | 0.34 m | no anchor |
+| 2013-04-05 | 250 s | 0.1 s | 13.8 s | 13.7 s | correct | 1.16 m | no anchor (480 s) |
+
+(b) holds: every anchor is correct by v2 and no out-of-area run anchored. (c) holds: pose lag
+p95 ≤ 0.061 s and max ≤ 0.304 s in every run. **(a) fails**: 2012-02-04 anchored 82.9 s after
+entering the store, and 2012-02-12 and 2012-04-29 (299 s and 157 s of data after entering) did
+not anchor at all. **Under the preregistered rule the gate goes back to 0.18**, and
+`--relocalize-anywhere` stays experimental.
+
+What this says: on a new store and new sessions, a wider gate did not bring wrong anchors, but
+it did not make anchoring prompt either. The development replay credited 0.26 mostly to one run
+(2012-03-31); here three of six in-area runs were slow or never anchored with it. Why they did
+not anchor (no candidate under the gate, or candidates that registration rejected) is not known
+from this run and would be a post-hoc question on data that is now used.
+
+#### Why the gate-0.26 check failed (post hoc, 2026-11-23)
+
+Not preregistered; these sessions are used now. Three in-area runs were recorded again with every
+keyframe's search input (`record_anywhere_queries.py`) and diagnosed
+(`registration_diagnosis.py`: the session placed in the store by ICP from the ground truth;
+`anywhere_gate_posthoc.jsonl`):
+
+- **Registration is not what fails.** From its true pose, `match_with_reference` verifies 33 of
+  36, 9 of 12 and 118 of 120 sampled in-store keyframes (2012-02-12, 2012-04-29, 2012-02-04), and
+  most in-store keyframes with a candidate under 0.18 have a correct one (within 3 m and 20°).
+- **The real-time search with the wide gate is.** The same inputs replayed in line anchor early,
+  and the shipped gate in real time does too:
+
+  | Session | Check (0.26, real time) | In line, 0.26 | In line, 0.18 | Real time, 0.18 |
+  | --- | ---: | ---: | ---: | ---: |
+  | 2012-02-04 | 83.0 s | 3.4 s | 3.4 s | 6.8 s |
+  | 2012-02-12 | none | 77.1 s | 86.1 s | 89.4 s |
+  | 2012-04-29 | none | 219.2 s | 226.0 s | — |
+
+  At 0.26 a search registers several times as many candidates (development: 4–25×), each taking
+  seconds; with the search on the worker the next search waits for it, so in real time far
+  fewer keyframes are searched. 2012-02-12 is in the store only briefly (about 73–90 s, then from
+  about 298 s), and two agreeing searches did not fit. The wider gate made the real-time mode
+  worse, not better; the development replay, in line, could not show this.
+- **"Entering the store" overstated the time in it.** 2012-04-29 first comes within 5 m of the
+  store's path at 70.4 s but is in the store for only a few seconds then and again from about
+  207 s to its end (228 s); its in-line anchor at 226 s is late by the rule, but there was little
+  to anchor on. A future rule should count seconds of data in the store, not seconds since first
+  entering it.
+
+The gate stays at 0.18. What limits `--relocalize-anywhere` live is search cost per keyframe in
+real time, which a later change could bound (for example, register only the closest few
+candidates per search), checked in real time.
+
+#### Replaying the real-time search (post hoc, 2026-11-23)
+
+`gate_study.py --realtime` replays the background search of `live --realtime`: a search started
+at a keyframe ends its measured seconds later in data time (`--slowdown` scales that), keyframes
+before then are not searched, and its result is taken at the first keyframe after it ends.
+`--caps` registers at most that many candidates per search. On the three recorded runs it gives
+the real-time runs' anchor times (`anywhere_realtime_cap_replay.jsonl`, slowdown 1):
+
+| Session | Real time, 0.18 (run / replay) | Real time, 0.26 (check / replay) | 0.26, at most 3 / 2 candidates |
+| --- | ---: | ---: | ---: |
+| 2012-02-04 | 6.8 s / 5.8 s | 83.0 s / 83.0 s | 12.5 s / 11.2 s |
+| 2012-02-12 | 89.4 s / 89.4 s | none / none | 313.0 s / 307.5 s |
+| 2012-04-29 | — / none | none / none | none / none |
+
+- At 0.18 the cap changes nothing: few candidates pass the gate, a search takes 0.05 s (median),
+  and the real-time search behaves like the in-line one.
+- At 0.26 a search took 8–28 s (median) and up to 90 s with eight candidates. Capping at two or
+  three shortens it but does not bring back what the in-line search found (2012-02-12: 77 s in
+  line, 307 s or more capped).
+- **A single registration takes 4–7 s** here, on repeated calls too (it is not a one-time
+  preparation of the stored keyframe; preparing the query takes 0.04 s). This, not the number of
+  candidates, is what makes a wider gate unaffordable in real time.
+
+So capping candidates is not worth a product change. The lever is the cost of one registration
+(GICP against the stored keyframe windows, up to three neighbours, three stages, then
+confirmation), which can be measured directly and compared with identical verification
+outcomes on development data before any gate is widened again.
