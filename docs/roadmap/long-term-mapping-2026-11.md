@@ -1212,3 +1212,39 @@ The worker run's anchor on the development store is correct under the calibrated
 from the anchor and from the ground truth 0.00 m apart; 1.43 m RMS from the ground-truth
 placement). Searches no longer hold up tracking; the mode stays experimental until a live run
 on a store not used for its development has been checked.
+
+### NCLT map update with one reference placement for every arm (2026-11-22)
+
+The NCLT measure placed the references by ICP against each arm's own export, so the scored region
+and the new-structure reference differed between arms. `evaluate_nclt_map_update.py
+--align-target` takes one map as the ICP target for every arm; here it is the append arm C's
+export, which holds both the old and the new structure. `chain_shared.sh` re-runs one chain
+(base store, update mapped alone, known start, arms A, B and C, both references) and scores it
+both ways (`rerun_{d,h}_{own,shared}_{A,B,C}.json`). Both chains were re-run from scratch in this
+environment.
+
+| Chain | Arm | Ghost points (own / shared) | vs C (shared) | S (shared) | N (own / shared) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| development | A, `--filter-new-points` | 13,074 / 11,753 | 0.58 | 0.998 | 87.7 / 86.3 % |
+| development | B, `--refine-visibility` | 12,950 / 11,893 | 0.59 | 0.999 | 91.3 / 91.6 % |
+| development | C, append | 20,104 / 20,104 | 1.00 | 1.000 | 95.2 / 95.2 % |
+| holdout (re-run, post hoc) | A | 45,474 / 43,834 | 0.72 | 0.994 | 91.0 / 54.4 % |
+| holdout (re-run, post hoc) | B | 42,151 / 42,542 | 0.70 | 0.994 | 57.1 / 58.5 % |
+| holdout (re-run, post hoc) | C | 60,613 / 60,613 | 1.00 | 1.000 | 67.2 / 67.2 % |
+
+The development chain reproduces the committed one closely (arm C: 20,104 ghost points and N
+95.2 % against 20,813 and 94.9 %; the update was trimmed 81 s instead of 83 s). **The holdout
+chain does not reproduce the committed holdout result**: the base map already differs (195,113
+scored points against 194,009, and 9.3 % of it counted as ghost against 15.9 %), and arm C now
+has G 14.7 % and N 67.2 % against 9.96 % and 99.1 %. The committed holdout was run in another
+environment with an earlier build, and its runs are gone, so the cause is not known. With its own
+placement, arm A's N on the holdout re-run jumps to 91.0 % because its references are placed
+differently (2.07 m vs 1.86 m correction), the artefact the shared placement removes.
+
+What holds under the shared placement on both chains: both change modes cut ghost points to
+0.58–0.72 of append with S ≥ 0.99, and B keeps at least as much new structure as A (91.6 vs
+86.3 %, 58.5 vs 54.4 %). The absolute N of the holdout chain is not stable across environments
+(99 % then, 67 % now, for append), so the holdout decision recorded above (B helps, N ≥ 0.85)
+rests on a number that this re-run does not reproduce; that decision stands as recorded, with
+this caveat. Any further change to the change modes needs a new holdout chain, preregistered,
+and run and scored in one environment.
