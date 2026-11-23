@@ -1293,3 +1293,15 @@ All six runs as preregistered (`holdout_anywhere_live.jsonl`):
 anchor, none of the out-of-area runs anchored), but **(c) fails**: two in-area runs fell behind
 real time by up to 32 s. **Under the preregistered rule the mode does not work live on this
 store**, and it stays experimental.
+
+Post-hoc diagnosis (not preregistered): 2012-08-20 in-area was played in real time again, alone,
+once with `--relocalize-anywhere` and once with no store at all (`anywhere_live_lag_probe.jsonl`).
+Both fell behind the same way (p95 19.9 s and 18.0 s, max 30.9 s and 26.0 s), and the per-pose lag
+was below 0.13 s for the first 300 s in both, so the search is not the cause. The lag builds up
+from about 420 s of data, where the path returns near its start: the backend registers a
+distance-based loop candidate on every new submap (most are then skipped as redundant), and each
+of those keyframes held tracking for 3.1–3.6 s. The failure of (c) is therefore a property of the
+live backend's loop closure, present without a store; `--relocalize-anywhere` itself met (a) and
+(b). Bounding the backend's loop-candidate work in live sessions (fewer candidates per submap, or
+loop closure off the tracking path like the search) is the next change, and it needs a new
+preregistered live check, on sessions not used here, before the mode can leave experimental.

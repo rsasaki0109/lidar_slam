@@ -1,0 +1,2 @@
+{"run": "2012-08-20 in-area, played alone", "mode": "--relocalize-anywhere", "lag_seconds": {"p50": 0.01950879213927692, "p95": 19.900902054610015, "max": 30.926273817977744}}
+{"run": "2012-08-20 in-area, played alone", "mode": "no store", "lag_seconds": {"p50": 0.018385537656286033, "p95": 17.984607202609368, "max": 25.9742885396181}}
