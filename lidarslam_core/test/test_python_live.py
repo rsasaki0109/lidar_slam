@@ -80,3 +80,38 @@ def test_replay_writes_the_live_trajectory_and_timing(tmp_path: Path) -> None:
     timing = json.loads((out / 'live_timing.json').read_text())
     assert timing['realtime'] is True and timing['speed'] == 20.0
     assert timing['lag_seconds']['max'] >= timing['lag_seconds']['p50']
+
+
+def test_background_loop_search_keeps_the_final_outputs(tmp_path: Path) -> None:
+    # With the backend's loop search on a worker thread (live --realtime) the live corrections
+    # depend on timing, but the loop edges and every output after the pass are the in-line ones.
+    log = tmp_path / 'log'
+    _write_log(log)
+    params = {**BACKEND_PARAMS, 'causal_trajectory_output': True}
+    mapping.run(log, ODOMETRY_PARAMS, params, tmp_path / 'inline')
+    mapping.run(log, ODOMETRY_PARAMS, {**params, 'background_loop_search': True},
+                tmp_path / 'worker')
+    for name in ('odometry_tum.txt', 'trajectory_raw.tum', 'trajectory_optimized.tum',
+                 'loop_edges.csv', 'map.pcd'):
+        assert ((tmp_path / 'inline' / name).read_bytes()
+                == (tmp_path / 'worker' / name).read_bytes()), name
+    causal = (tmp_path / 'worker' / 'trajectory_causal.tum').read_text().split('\n')
+    raw = (tmp_path / 'worker' / 'trajectory_raw.tum').read_text().split('\n')
+    assert len([line for line in causal if line]) > 0 and len(raw) > 0
+
+
+def test_a_realtime_replay_runs_the_backend_loop_search_on_a_worker(tmp_path: Path) -> None:
+    # The flag reaches the backend for this live run only; the store would keep the plain
+    # parameters (the session's _backend_params).
+    log = tmp_path / 'log'
+    _write_log(log)
+    session = live.Session(ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'live',
+                           background_search=True)
+    assert 'background_loop_search' not in session._backend_params
+    with SensorLog(log) as sensor_log:
+        for record in sensor_log.records([session.lidar_topic, session.imu_topic]):
+            if record.topic == session.imu_topic:
+                session.add_imu(record.message)
+            else:
+                session.add_lidar(record.message)
+    assert session.finish()['live_poses'] > 0

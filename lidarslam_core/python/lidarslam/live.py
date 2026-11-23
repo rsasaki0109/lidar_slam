@@ -54,9 +54,11 @@ class Session:
     stored submap, when the operator knows that the recording starts in that area.
     ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
     and anchors once two keyframes agree on the session's place in the store.
-    ``background_search`` runs those searches on a worker thread, so a slow search does not
-    stall tracking; their result then depends on wall-clock timing (a replay with it is not
-    deterministic). :func:`replay` turns it on with ``realtime``.
+    ``background_search`` runs those searches, and the backend's loop search and graph
+    optimizations, on worker threads, so a slow search does not stall tracking; the anchor and the
+    live corrections then depend on wall-clock timing (a replay with it is not deterministic,
+    though the backend's loop edges and final outputs are unchanged). :func:`replay` turns it on
+    with ``realtime``.
     """
 
     def __init__(self, odometry_params: dict[str, Any], backend_params: dict[str, Any],
@@ -120,7 +122,11 @@ class Session:
         backend_params.setdefault('bag_path', str(self.out / 'live'))
         backend_params['output_dir'] = str(self.out)
         backend_params['causal_trajectory_output'] = True
+        # The store keeps these parameters for later replays; the worker thread is a property of
+        # this live run only.
         self._backend_params = backend_params
+        if background_search:
+            backend_params = {**backend_params, 'background_loop_search': True}
 
         self._base_frame = str(odometry_params.get('base_frame', ''))
         self._odom_frame = str(odometry_params.get('odom_frame') or 'odom')
@@ -316,7 +322,7 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
                       filter_new_points=filter_new_points,
                       start_near_first_submap=start_near_first_submap,
                       relocalize_anywhere=relocalize_anywhere,
-                      background_search=realtime and relocalize_anywhere,
+                      background_search=realtime,
                       refine_visibility=refine_visibility)
     topics = [session.lidar_topic, session.imu_topic]
     with SensorLog(log_path) as sensor_log:
