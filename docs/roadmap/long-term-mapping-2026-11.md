@@ -1393,3 +1393,24 @@ reference basin, may have called a good anchor wrong; it may equally be a wrong 
 well. The check cannot tell these apart, which is its limit: the ground-truth placement is only
 good to 1–2 m and a few degrees. The late anchors (175 s and 223 s, against 7–48 s on the other
 five in-area runs of both live checks) are the other open point.
+
+Post-hoc diagnosis of the second live check (not preregistered). The two in-area runs that
+failed (a) were run again offline (in line, deterministic) with every search logged:
+
+- **Late anchors are the gate, not real time.** Offline, 2012-08-04 anchored after 126.4 s and
+  2012-03-31 after 252.0 s, also late. On the 2012-01-22 store the best Scan Context distance of
+  a search stayed above the 0.18 gate for most searches: median 0.201 (2012-08-04) and 0.262
+  (2012-03-31), with 8 of 35 and 3 of 43 searches under the gate, against median 0.225 and 9 of 60
+  for a development session (2012-06-15 on the 2012-01-15 store). The gate was chosen on one
+  development store; this winter store and spring/summer sessions sit further apart.
+- **The 2012-03-31 anchor is reproducible.** The offline run anchored at a different time from a
+  different keyframe and landed on the same placement: ICP from the anchor moved it 0.12 m to a
+  median residual of 0.131 m, again 3.17 m and 3.0° from where ICP from the ground-truth placement
+  converges (residual 0.169 m). Two independent anchors agreeing, with the better fit, point to the
+  check's reference basin (ICP from the 1–2 m ground-truth placement) rather than to the anchor.
+  This does not change the verdict.
+
+Next: a check that does not take the ground-truth start as the reference basin (for example ICP
+from several starts, the anchor's solution counting as correct when it is the best-residual one
+within the ground-truth tolerance), calibrated on development data and preregistered, and a
+look at the Scan Context gate across seasons on development stores.
