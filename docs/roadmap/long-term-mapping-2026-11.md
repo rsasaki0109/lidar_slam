@@ -1275,3 +1275,21 @@ thread under `--realtime`. Nothing below has been run with it. Ground truth has 
   anchors is a miss for (a), not a wrong anchor. All six runs are reported whatever the outcome.
 - If the rule holds, `--relocalize-anywhere` is proposed to leave experimental status (a separate
   change, for the maintainer to decide).
+
+#### Live check results (2026-11-23)
+
+All six runs as preregistered (`holdout_anywhere_live.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | `converged_apart` | Verdict | Pose lag p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| 2012-03-25 in-area (495 s) | 48.0 s | 0.55 | 0.000 m | correct | 0.52 / 1.57 s |
+| 2012-08-20 in-area (464 s) | 40.2 s | 1.02 | 0.000 m | correct | **18.9 / 31.8 s** |
+| 2012-12-01 in-area (421 s) | 37.8 s | 0.67 | 0.002 m | correct | **11.3 / 23.2 s** |
+| 2012-03-25 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 1.54 s |
+| 2012-08-20 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 0.15 s |
+| 2012-12-01 out-of-area (480 s) | — | — | — | no anchor | 0.04 / 0.07 s |
+
+(a) holds (every in-area run anchored correctly, in 38–48 s of data) and (b) holds (no wrong
+anchor, none of the out-of-area runs anchored), but **(c) fails**: two in-area runs fell behind
+real time by up to 32 s. **Under the preregistered rule the mode does not work live on this
+store**, and it stays experimental.
