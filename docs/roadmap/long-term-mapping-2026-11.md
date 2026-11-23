@@ -1521,3 +1521,28 @@ holds on data not used for it. Everything below is fixed before any of these run
 
   The gate stays at 0.26 only if (a), (b) and (c) all hold; otherwise it goes back to 0.18. The
   result is reported whatever the outcome, with the anchor time from the start of each run as well.
+
+#### Results of the gate-0.26 check (2026-11-23)
+
+All twelve runs as preregistered (`holdout_anywhere_gate.jsonl`):
+
+| Session | In-area run | Enters store | Anchored after | After entering | v2 | Offset from `T_g` | Out-of-area run |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| 2012-02-04 | 412 s | 0.1 s | 83.0 s | **82.9 s** | correct | 0.25 m | no anchor |
+| 2012-02-12 | 370 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2012-02-19 | 431 s | 98.3 s | 141.0 s | 42.7 s | correct | 1.17 m | no anchor |
+| 2012-04-29 | 228 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2013-01-10 | 227 s | 0.1 s | 6.8 s | 6.7 s | correct | 0.34 m | no anchor |
+| 2013-04-05 | 250 s | 0.1 s | 13.8 s | 13.7 s | correct | 1.16 m | no anchor (480 s) |
+
+(b) holds: every anchor is correct by v2 and no out-of-area run anchored. (c) holds: pose lag
+p95 ≤ 0.061 s and max ≤ 0.304 s in every run. **(a) fails**: 2012-02-04 anchored 82.9 s after
+entering the store, and 2012-02-12 and 2012-04-29 (299 s and 157 s of data after entering) did
+not anchor at all. **Under the preregistered rule the gate goes back to 0.18**, and
+`--relocalize-anywhere` stays experimental.
+
+What this says: on a new store and new sessions, a wider gate did not bring wrong anchors, but
+it did not make anchoring prompt either. The development replay credited 0.26 mostly to one run
+(2012-03-31); here three of six in-area runs were slow or never anchored with it. Why they did
+not anchor (no candidate under the gate, or candidates that registration rejected) is not known
+from this run and would be a post-hoc question on data that is now used.

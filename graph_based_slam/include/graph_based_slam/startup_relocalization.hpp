@@ -126,10 +126,9 @@ public:
     if (!all_descriptors_) {
       all_descriptors_ = descriptors(Eigen::Vector3d::Zero(), unbounded);
     }
-    // Candidates farther than this in Scan Context distance are not registered. Registration
-    // rejected every wrong candidate up to 0.26 on NCLT (winter stores, spring/summer sessions),
-    // while 0.18 left some sessions minutes without a candidate.
-    constexpr double max_descriptor_distance = 0.26;
+    // Candidates farther than this in Scan Context distance are not registered: on NCLT they
+    // were nearly always places the store does not hold.
+    constexpr double max_descriptor_distance = 0.18;
     return matchSeeds(
       query, *all_descriptors_, Eigen::Vector3d::Zero(), unbounded, max_descriptor_distance);
   }
