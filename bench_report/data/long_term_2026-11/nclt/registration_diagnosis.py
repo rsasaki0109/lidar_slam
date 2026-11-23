@@ -50,7 +50,7 @@ def main() -> int:
     world_from_base, _ = world_from_run(base, np.load(args.base_gt))
     world_from_session, _ = world_from_run(session, np.load(args.session_gt))
     truth = np.linalg.inv(world_from_base) @ world_from_session
-    placed, residual = icp(load(args.session_map)[::4], load(args.base_map)[::2], truth)
+    placed, residual = icp(load(Path(args.session_map))[::4], load(Path(args.base_map))[::2], truth)
     print(json.dumps({'label': args.label, 'icp_residual_m': residual}), flush=True)
 
     searcher = Searcher(args.store, args.queries)
