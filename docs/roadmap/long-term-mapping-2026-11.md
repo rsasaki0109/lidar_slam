@@ -1580,3 +1580,31 @@ keyframe's search input (`record_anywhere_queries.py`) and diagnosed
 The gate stays at 0.18. What limits `--relocalize-anywhere` live is search cost per keyframe in
 real time, which a later change could bound (for example, register only the closest few
 candidates per search), checked in real time.
+
+#### Replaying the real-time search (post hoc, 2026-11-23)
+
+`gate_study.py --realtime` replays the background search of `live --realtime`: a search started
+at a keyframe ends its measured seconds later in data time (`--slowdown` scales that), keyframes
+before then are not searched, and its result is taken at the first keyframe after it ends.
+`--caps` registers at most that many candidates per search. On the three recorded runs it gives
+the real-time runs' anchor times (`anywhere_realtime_cap_replay.jsonl`, slowdown 1):
+
+| Session | Real time, 0.18 (run / replay) | Real time, 0.26 (check / replay) | 0.26, at most 3 / 2 candidates |
+| --- | ---: | ---: | ---: |
+| 2012-02-04 | 6.8 s / 5.8 s | 83.0 s / 83.0 s | 12.5 s / 11.2 s |
+| 2012-02-12 | 89.4 s / 89.4 s | none / none | 313.0 s / 307.5 s |
+| 2012-04-29 | — / none | none / none | none / none |
+
+- At 0.18 the cap changes nothing: few candidates pass the gate, a search takes 0.05 s (median),
+  and the real-time search behaves like the in-line one.
+- At 0.26 a search took 8–28 s (median) and up to 90 s with eight candidates. Capping at two or
+  three shortens it but does not bring back what the in-line search found (2012-02-12: 77 s in
+  line, 307 s or more capped).
+- **A single registration takes 4–7 s** here, on repeated calls too (it is not a one-time
+  preparation of the stored keyframe; preparing the query takes 0.04 s). This, not the number of
+  candidates, is what makes a wider gate unaffordable in real time.
+
+So capping candidates is not worth a product change. The lever is the cost of one registration
+(GICP against the stored keyframe windows, up to three neighbours, three stages, then
+confirmation), which can be measured directly and compared with identical verification
+outcomes on development data before any gate is widened again.
