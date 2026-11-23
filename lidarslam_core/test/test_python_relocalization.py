@@ -1,11 +1,17 @@
 """Search pacing of ``live --relocalize-anywhere`` (StartupRelocalization), with a fake matcher.
 
+With ``background`` a search runs on a worker thread: keyframes keep arriving while it runs, and
+its result is used at the first keyframe after it finishes.
+
 A search that registers candidates and finds nothing doubles the wait before the next search, in
 data time, up to ANYWHERE_MAX_INTERVAL_SEC; a search with no candidate under the Scan Context gate
 leaves the wait as it is, and a found candidate resets it.
 """
 
 from __future__ import annotations
+
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
@@ -40,7 +46,8 @@ def searcher() -> tuple[StartupRelocalization, FakeMatcher]:
         prior=None, anywhere=True, _candidate=None, _last_search=-np.inf,
         _search_interval=relocalization.ANYWHERE_INTERVAL_SEC, matcher=matcher,
         _surfaces=None, first_stamp=0.0, expired=False, transform=None, anchor_stamp=None,
-        track=False, _odometry=[], _observations=[], _initial_odometry=None)
+        track=False, _odometry=[], _observations=[], _initial_odometry=None, _executor=None,
+        _pending=None)
     return search, matcher
 
 
@@ -75,3 +82,42 @@ def test_a_found_candidate_resets_the_interval() -> None:
     # The first candidate is kept and resets the wait; the next search confirms it and anchors.
     assert search.transform is not None
     assert matcher.searches[-1] - matcher.searches[-2] == relocalization.ANYWHERE_INTERVAL_SEC
+
+
+class BlockingMatcher(FakeMatcher):
+    """match_anywhere waits until ``release`` is set."""
+
+    def __init__(self):
+        super().__init__()
+        self.release = threading.Event()
+
+    def match_anywhere(self, points):
+        self.release.wait(10)
+        return super().match_anywhere(points)
+
+
+def test_a_background_search_does_not_stall_keyframes() -> None:
+    search, _ = searcher()
+    matcher = BlockingMatcher()
+    matcher.found = (0, np.eye(4))
+    search.matcher = matcher
+    search._executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        feed(search, matcher, 0.0, 10.0)  # returns while the first search is still blocked
+        assert search._pending is not None and not search._pending[0].done()
+        assert search.transform is None
+        matcher.release.set()
+        search._pending[0].result(timeout=10)
+        feed(search, matcher, 10.0, 11.0)  # the finished search gives the first candidate
+        assert search._candidate is not None and search.transform is None
+        t = 11.0
+        while search.transform is None and t < 100.0:
+            if search._pending is not None:
+                search._pending[0].result(timeout=10)
+            feed(search, matcher, t, t + 0.5)
+            t += 0.5
+        assert search.transform is not None
+        assert search.anchor_stamp >= 11.0
+    finally:
+        search.close()
+    assert search._executor is None

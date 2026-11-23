@@ -1190,6 +1190,29 @@ anchor and took 62, 146, 306 and 182 s for 480 s of data (before: 53, 345, 660 a
 mode stays experimental: it now keeps up with real time on these runs, on this machine, but a
 search that registers candidates still blocks the session for up to a minute.
 
+### Searching off the tracking path (development, 2026-11-22)
+
+With the back-off a search that registers candidates still blocked tracking for up to a minute.
+Since this change, `live --relocalize-anywhere --realtime` runs each search on a worker thread
+(the matcher releases the GIL) and uses its result at the first keyframe after it finishes.
+Without `--realtime` searches stay in line, so replays, and every number above, stay
+deterministic; with it the anchor depends on wall-clock timing, as real-time playback already
+does. Two runs played in real time on this machine, in line (as before) and on the worker
+(`anywhere_realtime_background.jsonl`; 2012-09-28 outside the stored area is a run of the second
+holdout, used here only for timing):
+
+| Run | Search | Anchored after | Pose lag p50 / p95 / max |
+| --- | --- | ---: | --- |
+| 2012-09-28 outside the store (480 s) | in line | — | 56.9 / 185.5 / 196.6 s |
+| | worker | — | 0.017 / 0.042 / 0.174 s |
+| 2012-05-11 on the development store (504 s) | in line | 92.8 s | 0.017 / 5.4 / 12.9 s |
+| | worker | 97.4 s | 0.017 / 0.25 / 1.2 s |
+
+The worker run's anchor on the development store is correct under the calibrated check (ICP
+from the anchor and from the ground truth 0.00 m apart; 1.43 m RMS from the ground-truth
+placement). Searches no longer hold up tracking; the mode stays experimental until a live run
+on a store not used for its development has been checked.
+
 ### NCLT map update with one reference placement for every arm (2026-11-22)
 
 The NCLT measure placed the references by ICP against each arm's own export, so the scored region

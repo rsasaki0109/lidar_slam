@@ -398,12 +398,20 @@ public:
   std::vector<std::tuple<double, std::size_t, int>> rankAnywhere(
     const Eigen::Ref<const Eigen::MatrixX3f> & points, std::size_t count)
   {
-    return matcher_.rankAnywhere(keyframe(points), count);
+    const auto query = keyframe(points);
+    // Searches may run on a worker thread while the session keeps tracking (live --realtime).
+    py::gil_scoped_release release;
+    return matcher_.rankAnywhere(query, count);
   }
 
   py::object matchAnywhere(const Eigen::Ref<const Eigen::MatrixX3f> & points)
   {
-    const auto result = matcher_.matchAnywhere(keyframe(points));
+    const auto query = keyframe(points);
+    std::optional<graphslam::multisession::StartupRelocalizer::Match> result;
+    {
+      py::gil_scoped_release release;
+      result = matcher_.matchAnywhere(query);
+    }
     if (!result) {return py::none();}
     return py::make_tuple(result->reference, Eigen::Matrix4d(result->pose.matrix()));
   }
