@@ -1436,3 +1436,57 @@ check 2), whose anchor is itself the best fit (median residual 0.131 m against 0
 the ground-truth starts). v2 must be preregistered before it decides anything; with it, the open
 point of `--relocalize-anywhere` is the late anchors on the 2012-01-22 store (the Scan Context
 gate), not wrong anchors.
+
+### The Scan Context gate across seasons (development, 2026-11-23)
+
+Post hoc on sessions already used (the development store and every run of the second holdout
+and both live checks are development data now), not a check of anything. Each of 25 sessions
+(`anywhere_gate_jobs.txt`) was run once with every keyframe's search input saved and no search
+(`record_anywhere_queries.py`); until a session anchors these inputs do not depend on the search.
+`gate_study.py` then replays `--relocalize-anywhere` in line at gates 0.18–0.26: the same
+candidates, registration, consensus, back-off and two-search agreement, each candidate registered
+once for all gates. At 0.18 the replay gives the current code's anchor time exactly (2012-05-11:
+92.79 s replayed and run; 2012-06-15: 140.98 s against 141.0 s). `gate_analysis.py` places every
+verified candidate and anchor against the ground-truth placement and marks a search in the store
+when the ground truth puts its keyframe within 5 m of the base session's path
+(`anywhere_gate_study.jsonl`).
+
+**No gate up to 0.26 gave a wrong candidate.** Of the 271 verified candidates of the replayed
+searches (counted once per gate), none was more than 4 m RMS from the ground-truth placement and
+none was found outside the store; none of the 12 out-of-area runs anchored at any gate. Registration, not the gate, keeps
+wrong places out on these data.
+
+**Anchor time counts time outside the store.** Several "in-area" windows start outside the
+stored area: 2012-08-04 (second live check) enters it after 75.2 s, 2012-05-11 and 2012-06-15
+after about 80 s. Seconds from entering the store to the anchor, 13 in-area runs:
+
+| Run | Enters store | 0.18 | 0.20 | 0.22 | 0.24 | 0.26 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2012-03-31 (live 2, winter store) | 9.7 s | **242.3** | 96.1 | 161.8 | 88.7 | 10.2 |
+| 2012-08-04 (live 2, winter store) | 75.2 s | 51.2 | 136.5 | 24.0 | 24.0 | 49.0 |
+| 2012-06-15 (development) | 79.6 s | 61.4 | 61.4 | 58.1 | 58.1 | 55.9 |
+| 2012-05-26 (development) | 0.1 s | 53.0 | 10.3 | 10.3 | 15.9 | 15.9 |
+| 9 other runs | 0.1–21.1 s | 3.3–12.6 | 3.3–11.0 | 3.3–13.8 | 3.3–11.6 | 3.3–13.1 |
+| median / max | | 7.1 / 242.3 | 7.1 / 136.5 | 7.4 / 161.8 | 8.6 / 88.7 | 8.0 / 55.9 |
+
+All anchors are within 2.32 m RMS of the ground-truth placement (the 2.3 m one is the 2012-03-31
+placement that v2 found to be the best fit). The time is not monotonic in the gate: a higher
+gate also lets more searches that find nothing double the wait (up to 8 s), so the searches
+that fall in the store change. Only 0.26 keeps every run within 60 s of entering the store, and
+that rests mostly on one run (2012-03-31).
+
+**Cost.** Candidates under the gate that a search registers (an upper bound: a disagreement
+stops early), all runs:
+
+| Gate | In-area searches / candidates | Out-of-area searches / candidates |
+| --- | --- | --- |
+| 0.18 | 193 / 113 | 1311 / 100 |
+| 0.22 | 137 / 266 | 621 / 1127 |
+| 0.26 | 94 / 522 | 604 / 2567 |
+
+A registration takes seconds, so out of the store 0.26 costs about 25 times the registration
+work of 0.18 (with the background worker this delays searches, not tracking).
+
+Next: a preregistered check of gate 0.26 with v2 as the anchor check and the anchor time
+counted from entering the store (ground truth, decided before the run), on sessions not used
+so far; the remaining unused NCLT sessions are few, so a new part of the campus is likely needed.
