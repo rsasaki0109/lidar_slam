@@ -73,8 +73,9 @@ class Searcher:
         data = np.load(queries, allow_pickle=False)
         self.stamps = data['stamp']
         self.inputs = [data[name] for name in ('frame', 'odometry', 'local_map')]
-        ends = np.cumsum(data['sizes'])
-        self.points = [data['points'][e - n:e] for e, n in zip(ends, data['sizes'])]
+        sizes, points = data['sizes'], data['points']  # each access of an npz member reads it
+        ends = np.cumsum(sizes)
+        self.points = [points[e - n:e] for e, n in zip(ends, sizes)]
         self.ranks = [None] * len(self.stamps)
         self.cache = {}
 
