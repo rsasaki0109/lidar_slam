@@ -1335,3 +1335,34 @@ they cannot choose the stride by lag. Two ways on: a live setting with a coarser
 stride (simple; costs some loops), or loop verification off the tracking path as for the search
 (keeps every loop; a larger change to the shared offline pipeline, which must stay deterministic
 when not in real time). Either needs a new preregistered live check on unused sessions.
+
+### Backend loop search off the tracking path (development, 2026-11-23)
+
+Since this change, `background_loop_search` (set by `live.Session` for `background_search`, that
+is `replay`/`live --realtime`) runs the backend's loop search and its causal graph optimizations
+on a worker thread over a snapshot of the submaps. Every query still runs, in order, and the
+remaining ones run at `finish()`, so the loop edges and every output after the pass are the
+in-line ones; only the causal (live) corrections depend on timing. Without `--realtime` nothing
+changes.
+
+- 2012-08-20 in-area mapped offline with the worker and in line: `loop_edges.csv`,
+  `trajectory_optimized.tum`, `trajectory_raw.tum`, `odometry_tum.txt` and `map.pcd`
+  byte-identical; `trajectory_causal.tum` differs, as designed.
+- The same run in real time with the store (`anywhere_live_background_loop_probe.jsonl`; a session
+  of the live check, so post hoc): anchored after 40.2 s as before, both loop edges kept, pose lag
+  p95 0.045 s and max 0.14 s (18.9 s and 31.8 s with the search in line). The worker ran at most
+  19.8 s behind a submap's stamp, so live corrections arrive late instead of tracking stopping.
+
+### Second live check of `--relocalize-anywhere` (preregistered 2026-11-23, before the run)
+
+As the live check above, with the backend loop search on the worker (the change above) and new
+sessions. Windows from 1 Hz ground-truth positions only (`select_anywhere_live.py` with the four
+sessions of the first live check also excluded; `anywhere_live2_windows.json`):
+
+- **Store:** 2012-01-22 (its pass ±10 s, 518 s).
+- **Sessions:** 2012-03-31, 2012-08-04, 2013-02-23; in-area runs 466, 425 and 369 s; out-of-area
+  runs 480 s each, closest approach 186.8, 249.7 and 101.0 m.
+- Runs, correct-anchor check and **rule (a), (b), (c)** exactly as in the first live check
+  (`holdout_anywhere_live2.sh`): every in-area run anchors correctly within 180 s of data; no run
+  anchors wrongly; every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s. Reported whatever
+  the outcome.
