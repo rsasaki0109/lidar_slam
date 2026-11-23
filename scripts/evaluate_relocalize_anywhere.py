@@ -15,6 +15,14 @@ compared with two things:
   ``converged_apart_deg`` the rotation angle of ``M_a @ inv(M_g)``. Small values mean ICP from
   the anchor reaches the same fit as ICP from the ground-truth placement.
 
+With ``--gt-starts`` ICP also runs from perturbed copies of ``T_g`` (same ``DX,YAW,DIR`` form as
+``--perturb``), and each row adds the best fit near the ground truth: among the solutions from
+``T_g``, those starts and the anchor that lie within ``--gt-tolerance`` m RMS of ``T_g``, the one
+with the lowest median residual. ``best_apart_m`` / ``best_apart_deg`` place the anchor's ICP
+solution against it (0 when the anchor's own solution is the best), ``best_from`` names the start
+it came from and ``best_residual_m`` its residual. This does not take ``T_g`` itself, good only to
+1-2 m and a few degrees, as the reference basin.
+
 With ``--perturb`` the anchor is replaced by perturbed copies, for calibrating the measure on
 development data: each perturbation moves the anchor-placed path by ``dx`` m in the XY
 direction ``dir`` degrees (store frame) and turns it by ``yaw`` degrees about the path's
@@ -89,6 +97,8 @@ def main() -> int:
                  'session-gt', 'anchor'):
         parser.add_argument(f'--{name}', type=Path, required=True)
     parser.add_argument('--perturb', nargs='*', default=[], metavar='DX,YAW,DIR')
+    parser.add_argument('--gt-starts', nargs='*', default=[], metavar='DX,YAW,DIR')
+    parser.add_argument('--gt-tolerance', type=float, default=4.0)
     parser.add_argument('--label', default='')
     args = parser.parse_args()
 
@@ -109,12 +119,27 @@ def main() -> int:
     source = load(args.session_map)[::4]
     target = load(args.base_map)[::2]
     from_truth, truth_residual = icp(source, target, ground_truth)
+    near_truth = [('ground_truth', from_truth, truth_residual)]
+    for spec in args.gt_starts:
+        dx, yaw, direction = (float(v) for v in spec.split(','))
+        solution, residual = icp(source, target, perturbed(ground_truth, path, dx, yaw, direction))
+        near_truth.append((f'ground_truth+{spec}', solution, residual))
     anchors = [('anchor', anchor)]
     for spec in args.perturb:
         dx, yaw, direction = (float(v) for v in spec.split(','))
         anchors.append((spec, perturbed(anchor, path, dx, yaw, direction)))
     for name, start in anchors:
         from_anchor, residual = icp(source, target, start)
+        extra = {}
+        if args.gt_starts:
+            candidates = [c for c in near_truth + [('anchor', from_anchor, residual)]
+                          if rms_apart(c[1], ground_truth, path) <= args.gt_tolerance]
+            if candidates:
+                best_from, best, best_residual = min(candidates, key=lambda c: c[2])
+                extra = {'best_from': best_from, 'best_residual_m': best_residual,
+                         'best_apart_m': rms_apart(from_anchor, best, path),
+                         'best_apart_deg': angle_deg(from_anchor @ np.linalg.inv(best)),
+                         'anchor_solution_offset_m': rms_apart(from_anchor, ground_truth, path)}
         print(json.dumps({
             **head, 'anchored': True, 'start': name,
             'start_from_anchor_m': rms_apart(start, anchor, path),
@@ -125,6 +150,7 @@ def main() -> int:
             'icp_from_gt_median_residual_m': truth_residual,
             'converged_apart_m': rms_apart(from_anchor, from_truth, path),
             'converged_apart_deg': angle_deg(from_anchor @ np.linalg.inv(from_truth)),
+            **extra,
         }), flush=True)
     return 0
 

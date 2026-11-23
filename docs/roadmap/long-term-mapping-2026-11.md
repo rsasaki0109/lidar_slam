@@ -1393,3 +1393,46 @@ reference basin, may have called a good anchor wrong; it may equally be a wrong 
 well. The check cannot tell these apart, which is its limit: the ground-truth placement is only
 good to 1–2 m and a few degrees. The late anchors (175 s and 223 s, against 7–48 s on the other
 five in-area runs of both live checks) are the other open point.
+
+Post-hoc diagnosis of the second live check (not preregistered). The two in-area runs that
+failed (a) were run again offline (in line, deterministic) with every search logged:
+
+- **Late anchors are the gate, not real time.** Offline, 2012-08-04 anchored after 126.4 s and
+  2012-03-31 after 252.0 s, also late. On the 2012-01-22 store the best Scan Context distance of
+  a search stayed above the 0.18 gate for most searches: median 0.201 (2012-08-04) and 0.262
+  (2012-03-31), with 8 of 35 and 3 of 43 searches under the gate, against median 0.225 and 9 of 60
+  for a development session (2012-06-15 on the 2012-01-15 store). The gate was chosen on one
+  development store; this winter store and spring/summer sessions sit further apart.
+- **The 2012-03-31 anchor is reproducible.** The offline run anchored at a different time from a
+  different keyframe and landed on the same placement: ICP from the anchor moved it 0.12 m to a
+  median residual of 0.131 m, again 3.17 m and 3.0° from where ICP from the ground-truth placement
+  converges (residual 0.169 m). Two independent anchors agreeing, with the better fit, point to the
+  check's reference basin (ICP from the 1–2 m ground-truth placement) rather than to the anchor.
+  This does not change the verdict.
+
+Next: a check that does not take the ground-truth start as the reference basin (for example ICP
+from several starts, the anchor's solution counting as correct when it is the best-residual one
+within the ground-truth tolerance), calibrated on development data and preregistered, and a
+look at the Scan Context gate across seasons on development stores.
+
+### Anchor check v2: the best fit near the ground truth (development, 2026-11-23)
+
+`evaluate_relocalize_anywhere.py --gt-starts` also runs ICP from eight perturbed copies of the
+ground-truth placement (`anywhere_gt_starts.txt`: 2 m in four directions, ±2° yaw, two
+shift-and-turn combinations). Among the solutions from the ground truth, those starts and the
+anchor that lie within 4.0 m RMS of the ground-truth placement, the one with the lowest median
+residual is the best fit; **v2 counts an anchor correct when ICP from it reaches that best fit
+(within 0.25 m and 0.5°) and the anchor lies within 4.0 m RMS of the ground-truth placement.** It
+no longer takes the ground-truth start, good only to 1–2 m and a few degrees, as the reference.
+
+On the development calibration (`anywhere_calibration_dev_v2.jsonl`: the same 3 sessions and
+38 perturbations per anchor) v2 gives the same verdict as v1 on all 117 perturbed starts and the
+3 anchors: every start within 2 m and 2° correct, every start 5 m or 5° off wrong, 7 of 12 at 3 m.
+
+Post hoc (not a check of anything: these runs were all scored before, and v2 was written after
+seeing the 2012-03-31 run), v2 on every in-area anchor of the second holdout and both live checks
+(`anywhere_rescore_v2_posthoc.jsonl`): all ten correct. The only change is 2012-03-31 (live
+check 2), whose anchor is itself the best fit (median residual 0.131 m against 0.145–0.169 m from
+the ground-truth starts). v2 must be preregistered before it decides anything; with it, the open
+point of `--relocalize-anywhere` is the late anchors on the 2012-01-22 store (the Scan Context
+gate), not wrong anchors.
