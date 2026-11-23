@@ -1,16 +1,18 @@
 """Replay ``--relocalize-anywhere`` searches offline with other Scan Context gates.
 
-  gate_study.py register --store STORE --queries Q.npz --max-gate 0.30 > SEEDS.jsonl
-  gate_study.py simulate --seeds SEEDS.jsonl --gates 0.18 0.20 ... [--start-stamp T]
+  gate_study.py --store STORE --queries Q.npz --gates 0.18 0.20 ... [--start-stamp T]
+      [--ranks RANKS.jsonl] [--label NAME]
 
-``register`` takes the search inputs saved by ``record_anywhere_queries.py`` and, for every
-keyframe, registers each of the eight closest Scan Context candidates whose distance is at most
-``--max-gate``, as ``StoreRelocalizer.match_anywhere`` does (same start pose from the stored
-keyframe and sector shift, same verification through ``match_with_reference``). ``simulate``
-then applies, for each gate, the consensus of ``matchAnywhere`` (candidates in order up to the
-gate; refused when two verified ones disagree by more than 0.5 m or 5 degrees) and the pacing
-and two-search agreement of ``StartupRelocalization`` (searches in line), and prints one JSON
-line per gate: when the session would anchor and with which session transform.
+The search inputs saved by ``record_anywhere_queries.py`` are searched again, for each gate, as
+``StoreRelocalizer.match_anywhere`` does: the eight closest Scan Context candidates up to the gate
+are registered (same start pose from the stored keyframe and sector shift, same verification
+through ``match_with_reference``) and the match is refused when two verified ones disagree by
+more than 0.5 m or 5 degrees. The pacing and two-search agreement of ``StartupRelocalization``
+(searches in line) decide which keyframes are searched and when the session anchors. Only the
+searches a gate reaches are registered, and each candidate once for all gates. One JSON line
+per gate: when the session would anchor, with which session transform, and every verified
+candidate of its searches. ``--ranks`` also writes the eight closest distances of every
+keyframe.
 """
 
 from __future__ import annotations
@@ -45,117 +47,124 @@ def agrees(a: np.ndarray, b: np.ndarray, meters: float, degrees: float) -> bool:
                 abs(np.arctan2(np.sin(yaw), np.cos(yaw))) <= np.deg2rad(degrees))
 
 
-def register(args: argparse.Namespace) -> int:
-    from lidarslam import _core
-    from lidarslam.relocalization import tracked_poses
-    from lidarslam.store import Store
-    from pathlib import Path
+class Searcher:
+    """Registers candidates on demand and remembers them for every gate."""
 
-    aligned = Store.open(args.store)._aligned_sessions()
-    directories, transforms = zip(*aligned)
-    windows = []
-    for directory in directories:
-        path = Path(directory) / 'keyframe_windows.npz'
-        if path.is_file():
-            with np.load(path, allow_pickle=False) as data:
-                windows.append({int(index): data[index] for index in data.files})
-        else:
-            windows.append({})
-    matcher = _core.StoreRelocalizer(directories, transforms, windows,
-                                     [tracked_poses(path) for path in directories])
-    frames = [gravity_aligned(np.asarray(p)) for poses in matcher.session_poses() for p in poses]
-    queries = np.load(args.queries, allow_pickle=False)
-    ends = np.cumsum(queries['sizes'])
-    for k, stamp in enumerate(queries['stamp']):
-        points = queries['points'][ends[k] - queries['sizes'][k]:ends[k]]
-        frame, odometry, local_map = (queries[name][k] for name in ('frame', 'odometry',
-                                                                    'local_map'))
-        seeds = []
-        for distance, index, shift in matcher.rank_anywhere(points, 8):
-            seed = {'d': round(float(distance), 5), 'i': int(index), 'shift': int(shift)}
-            if distance <= args.max_gate:
-                found = matcher.match_with_reference(points, turned(frames[index], shift))
-                if found is not None:
-                    reference, pose = found
-                    pose = np.asarray(pose)
-                    seed['pose'] = pose.tolist()
-                    seed['session'] = (pose @ np.linalg.inv(frame) @ odometry @
-                                       np.linalg.inv(local_map)).tolist()
-                else:
-                    seed['pose'] = None
-            seeds.append(seed)
-        print(json.dumps({'stamp': float(stamp), 'seeds': seeds}), flush=True)
-    return 0
+    def __init__(self, store: str, queries: str):
+        from pathlib import Path
 
+        from lidarslam import _core
+        from lidarslam.relocalization import tracked_poses
+        from lidarslam.store import Store
 
-def consensus(seeds: list[dict], gate: float):
-    """matchAnywhere at this gate: the first verified candidate, None on a disagreement."""
-    if not seeds or seeds[0]['d'] > gate:
-        return None
-    found = None
-    for seed in seeds:
-        if seed['d'] > gate:
-            break
-        if 'pose' not in seed:
-            raise ValueError(f'gate {gate} above the --max-gate of the registration')
-        if seed['pose'] is None:
-            continue
-        if found is not None and not agrees(np.asarray(found['pose']), np.asarray(seed['pose']),
-                                            0.5, 5.0):
-            return None
-        if found is None:
-            found = seed
-    return found
+        directories, transforms = zip(*Store.open(store)._aligned_sessions())
+        windows = []
+        for directory in directories:
+            path = Path(directory) / 'keyframe_windows.npz'
+            if path.is_file():
+                with np.load(path, allow_pickle=False) as data:
+                    windows.append({int(index): data[index] for index in data.files})
+            else:
+                windows.append({})
+        self.matcher = _core.StoreRelocalizer(directories, transforms, windows,
+                                              [tracked_poses(path) for path in directories])
+        self.frames = [gravity_aligned(np.asarray(p)) for poses in self.matcher.session_poses()
+                       for p in poses]
+        data = np.load(queries, allow_pickle=False)
+        self.stamps = data['stamp']
+        self.inputs = [data[name] for name in ('frame', 'odometry', 'local_map')]
+        ends = np.cumsum(data['sizes'])
+        self.points = [data['points'][e - n:e] for e, n in zip(ends, data['sizes'])]
+        self.ranks = [None] * len(self.stamps)
+        self.cache = {}
 
+    def rank(self, k: int):
+        if self.ranks[k] is None:
+            self.ranks[k] = [(float(d), int(i), int(s))
+                             for d, i, s in self.matcher.rank_anywhere(self.points[k], 8)]
+        return self.ranks[k]
 
-def simulate(rows: list[dict], gate: float, interval: float = 2.0, maximum: float = 8.0):
-    """StartupRelocalization in line: (anchor stamp, transform, searches, found, refused)."""
-    last, wait, candidate = -np.inf, interval, None
-    searches = found_count = 0
-    for row in rows:
-        if row['stamp'] - last < wait:
-            continue
-        last = row['stamp']
-        searches += 1
-        match = consensus(row['seeds'], gate)
-        if match is not None:
-            wait = interval
-            found_count += 1
-            transform = np.asarray(match['session'])
-            if candidate is None or not agrees(candidate, transform, 0.5, 2.0):
-                candidate = transform
+    def register(self, k: int, seed: int):
+        key = (k, seed)
+        if key not in self.cache:
+            _, index, shift = self.rank(k)[seed]
+            found = self.matcher.match_with_reference(self.points[k],
+                                                      turned(self.frames[index], shift))
+            if found is None:
+                self.cache[key] = None
+            else:
+                pose = np.asarray(found[1])
+                frame, odometry, local_map = (x[k] for x in self.inputs)
+                session = pose @ np.linalg.inv(frame) @ odometry @ np.linalg.inv(local_map)
+                self.cache[key] = (pose, session)
+        return self.cache[key]
+
+    def consensus(self, k: int, gate: float):
+        """matchAnywhere at this gate: the first verified candidate, None on a disagreement."""
+        ranked = self.rank(k)
+        if not ranked or ranked[0][0] > gate:
+            return None, []
+        found, verified = None, []
+        for seed, (distance, _, _) in enumerate(ranked):
+            if distance > gate:
+                break
+            result = self.register(k, seed)
+            if result is None:
                 continue
-            return row['stamp'], transform, searches, found_count
-        if row['seeds'] and row['seeds'][0]['d'] <= gate:
-            wait = min(2 * wait, maximum)
-    return None, None, searches, found_count
+            verified.append((seed, result))
+            if found is not None and not agrees(found[0], result[0], 0.5, 5.0):
+                return None, verified
+            if found is None:
+                found = result
+        return found, verified
+
+    def simulate(self, gate: float, interval: float = 2.0, maximum: float = 8.0):
+        """StartupRelocalization in line, at this gate."""
+        last, wait, candidate = -np.inf, interval, None
+        log = []
+        for k, stamp in enumerate(self.stamps):
+            if stamp - last < wait:
+                continue
+            last = stamp
+            match, verified = self.consensus(k, gate)
+            log.append({'k': k, 'stamp': float(stamp), 'best_d': self.rank(k)[0][0],
+                        'match': match is not None,
+                        'verified': [{'seed': s, 'd': self.rank(k)[s][0],
+                                      'session': r[1].tolist()} for s, r in verified]})
+            if match is not None:
+                wait = interval
+                if candidate is None or not agrees(candidate, match[1], 0.5, 2.0):
+                    candidate = match[1]
+                    continue
+                return float(stamp), match[1], log
+            if self.rank(k)[0][0] <= gate:
+                wait = min(2 * wait, maximum)
+        return None, None, log
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    sub = parser.add_subparsers(dest='command', required=True)
-    reg = sub.add_parser('register')
-    reg.add_argument('--store', required=True)
-    reg.add_argument('--queries', required=True)
-    reg.add_argument('--max-gate', type=float, default=0.30)
-    sim = sub.add_parser('simulate')
-    sim.add_argument('--seeds', required=True)
-    sim.add_argument('--gates', type=float, nargs='+', required=True)
-    sim.add_argument('--start-stamp', type=float, default=None)
-    sim.add_argument('--label', default='')
+    parser.add_argument('--store', required=True)
+    parser.add_argument('--queries', required=True)
+    parser.add_argument('--gates', type=float, nargs='+', required=True)
+    parser.add_argument('--start-stamp', type=float, default=None)
+    parser.add_argument('--ranks', default=None)
+    parser.add_argument('--label', default='')
     args = parser.parse_args()
-    if args.command == 'register':
-        return register(args)
-    with open(args.seeds, encoding='utf-8') as handle:
-        rows = [json.loads(line) for line in handle]
-    start = args.start_stamp if args.start_stamp is not None else (rows[0]['stamp'] if rows
-                                                                   else 0.0)
+    searcher = Searcher(args.store, args.queries)
+    start = args.start_stamp if args.start_stamp is not None else float(searcher.stamps[0])
     for gate in args.gates:
-        stamp, transform, searches, found = simulate(rows, gate)
+        stamp, transform, log = searcher.simulate(gate)
         print(json.dumps({
-            'label': args.label, 'gate': gate, 'searches': searches, 'found': found,
+            'label': args.label, 'gate': gate, 'searches': len(log),
+            'found': sum(row['match'] for row in log),
             'anchor_after_s': None if stamp is None else round(stamp - start, 2),
-            'store_from_session': None if transform is None else transform.tolist()}))
+            'store_from_session': None if transform is None else transform.tolist(),
+            'log': log}), flush=True)
+    if args.ranks:
+        with open(args.ranks, 'w', encoding='utf-8') as handle:
+            for k, stamp in enumerate(searcher.stamps):
+                handle.write(json.dumps({'stamp': float(stamp), 'rank': searcher.rank(k)}) + '\n')
     return 0
 
 
