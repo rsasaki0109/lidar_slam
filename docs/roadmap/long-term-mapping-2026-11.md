@@ -1248,3 +1248,30 @@ What holds under the shared placement on both chains: both change modes cut ghos
 rests on a number that this re-run does not reproduce; that decision stands as recorded, with
 this caveat. Any further change to the change modes needs a new holdout chain, preregistered,
 and run and scored in one environment.
+
+### Live check of `--relocalize-anywhere` on a new store (preregistered 2026-11-23, before the run)
+
+Method as merged in #635 (`bceac32`): the search of #633 with the back-off of #634, run on a worker
+thread under `--realtime`. Nothing below has been run with it. Ground truth has been used only at
+1 Hz, as positions, to choose the windows (`select_anywhere_live.py`,
+`anywhere_live_windows.json`); every session used so far in this document is excluded.
+
+- **Store:** the unused NCLT session with the longest pass through the evaluation square,
+  2012-02-05 (that pass ±10 s, 709 s), mapped offline into a new store with the NCLT odometry
+  and backend parameters.
+- **Sessions:** for each later period (2012-03–05, 06–09, 2012-10–2013-04) the unused session
+  with the longest pass: 2012-03-25, 2012-08-20, 2012-12-01. Each gives an **in-area run** (its
+  pass ±10 s, 421–495 s) and an **out-of-area run** (the first 480 s of its longest stretch at
+  least 100 m from every position of the stored pass; closest approach 197.7–326.9 m).
+- Each run: `live --store COPY --relocalize-anywhere --realtime`, the in-area and out-of-area
+  runs of one session played at the same time (two at a time on this 4-core machine, as for the
+  development timing above), once each, then `evaluate_relocalize_anywhere.py` against the base
+  map (`holdout_anywhere_live.sh`).
+- **Correct anchor:** as calibrated above: `converged_apart` ≤ 0.25 m and ≤ 0.5°, and offset
+  from the ground-truth placement ≤ 4.0 m RMS. Any other anchor is wrong.
+- **Rule:** the mode works live on this store if (a) every in-area run anchors correctly within
+  180 s of data, (b) no run anchors wrongly, and (c) every run keeps the pose lag at p95 ≤ 1.0 s
+  and max ≤ 5.0 s (development, on the worker: p95 0.04–0.25 s, max 0.17–1.2 s). A run that never
+  anchors is a miss for (a), not a wrong anchor. All six runs are reported whatever the outcome.
+- If the rule holds, `--relocalize-anywhere` is proposed to leave experimental status (a separate
+  change, for the maintainer to decide).
