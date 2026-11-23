@@ -39,9 +39,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <limits>
 #include <map>
@@ -472,6 +474,15 @@ struct RunnerConfig
   // component's background thread does; a correction takes effect once the worker, started no
   // earlier than its submap's stamp, has spent the measured wall time on them (data time).
   bool causal_trajectory_output = false;
+
+  // With causal_trajectory_output: run that worker on a real thread (live sessions played in real
+  // time), so a slow loop search does not hold up the caller. Each job takes a snapshot of the
+  // submaps, runs every query not yet run, in order, and optimizes the graph when the loop edges
+  // changed; its correction applies from the first pair after it finishes (wall-clock dependent).
+  // The remaining queries run at finish(), so the loop edges and every output after the pass are
+  // those of the in-line worker when the submap scans are kept losslessly
+  // (submap_cloud_max_error_m 0). Without it the worker runs in line and replays are deterministic.
+  bool background_loop_search = false;
 
   // Each submap's scan is kept compressed (cloud_compression). 0: losslessly, so every output is
   // the same as with the scans kept as they are. > 0: x, y and z within this many metres, in about
@@ -1264,6 +1275,8 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
 
   // See RunnerConfig::causal_trajectory_output.
   node.get_parameter_or("causal_trajectory_output", config.causal_trajectory_output, false);
+  // See RunnerConfig::background_loop_search.
+  node.get_parameter_or("background_loop_search", config.background_loop_search, false);
   // See RunnerConfig::submap_cloud_max_error_m.
   node.get_parameter_or("submap_cloud_max_error_m", config.submap_cloud_max_error_m, 0.0);
 }
@@ -1597,6 +1610,26 @@ struct BagPass
   std::size_t causal_optimizations = 0U;
   std::ofstream causal_tum;
 
+  // background_loop_search: the running job (at most one) and the records whose PCL cloud
+  // has been dropped so far.
+  struct DeferredLog
+  {
+    bool via_logger;
+    std::string text;
+  };
+  struct LoopJobResult
+  {
+    int next_query_idx = 0;
+    bool optimized = false;
+    Eigen::Isometry3d correction = Eigen::Isometry3d::Identity();
+    double last_submap_stamp_sec = 0.0;
+    std::size_t restored = 0;
+    double restore_sec = 0.0;
+    std::vector<DeferredLog> logs;
+  };
+  std::future<LoopJobResult> loop_job;
+  std::size_t clouds_released = 0U;
+
   std::map<uint64_t, graphslam::msg::Odometry> pending_odoms;
   std::map<uint64_t, graphslam::msg::PointCloud2> pending_clouds;
 
@@ -1673,6 +1706,10 @@ struct BagPass
   // after logging why, when those cannot be loaded.
   bool finish()
   {
+    if (backgroundLoopSearch()) {
+      collectLoopJob(latest_pair_stamp_sec, true);
+      drainQueries();
+    }
     if (!config.fixed_loop_edges_path.empty()) {
       try {
         loadFixedLoopEdges(config.fixed_loop_edges_path, bag.records.size(), bag.edge_set);
@@ -1795,13 +1832,21 @@ struct BagPass
       // Only the latest search_submap_num submaps keep their PCL cloud.
       const std::size_t kept = static_cast<std::size_t>(
         std::max(1, config.search_config.search_submap_num));
-      if (bag.records.size() > kept) {
+      if (backgroundLoopSearch()) {
+        // Keep the clouds every query not yet run reads (its submap and the kept ones before).
+        releaseClouds(kept);
+      } else if (bag.records.size() > kept) {
         bag.records[bag.records.size() - 1U - kept].cloud.reset();
       }
 
       const auto work_start = std::chrono::steady_clock::now();
-      drainQueries();
-      if (config.causal_trajectory_output) {
+      if (backgroundLoopSearch()) {
+        collectLoopJob(record.stamp_sec, false);
+        launchLoopJob();
+      } else {
+        drainQueries();
+      }
+      if (config.causal_trajectory_output && !backgroundLoopSearch()) {
         bool optimized = false;
         Eigen::Isometry3d correction = Eigen::Isometry3d::Identity();
         if (loop_edges_changed) {
@@ -1823,6 +1868,10 @@ struct BagPass
 
     if (config.causal_trajectory_output) {
       const double stamp_sec = graphslam::cloud_msg::stampSeconds(odom.header.stamp);
+      if (backgroundLoopSearch()) {
+        collectLoopJob(stamp_sec, false);
+        launchLoopJob();
+      }
       while (causal_applied < causal_corrections.size() &&
         causal_corrections[causal_applied].effective_stamp_sec <= stamp_sec)
       {
@@ -1878,7 +1927,93 @@ struct BagPass
   // fixed loop edges there is no search.
   void drainQueries()
   {
-    const std::vector<SubmapRecord> & records = bag.records;
+    runQueries(bag.records, bag.cloud_stats, next_query_idx, loop_edges_changed, nullptr);
+  }
+
+  bool backgroundLoopSearch() const
+  {
+    return config.background_loop_search && config.causal_trajectory_output &&
+           config.fixed_loop_edges_path.empty();
+  }
+
+  void releaseClouds(std::size_t kept)
+  {
+    // Query q reads the clouds of submaps q - kept + 1 .. q; queries from next_query_idx on
+    // have not run (or are running on a snapshot that holds its own pointers).
+    const std::int64_t by_count = static_cast<std::int64_t>(bag.records.size()) - 1 -
+      static_cast<std::int64_t>(kept);
+    const std::int64_t by_query = static_cast<std::int64_t>(next_query_idx) -
+      static_cast<std::int64_t>(kept);
+    const std::int64_t last = std::min(by_count, by_query);
+    while (static_cast<std::int64_t>(clouds_released) <= last) {
+      bag.records[clouds_released].cloud.reset();
+      ++clouds_released;
+    }
+  }
+
+  // Starts a job when none is running and a submap has not been a query yet.
+  void launchLoopJob()
+  {
+    if (loop_job.valid() || next_query_idx >= static_cast<int>(bag.records.size())) {
+      return;
+    }
+    loop_job = std::async(
+      std::launch::async,
+      [this, snapshot = bag.records, start = next_query_idx]() {
+        LoopJobResult result;
+        result.next_query_idx = start;
+        SubmapCloudStats stats;
+        bool changed = false;
+        runQueries(snapshot, stats, result.next_query_idx, changed, &result.logs);
+        if (changed && config.causal_trajectory_output) {
+          result.optimized = true;
+          result.correction = causalCorrection(snapshot);
+        }
+        result.last_submap_stamp_sec = snapshot.back().stamp_sec;
+        result.restored = stats.restored;
+        result.restore_sec = stats.restore_sec;
+        return result;
+      });
+  }
+
+  // Takes a finished job's result (waiting for it with `wait`): its log lines, its correction
+  // (effective from stamp_sec) and where the queries stopped.
+  void collectLoopJob(double stamp_sec, bool wait)
+  {
+    if (!loop_job.valid()) {
+      return;
+    }
+    if (!wait &&
+      loop_job.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+    {
+      return;
+    }
+    LoopJobResult result = loop_job.get();
+    for (const auto & line : result.logs) {
+      if (line.via_logger) {
+        GRAPHSLAM_LOG_INFO(logger, "%s", line.text.c_str());
+      } else {
+        std::cout << line.text << std::endl;
+      }
+    }
+    bag.cloud_stats.restored += result.restored;
+    bag.cloud_stats.restore_sec += result.restore_sec;
+    next_query_idx = result.next_query_idx;
+    if (result.optimized) {
+      const double effective = std::max(stamp_sec, result.last_submap_stamp_sec);
+      causal_corrections.push_back({effective, result.correction});
+      ++causal_optimizations;
+      causal_worker_free_sec = effective;
+      causal_max_lag_sec = std::max(causal_max_lag_sec, effective - result.last_submap_stamp_sec);
+    }
+  }
+
+  // Runs the loop search of every submap of `records` from next_idx on. Log lines go to the
+  // logger and stdout, or to `deferred` (a background job: the logger may not be called there).
+  void runQueries(
+    const std::vector<SubmapRecord> & records, SubmapCloudStats & cloud_stats, int & next_idx,
+    bool & edges_changed, std::vector<DeferredLog> * deferred)
+  {
     // The same voxel-filtered local-aggregate semantics as the component's
     // makeFilteredLocalSubmapProvider, over the in-memory record store.
     const auto filtered_local_provider = [&](int ref_idx) -> CloudPtr {
@@ -1886,7 +2021,7 @@ struct BagPass
         const Eigen::Affine3d & reference_affine = records[ref_idx].meta.pose;
         for (int k = 0; k < config.search_config.search_submap_num && (ref_idx - k) >= 0; ++k) {
           const int src_idx = ref_idx - k;
-          const CloudPtr cloud = submapCloud(records[src_idx], bag.cloud_stats);
+          const CloudPtr cloud = submapCloud(records[src_idx], cloud_stats);
           if (!cloud || cloud->empty()) {
             continue;
           }
@@ -1905,21 +2040,21 @@ struct BagPass
         return filtered_cloud;
       };
     const auto raw_cloud_provider = [&](int idx) -> CloudPtr {
-        return submapCloud(records[idx], bag.cloud_stats);
+        return submapCloud(records[idx], cloud_stats);
       };
 
     const int num_submaps = static_cast<int>(records.size());
     if (!config.fixed_loop_edges_path.empty()) {
-      next_query_idx = num_submaps;
+      next_idx = num_submaps;
       return;
     }
-    while (next_query_idx < num_submaps) {
-      const int query_idx = next_query_idx;
+    while (next_idx < num_submaps) {
+      const int query_idx = next_idx;
       backend.core.ingestDescriptors(query_idx + 1, filtered_local_provider);
       if (!graphslam::loop_search_schedule::shouldSearch(
           query_idx, config.loop_search_query_stride))
       {
-        next_query_idx = query_idx + 1;
+        next_idx = query_idx + 1;
         continue;
       }
       std::vector<graphslam::backend_core::SubmapMeta> visible;
@@ -1938,7 +2073,9 @@ struct BagPass
         visible, query_idx, config.search_config, raw_cloud_provider, *registration_for_search,
         backend.voxelgrid, backend.bbs_verifier);
       for (const auto & line : output.logs) {
-        if (line.via_logger) {
+        if (deferred != nullptr) {
+          deferred->push_back({line.via_logger, line.text});
+        } else if (line.via_logger) {
           GRAPHSLAM_LOG_INFO(logger, "%s", line.text.c_str());
         } else {
           std::cout << line.text << std::endl;
@@ -1952,12 +2089,17 @@ struct BagPass
         edge.registration_information_valid = output.proposal.registration_information_valid;
         edge.registration_information = output.proposal.registration_information;
         if (!bag.edge_set.upsert(edge)) {
-          std::cout << "loop edge skipped as redundant or lower quality" << std::endl;
+          const char * skipped = "loop edge skipped as redundant or lower quality";
+          if (deferred != nullptr) {
+            deferred->push_back({false, skipped});
+          } else {
+            std::cout << skipped << std::endl;
+          }
         } else {
-          loop_edges_changed = true;
+          edges_changed = true;
         }
       }
-      next_query_idx = query_idx + 1;
+      next_idx = query_idx + 1;
     }
   }
 
@@ -1965,9 +2107,14 @@ struct BagPass
   // the submaps and loop edges so far.
   Eigen::Isometry3d causalCorrection() const
   {
+    return causalCorrection(bag.records);
+  }
+
+  Eigen::Isometry3d causalCorrection(const std::vector<SubmapRecord> & records) const
+  {
     std::vector<graphslam::pose_graph::SubmapNode> nodes;
-    nodes.reserve(bag.records.size());
-    for (const auto & record : bag.records) {
+    nodes.reserve(records.size());
+    for (const auto & record : records) {
       graphslam::pose_graph::SubmapNode submap_node;
       submap_node.pose = Eigen::Isometry3d(record.meta.pose.matrix());
       submap_node.odometry_covariance = record.odometry_covariance;

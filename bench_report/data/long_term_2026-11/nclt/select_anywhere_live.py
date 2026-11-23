@@ -5,7 +5,8 @@ evaluation square (its pass +-10 s becomes the store). Then for each later perio
 session with the longest pass: in-area run = that pass +-10 s; out-of-area run = the first 480 s
 of its longest stretch at least 100 m (XY) from every GT position of the base pass.
 
-  python3 -I select_anywhere_live.py ROOT   (ROOT holds windows.json and gt1hz/DAY.npy)
+  python3 -I select_anywhere_live.py ROOT [ALSO_USED_DAY ...]
+  (ROOT holds windows.json and gt1hz/DAY.npy; further days are excluded as used)
 """
 import glob
 import json
@@ -27,9 +28,10 @@ def runs(mask):
 
 def main():
     root = sys.argv[1]
+    used = USED | set(sys.argv[2:])
     x0, x1, y0, y1 = json.load(open(f'{root}/windows.json'))['region_xy']
     days = sorted(p.split('/')[-1][:-4] for p in glob.glob(f'{root}/gt1hz/*.npy'))
-    gts = {d: np.load(f'{root}/gt1hz/{d}.npy') for d in days if d not in USED}
+    gts = {d: np.load(f'{root}/gt1hz/{d}.npy') for d in days if d not in used}
 
     def longest_pass(g):
         inside = (g[:, 1] >= x0) & (g[:, 1] <= x1) & (g[:, 2] >= y0) & (g[:, 2] <= y1)
