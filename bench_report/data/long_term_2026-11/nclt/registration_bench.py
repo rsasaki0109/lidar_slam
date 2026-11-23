@@ -37,6 +37,9 @@ VARIANTS = {
     'coarse05': {'coarse_voxel': 0.5},
     'neigh2': {'neighbours': 2},
     'threads4': {'threads': 4},
+    'iter5': {'iterations': 5},
+    'iter10_neigh2': {'iterations': 10, 'neighbours': 2},
+    'iter10_coarse1': {'iterations': 10, 'coarse_voxel': 1.0},
 }
 
 
