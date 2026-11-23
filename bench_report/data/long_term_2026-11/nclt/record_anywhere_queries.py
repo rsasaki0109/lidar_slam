@@ -1,4 +1,4 @@
-"""Run ``python -m lidarslam live ... --relocalize-anywhere`` and save the search input of every keyframe.
+"""Save the search input of every keyframe of a ``live --relocalize-anywhere`` run.
 
   python3 -I record_anywhere_queries.py OUT.npz live BAG ... --store STORE --relocalize-anywhere
 
