@@ -1,6 +1,7 @@
 """Causal startup registration against the primary frame of a long-term store."""
 
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import shutil
 import tempfile
@@ -104,7 +105,7 @@ class StartupRelocalization:
     """Verify an initial pose and optionally track it with fixed-reference loop factors."""
 
     def __init__(self, aligned_sessions, initial_pose, track=False, shared_surfaces=False,
-                 anywhere=False):
+                 anywhere=False, background=False):
         self.prior = pose_matrix(initial_pose) if initial_pose is not None else None
         if anywhere and initial_pose is not None:
             raise ValueError('choose either an initial pose or a search anywhere')
@@ -114,6 +115,12 @@ class StartupRelocalization:
         self._candidate = None
         self._last_search = -np.inf
         self._search_interval = ANYWHERE_INTERVAL_SEC
+        # With ``background`` an anywhere-search runs on a worker thread and its result is used
+        # at the first keyframe after it finishes, so a search that registers candidates does
+        # not stall tracking (live --realtime). The outcome then depends on wall-clock timing;
+        # without it searches run in line and a replay is deterministic.
+        self._executor = ThreadPoolExecutor(max_workers=1) if anywhere and background else None
+        self._pending = None
         directories, transforms = zip(*aligned_sessions)
         windows = []
         for directory in directories:
@@ -185,7 +192,21 @@ class StartupRelocalization:
                 return
             reference = None
         else:
-            if self.active and self.anywhere:
+            prior = None
+            searching = self.active and self.anywhere
+            if searching and self._pending is not None:
+                if not self._pending[0].done():
+                    return
+                future, index, odometry, local_map = self._pending
+                self._pending = None
+                match, gated = future.result()
+                self._pace(match, gated)
+                if match is None:
+                    return
+                reference, observed = match
+                return self._accept(stamp, index, odometry, local_map, reference, observed,
+                                    False, None)
+            if searching:
                 # A search of the whole store takes seconds: try one keyframe per interval.
                 if stamp - self._last_search < self._search_interval:
                     return
@@ -194,18 +215,44 @@ class StartupRelocalization:
                 # Describe the incoming window at the same density as the stored archive.
                 level_from_body = np.linalg.inv(frame) @ odometry
                 points = body_points @ level_from_body[:3, :3].T + level_from_body[:3, 3]
-            match = self._match(frame, odometry, local_map, points)
-            if self.active and self.anywhere:
-                if match is not None:
-                    self._search_interval = ANYWHERE_INTERVAL_SEC
-                else:
-                    ranked = self.matcher.rank_anywhere(points, 1)
-                    if ranked and ranked[0][0] <= ANYWHERE_DESCRIPTOR_GATE:
-                        self._search_interval = min(2 * self._search_interval,
-                                                    ANYWHERE_MAX_INTERVAL_SEC)
+            if searching and self._executor is not None:
+                future = self._executor.submit(self._search, frame, odometry, local_map, points)
+                self._pending = (future, index, odometry, local_map)
+                return
+            if searching:
+                match, gated = self._search(frame, odometry, local_map, points)
+                self._pace(match, gated)
+            else:
+                match = self._match(frame, odometry, local_map, points)
             if match is None:
                 return
             reference, observed = match
+        self._accept(stamp, index, odometry, local_map, reference, observed, shared, prior)
+
+    def _search(self, frame, odometry, local_map, points):
+        """One anywhere-search: the match, and whether a candidate passed the Scan Context
+        gate (used for pacing). Runs on the worker thread with ``background``."""
+        match = self._match(frame, odometry, local_map, points)
+        gated = False
+        if match is None:
+            ranked = self.matcher.rank_anywhere(points, 1)
+            gated = bool(ranked) and ranked[0][0] <= ANYWHERE_DESCRIPTOR_GATE
+        return match, gated
+
+    def _pace(self, match, gated):
+        if match is not None:
+            self._search_interval = ANYWHERE_INTERVAL_SEC
+        elif gated:
+            self._search_interval = min(2 * self._search_interval, ANYWHERE_MAX_INTERVAL_SEC)
+
+    def close(self):
+        """Stop the search worker; a search still running is waited for and its result dropped."""
+        if self._executor is not None:
+            self._executor.shutdown(wait=True)
+            self._executor = None
+            self._pending = None
+
+    def _accept(self, stamp, index, odometry, local_map, reference, observed, shared, prior):
         if self.transform is None and self.anywhere:
             candidate = observed @ np.linalg.inv(local_map)
             if self._candidate is None or not _agrees(self._candidate, candidate, .5, 2.):
