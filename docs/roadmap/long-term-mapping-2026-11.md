@@ -1305,3 +1305,33 @@ live backend's loop closure, present without a store; `--relocalize-anywhere` it
 (b). Bounding the backend's loop-candidate work in live sessions (fewer candidates per submap, or
 loop closure off the tracking path like the search) is the next change, and it needs a new
 preregistered live check, on sessions not used here, before the mode can leave experimental.
+
+Where the time goes (post hoc, `py-spy --native` on 2012-08-20 in-area played offline with no
+store): 66 % of all samples are in `BackendCore::searchLoopForSubmap`, almost all of it small_gicp
+GICP verification of loop candidates (`knn_search` alone 49 %); the RKO-LIO frontend is 19 %. The
+existing `loop_search_query_stride` (search every N-th submap; 1 in the walking preset) bounds it
+without a code change. On the same run in real time, with the store (`anywhere_live_stride_probe.jsonl`;
+a session of the live check, so this is not a selection of the stride):
+
+| `loop_search_query_stride` | Anchored after | Pose lag p95 / max | Loop edges |
+| ---: | ---: | --- | ---: |
+| 1 (live check) | 40.2 s | 18.9 / 31.8 s | 2 |
+| 4 | 40.2 s | 0.38 / 3.56 s | 2 |
+| 8 | 39.0 s | 0.06 / 3.48 s | 2 |
+
+Its cost on the development sessions, each mapped offline alone (ATE against NCLT ground truth,
+rigid fit; optimized / causal trajectory):
+
+| Session | Stride 1 | Stride 4 | Loop edges (1 → 4) |
+| --- | --- | --- | --- |
+| 2012-01-15 | 0.376 / 0.391 m | 0.376 / 0.391 m | 0 → 0 |
+| 2012-05-11 | 0.605 / 0.675 m | 0.652 / 0.750 m | 6 → 5 |
+| 2012-06-15 | 0.447 / 0.500 m | 0.449 / 0.506 m | 4 → 4 |
+| 2012-05-26 | 0.478 / 0.499 m | 0.471 / 0.497 m | 5 → 5 |
+
+A stride of 4 keeps three sessions within 1.5 % and loses one loop on 2012-05-11 (+8 % ATE). The
+development sessions do not fall behind real time even with stride 1 (max lag 1.2 s above), so
+they cannot choose the stride by lag. Two ways on: a live setting with a coarser loop-search
+stride (simple; costs some loops), or loop verification off the tracking path as for the search
+(keeps every loop; a larger change to the shared offline pipeline, which must stay deterministic
+when not in real time). Either needs a new preregistered live check on unused sessions.

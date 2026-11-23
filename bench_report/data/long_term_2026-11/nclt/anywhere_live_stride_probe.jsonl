@@ -1,0 +1,2 @@
+{"run": "2012-08-20 in-area (live check session, post hoc)", "loop_search_query_stride": 4, "lag_seconds": {"p50": 0.01951917100893752, "p95": 0.38356230323825, "max": 3.5581949199973906}}
+{"run": "2012-08-20 in-area (live check session, post hoc)", "loop_search_query_stride": 8, "lag_seconds": {"p50": 0.019497404557569098, "p95": 0.06074760256103673, "max": 3.482994256997358}}
