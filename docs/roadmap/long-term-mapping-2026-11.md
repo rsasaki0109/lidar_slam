@@ -1248,3 +1248,90 @@ What holds under the shared placement on both chains: both change modes cut ghos
 rests on a number that this re-run does not reproduce; that decision stands as recorded, with
 this caveat. Any further change to the change modes needs a new holdout chain, preregistered,
 and run and scored in one environment.
+
+### Live check of `--relocalize-anywhere` on a new store (preregistered 2026-11-23, before the run)
+
+Method as merged in #635 (`bceac32`): the search of #633 with the back-off of #634, run on a worker
+thread under `--realtime`. Nothing below has been run with it. Ground truth has been used only at
+1 Hz, as positions, to choose the windows (`select_anywhere_live.py`,
+`anywhere_live_windows.json`); every session used so far in this document is excluded.
+
+- **Store:** the unused NCLT session with the longest pass through the evaluation square,
+  2012-02-05 (that pass ±10 s, 709 s), mapped offline into a new store with the NCLT odometry
+  and backend parameters.
+- **Sessions:** for each later period (2012-03–05, 06–09, 2012-10–2013-04) the unused session
+  with the longest pass: 2012-03-25, 2012-08-20, 2012-12-01. Each gives an **in-area run** (its
+  pass ±10 s, 421–495 s) and an **out-of-area run** (the first 480 s of its longest stretch at
+  least 100 m from every position of the stored pass; closest approach 197.7–326.9 m).
+- Each run: `live --store COPY --relocalize-anywhere --realtime`, the in-area and out-of-area
+  runs of one session played at the same time (two at a time on this 4-core machine, as for the
+  development timing above), once each, then `evaluate_relocalize_anywhere.py` against the base
+  map (`holdout_anywhere_live.sh`).
+- **Correct anchor:** as calibrated above: `converged_apart` ≤ 0.25 m and ≤ 0.5°, and offset
+  from the ground-truth placement ≤ 4.0 m RMS. Any other anchor is wrong.
+- **Rule:** the mode works live on this store if (a) every in-area run anchors correctly within
+  180 s of data, (b) no run anchors wrongly, and (c) every run keeps the pose lag at p95 ≤ 1.0 s
+  and max ≤ 5.0 s (development, on the worker: p95 0.04–0.25 s, max 0.17–1.2 s). A run that never
+  anchors is a miss for (a), not a wrong anchor. All six runs are reported whatever the outcome.
+- If the rule holds, `--relocalize-anywhere` is proposed to leave experimental status (a separate
+  change, for the maintainer to decide).
+
+#### Live check results (2026-11-23)
+
+All six runs as preregistered (`holdout_anywhere_live.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | `converged_apart` | Verdict | Pose lag p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| 2012-03-25 in-area (495 s) | 48.0 s | 0.55 | 0.000 m | correct | 0.52 / 1.57 s |
+| 2012-08-20 in-area (464 s) | 40.2 s | 1.02 | 0.000 m | correct | **18.9 / 31.8 s** |
+| 2012-12-01 in-area (421 s) | 37.8 s | 0.67 | 0.002 m | correct | **11.3 / 23.2 s** |
+| 2012-03-25 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 1.54 s |
+| 2012-08-20 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 0.15 s |
+| 2012-12-01 out-of-area (480 s) | — | — | — | no anchor | 0.04 / 0.07 s |
+
+(a) holds (every in-area run anchored correctly, in 38–48 s of data) and (b) holds (no wrong
+anchor, none of the out-of-area runs anchored), but **(c) fails**: two in-area runs fell behind
+real time by up to 32 s. **Under the preregistered rule the mode does not work live on this
+store**, and it stays experimental.
+
+Post-hoc diagnosis (not preregistered): 2012-08-20 in-area was played in real time again, alone,
+once with `--relocalize-anywhere` and once with no store at all (`anywhere_live_lag_probe.jsonl`).
+Both fell behind the same way (p95 19.9 s and 18.0 s, max 30.9 s and 26.0 s), and the per-pose lag
+was below 0.13 s for the first 300 s in both, so the search is not the cause. The lag builds up
+from about 420 s of data, where the path returns near its start: the backend registers a
+distance-based loop candidate on every new submap (most are then skipped as redundant), and each
+of those keyframes held tracking for 3.1–3.6 s. The failure of (c) is therefore a property of the
+live backend's loop closure, present without a store; `--relocalize-anywhere` itself met (a) and
+(b). Bounding the backend's loop-candidate work in live sessions (fewer candidates per submap, or
+loop closure off the tracking path like the search) is the next change, and it needs a new
+preregistered live check, on sessions not used here, before the mode can leave experimental.
+
+Where the time goes (post hoc, `py-spy --native` on 2012-08-20 in-area played offline with no
+store): 66 % of all samples are in `BackendCore::searchLoopForSubmap`, almost all of it small_gicp
+GICP verification of loop candidates (`knn_search` alone 49 %); the RKO-LIO frontend is 19 %. The
+existing `loop_search_query_stride` (search every N-th submap; 1 in the walking preset) bounds it
+without a code change. On the same run in real time, with the store (`anywhere_live_stride_probe.jsonl`;
+a session of the live check, so this is not a selection of the stride):
+
+| `loop_search_query_stride` | Anchored after | Pose lag p95 / max | Loop edges |
+| ---: | ---: | --- | ---: |
+| 1 (live check) | 40.2 s | 18.9 / 31.8 s | 2 |
+| 4 | 40.2 s | 0.38 / 3.56 s | 2 |
+| 8 | 39.0 s | 0.06 / 3.48 s | 2 |
+
+Its cost on the development sessions, each mapped offline alone (ATE against NCLT ground truth,
+rigid fit; optimized / causal trajectory):
+
+| Session | Stride 1 | Stride 4 | Loop edges (1 → 4) |
+| --- | --- | --- | --- |
+| 2012-01-15 | 0.376 / 0.391 m | 0.376 / 0.391 m | 0 → 0 |
+| 2012-05-11 | 0.605 / 0.675 m | 0.652 / 0.750 m | 6 → 5 |
+| 2012-06-15 | 0.447 / 0.500 m | 0.449 / 0.506 m | 4 → 4 |
+| 2012-05-26 | 0.478 / 0.499 m | 0.471 / 0.497 m | 5 → 5 |
+
+A stride of 4 keeps three sessions within 1.5 % and loses one loop on 2012-05-11 (+8 % ATE). The
+development sessions do not fall behind real time even with stride 1 (max lag 1.2 s above), so
+they cannot choose the stride by lag. Two ways on: a live setting with a coarser loop-search
+stride (simple; costs some loops), or loop verification off the tracking path as for the search
+(keeps every loop; a larger change to the shared offline pipeline, which must stay deterministic
+when not in real time). Either needs a new preregistered live check on unused sessions.
