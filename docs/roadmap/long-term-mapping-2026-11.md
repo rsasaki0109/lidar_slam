@@ -1564,7 +1564,7 @@ keyframe's search input (`record_anywhere_queries.py`) and diagnosed
   | --- | ---: | ---: | ---: | ---: |
   | 2012-02-04 | 83.0 s | 3.4 s | 3.4 s | 6.8 s |
   | 2012-02-12 | none | 77.1 s | 86.1 s | 89.4 s |
-  | 2012-04-29 | none | (not finished) | 226.0 s | — |
+  | 2012-04-29 | none | 219.2 s | 226.0 s | — |
 
   At 0.26 a search registers several times as many candidates (development: 4–25×), each taking
   seconds; with the search on the worker the next search waits for it, so in real time far
