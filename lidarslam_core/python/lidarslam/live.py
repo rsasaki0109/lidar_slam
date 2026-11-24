@@ -54,6 +54,11 @@ class Session:
     stored submap, when the operator knows that the recording starts in that area.
     ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
     and anchors once two keyframes agree on the session's place in the store.
+    ``background_search`` runs those searches, and the backend's loop search and graph
+    optimizations, on worker threads, so a slow search does not stall tracking; the anchor and the
+    live corrections then depend on wall-clock timing (a replay with it is not deterministic,
+    though the backend's loop edges and final outputs are unchanged). :func:`replay` turns it on
+    with ``realtime``.
     """
 
     def __init__(self, odometry_params: dict[str, Any], backend_params: dict[str, Any],
@@ -64,7 +69,7 @@ class Session:
                  track_store: bool = False, track_shared_surfaces: bool = False,
                  detect_changes: bool = False, filter_new_points: bool = False,
                  start_near_first_submap: bool = False, refine_visibility: bool = False,
-                 relocalize_anywhere: bool = False):
+                 relocalize_anywhere: bool = False, background_search: bool = False):
         filter_new_points = filter_new_points or refine_visibility
         detect_changes = detect_changes or filter_new_points
         if sum([initial_pose is not None, start_near_first_submap, relocalize_anywhere]) > 1:
@@ -104,7 +109,8 @@ class Session:
             self._startup = StartupRelocalization(aligned, initial_pose,
                                                    track=track_store or track_shared_surfaces,
                                                    shared_surfaces=track_shared_surfaces,
-                                                   anywhere=relocalize_anywhere)
+                                                   anywhere=relocalize_anywhere,
+                                                   background=background_search)
             if detect_changes:
                 from lidarslam.map_changes import MapChanges
                 self._changes = MapChanges([path for path, _ in aligned],
@@ -116,7 +122,11 @@ class Session:
         backend_params.setdefault('bag_path', str(self.out / 'live'))
         backend_params['output_dir'] = str(self.out)
         backend_params['causal_trajectory_output'] = True
+        # The store keeps these parameters for later replays; the worker thread is a property of
+        # this live run only.
         self._backend_params = backend_params
+        if background_search:
+            backend_params = {**backend_params, 'background_loop_search': True}
 
         self._base_frame = str(odometry_params.get('base_frame', ''))
         self._odom_frame = str(odometry_params.get('odom_frame') or 'odom')
@@ -227,6 +237,8 @@ class Session:
         if self._finished:
             raise RuntimeError('the session is already finished')
         self._finished = True
+        if self._startup is not None:
+            self._startup.close()
         self._driver.write_tum(str(self.out / 'odometry_tum.txt'))
         if not self._pipeline.finish():
             raise RuntimeError('the backend failed (see its log)')
@@ -310,6 +322,7 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
                       filter_new_points=filter_new_points,
                       start_near_first_submap=start_near_first_submap,
                       relocalize_anywhere=relocalize_anywhere,
+                      background_search=realtime,
                       refine_visibility=refine_visibility)
     topics = [session.lidar_topic, session.imu_topic]
     with SensorLog(log_path) as sensor_log:

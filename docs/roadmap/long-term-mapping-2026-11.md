@@ -1077,3 +1077,563 @@ The mode stays experimental. A next check would preregister a criterion calibrat
 development store, for example that ICP from the anchor and ICP from the ground-truth placement
 converge to the same pose, on sessions not used here, and would add sessions that never enter
 the stored area (no anchor expected).
+
+### Calibrating the anchor check on the development store (2026-11-22)
+
+`scripts/evaluate_relocalize_anywhere.py` compares an anchor (`store_from_session`) with two
+things: the ground-truth placement `T_g` (base and session odometry each fitted rigidly to NCLT
+ground truth) and point-to-plane ICP of the session's map against the base map, run once from
+the anchor (`M_a`) and once from `T_g` (`M_g`). `converged_apart` is the RMS distance between the
+session's odometry positions placed by `M_a` and by `M_g`, and the angle of `M_a·M_g⁻¹`.
+
+Development store 2012-01-15, the three development sessions of the table above re-run with the
+frozen method (anchored after 87.1 s, 135.5 s and 3.4 s; offsets 1.45, 1.27 and 0.36 m RMS from
+the ground-truth placement). Each anchor was also replaced by perturbed copies
+(`anywhere_perturb_grid.txt`: XY shifts of 0.5–5 m in four directions, yaw turns of 2–10° about
+the path's centroid, and shift-and-turn combinations; 38 per session,
+`bench_report/data/long_term_2026-11/nclt/anywhere_calibration_dev.jsonl`):
+
+| Start (3 sessions) | n | `converged_apart` (m) | Offset from `T_g` (m RMS) | ICP median residual (m) |
+| --- | ---: | ---: | ---: | ---: |
+| the anchor | 3 | 0.000 | 0.36–1.45 | 0.136–0.192 |
+| shift 0.5–2 m | 48 | 0.000 | 0.31–2.84 | 0.136–0.192 |
+| turn 2° | 6 | 0.000 | 1.83–3.03 | 0.136–0.192 |
+| shift 3 m | 12 | 0.000–1.155 | 2.72–3.75 | 0.136–0.230 |
+| shift 5 m | 12 | 3.34–4.70 | 4.71–5.66 | 0.220–0.267 |
+| turn 5° (with 0–2 m shift) | 30 | 1.64–5.06 | 4.77–6.68 | 0.196–0.268 |
+| turn 10° | 6 | 8.58–10.70 | 9.68–11.98 | 0.228–0.261 |
+
+ICP from any start within 2 m and 2° of the anchor reaches exactly the pose ICP reaches from the
+ground-truth placement; from 5 m or 5° it never does (at least 1.6 m apart, with a higher
+residual); 3 m is the edge of the basin. So "ICP from the anchor and from the ground truth
+converge to the same pose" is a check that the anchor lies within about 2–3 m and 2° of the best
+fit to the stored map. It cannot tell anchors closer than that apart, which the 1–2 m ground
+truth cannot either. The old 1.0 m bound on the ICP correction would have called 39 of the 57
+starts within 2 m and 2° wrong.
+
+### Second holdout check of `--relocalize-anywhere` (preregistered 2026-11-22, before the run)
+
+Method frozen as in `75c20ee4` (unchanged since). Store: the NCLT holdout base store (2012-02-18
+pass, `h_store`), odometry and backend parameters as in the NCLT evaluation. No session below
+has been run with the method; their ground truth has been used only at 1 Hz, as positions, to
+choose the windows.
+
+- **Sessions** (`select_anywhere_holdout.py`, `anywhere_holdout2_windows.json`): for each of four
+  periods (2012-01–02, 03–05, 06–09, 2012-10–2013-04), the NCLT session not used so far with the
+  longest pass through the evaluation square: 2012-02-02, 2012-03-17, 2012-09-28, 2012-10-28.
+  - **In-area run:** that pass ±10 s (510–1,109 s), from its first scan, no start pose.
+  - **Out-of-area run:** in the same session, the first 480 s of its longest stretch that stays at
+    least 100 m (XY) from every ground-truth position of the stored base pass (closest approach
+    100.0–238.1 m). The store holds nothing of these places, so no anchor is expected.
+- Each run: `live --store COPY --relocalize-anywhere` (`run_anywhere.sh`), then
+  `evaluate_relocalize_anywhere.py` against the base map (`holdout_anywhere2.sh`).
+- **Correct anchor:** `converged_apart` ≤ 0.25 m and ≤ 0.5°, and the anchor's offset from the
+  ground-truth placement ≤ 4.0 m RMS (on the development store every start within 2 m and 2°
+  was ≤ 3.03 m and every start 5 m or 5° off was ≥ 4.71 m). Any other anchor is **wrong**, in an
+  in-area or an out-of-area run.
+- **Rule:** the mode works on this holdout if every in-area run anchors correctly within 180 s of
+  data and no run (in-area or out-of-area) anchors wrongly. A run that never anchors is a miss,
+  not a wrong anchor; one wrong anchor fails the rule outright. Anchor time, processing time and
+  every measure above are reported for all eight runs, whatever the outcome.
+
+Not part of the rule: under this check the three sessions of the first holdout would all count
+as correct (ICP from the anchor and from the ground truth converged 0.00 m apart; offsets
+0.80–1.07 m). That observation shaped the check, which is why it is tested on new sessions.
+
+#### Second holdout results (2026-11-22)
+
+All eight runs as preregistered (`holdout_anywhere2.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | ICP correction (median residual) | `converged_apart` | Verdict | Processing / data |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| 2012-02-02 in-area | 4.0 s | 0.62 | 0.24 m (0.16 m) | 0.000 m, 0.00° | correct | 129 s / 1,109 s |
+| 2012-03-17 in-area | 3.4 s | 0.76 | 0.81 m (0.17 m) | 0.000 m, 0.00° | correct | 75 s / 510 s |
+| 2012-09-28 in-area | 5.7 s | 1.01 | 0.54 m (0.17 m) | 0.000 m, 0.00° | correct | 78 s / 531 s |
+| 2012-10-28 in-area | 6.6 s | 1.04 | 0.73 m (0.19 m) | 0.010 m, 0.01° | correct | 77 s / 616 s |
+| 2012-02-02 out-of-area | — | — | — | — | no anchor | 53 s / 480 s |
+| 2012-03-17 out-of-area | — | — | — | — | no anchor | 345 s / 480 s |
+| 2012-09-28 out-of-area | — | — | — | — | no anchor | 660 s / 480 s |
+| 2012-10-28 out-of-area | — | — | — | — | no anchor | 498 s / 480 s |
+
+**Under the preregistered rule the mode works on this holdout:** every in-area run anchored
+correctly within 7 s of data, and no run anchored wrongly; none of the four runs outside the
+stored area anchored.
+
+Outside the stored area the search never stops, and two of the four runs took longer than their
+data (660 s and 498 s for 480 s): a session that drives away from the store would fall behind
+real time. Bounding the search cost (fewer candidates per search, or a pause after repeated
+failures) is the next change before the mode can leave experimental; it needs its own check that
+the in-area anchors above still hold.
+
+### Bounding the search outside the stored area (development, 2026-11-22)
+
+A profile of the 2012-09-28 run outside the stored area: 157 of 176 searches had no candidate
+under the Scan Context gate and took 0.06 s; the other 19 registered 1–8 candidates at 6–10 s
+each and found nothing, 700 s in all. Since `b837593`, a search that registers candidates and
+finds nothing doubles the wait before the next search (data time, from 2 s), and a found
+candidate resets it. The cap was chosen on the development store only, with two new runs outside
+it (`anywhere_dev_out_windows.json`: the first 480 s of the longest stretch of 2012-05-11 and of
+2012-06-15 at least 100 m from the 2012-01-15 pass):
+
+| Cap | Anchored after (05-11 / 06-15 / 05-26) | Processing outside the store (05-11 / 06-15, 480 s each) |
+| --- | --- | --- |
+| 2 s (no back-off) | 87.1 / 135.5 / 3.4 s | 83 / 283 s |
+| **8 s** (`b4d097e`) | 92.8 / 141.0 / 3.4 s | 82 / 133 s |
+| 16 s | 149.2 / 141.0 / 3.4 s | 81 / 69 s |
+| 32 s | 233.5 / 141.0 / 3.4 s | 82 / 72 s |
+
+All development anchors stayed correct under the calibrated check. With the 8 s cap the eight
+runs of the second holdout were repeated (`anywhere_backoff_holdout2_recheck.jsonl`; a regression
+check on data already used, not a new holdout): the four in-area runs gave the same anchors as
+before (3.4–6.6 s, `converged_apart` ≤ 0.01 m), and the four runs outside the store did not
+anchor and took 62, 146, 306 and 182 s for 480 s of data (before: 53, 345, 660 and 498 s). The
+mode stays experimental: it now keeps up with real time on these runs, on this machine, but a
+search that registers candidates still blocks the session for up to a minute.
+
+### Searching off the tracking path (development, 2026-11-22)
+
+With the back-off a search that registers candidates still blocked tracking for up to a minute.
+Since this change, `live --relocalize-anywhere --realtime` runs each search on a worker thread
+(the matcher releases the GIL) and uses its result at the first keyframe after it finishes.
+Without `--realtime` searches stay in line, so replays, and every number above, stay
+deterministic; with it the anchor depends on wall-clock timing, as real-time playback already
+does. Two runs played in real time on this machine, in line (as before) and on the worker
+(`anywhere_realtime_background.jsonl`; 2012-09-28 outside the stored area is a run of the second
+holdout, used here only for timing):
+
+| Run | Search | Anchored after | Pose lag p50 / p95 / max |
+| --- | --- | ---: | --- |
+| 2012-09-28 outside the store (480 s) | in line | — | 56.9 / 185.5 / 196.6 s |
+| | worker | — | 0.017 / 0.042 / 0.174 s |
+| 2012-05-11 on the development store (504 s) | in line | 92.8 s | 0.017 / 5.4 / 12.9 s |
+| | worker | 97.4 s | 0.017 / 0.25 / 1.2 s |
+
+The worker run's anchor on the development store is correct under the calibrated check (ICP
+from the anchor and from the ground truth 0.00 m apart; 1.43 m RMS from the ground-truth
+placement). Searches no longer hold up tracking; the mode stays experimental until a live run
+on a store not used for its development has been checked.
+
+### NCLT map update with one reference placement for every arm (2026-11-22)
+
+The NCLT measure placed the references by ICP against each arm's own export, so the scored region
+and the new-structure reference differed between arms. `evaluate_nclt_map_update.py
+--align-target` takes one map as the ICP target for every arm; here it is the append arm C's
+export, which holds both the old and the new structure. `chain_shared.sh` re-runs one chain
+(base store, update mapped alone, known start, arms A, B and C, both references) and scores it
+both ways (`rerun_{d,h}_{own,shared}_{A,B,C}.json`). Both chains were re-run from scratch in this
+environment.
+
+| Chain | Arm | Ghost points (own / shared) | vs C (shared) | S (shared) | N (own / shared) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| development | A, `--filter-new-points` | 13,074 / 11,753 | 0.58 | 0.998 | 87.7 / 86.3 % |
+| development | B, `--refine-visibility` | 12,950 / 11,893 | 0.59 | 0.999 | 91.3 / 91.6 % |
+| development | C, append | 20,104 / 20,104 | 1.00 | 1.000 | 95.2 / 95.2 % |
+| holdout (re-run, post hoc) | A | 45,474 / 43,834 | 0.72 | 0.994 | 91.0 / 54.4 % |
+| holdout (re-run, post hoc) | B | 42,151 / 42,542 | 0.70 | 0.994 | 57.1 / 58.5 % |
+| holdout (re-run, post hoc) | C | 60,613 / 60,613 | 1.00 | 1.000 | 67.2 / 67.2 % |
+
+The development chain reproduces the committed one closely (arm C: 20,104 ghost points and N
+95.2 % against 20,813 and 94.9 %; the update was trimmed 81 s instead of 83 s). **The holdout
+chain does not reproduce the committed holdout result**: the base map already differs (195,113
+scored points against 194,009, and 9.3 % of it counted as ghost against 15.9 %), and arm C now
+has G 14.7 % and N 67.2 % against 9.96 % and 99.1 %. The committed holdout was run in another
+environment with an earlier build, and its runs are gone, so the cause is not known. With its own
+placement, arm A's N on the holdout re-run jumps to 91.0 % because its references are placed
+differently (2.07 m vs 1.86 m correction), the artefact the shared placement removes.
+
+What holds under the shared placement on both chains: both change modes cut ghost points to
+0.58–0.72 of append with S ≥ 0.99, and B keeps at least as much new structure as A (91.6 vs
+86.3 %, 58.5 vs 54.4 %). The absolute N of the holdout chain is not stable across environments
+(99 % then, 67 % now, for append), so the holdout decision recorded above (B helps, N ≥ 0.85)
+rests on a number that this re-run does not reproduce; that decision stands as recorded, with
+this caveat. Any further change to the change modes needs a new holdout chain, preregistered,
+and run and scored in one environment.
+
+### Live check of `--relocalize-anywhere` on a new store (preregistered 2026-11-23, before the run)
+
+Method as merged in #635 (`bceac32`): the search of #633 with the back-off of #634, run on a worker
+thread under `--realtime`. Nothing below has been run with it. Ground truth has been used only at
+1 Hz, as positions, to choose the windows (`select_anywhere_live.py`,
+`anywhere_live_windows.json`); every session used so far in this document is excluded.
+
+- **Store:** the unused NCLT session with the longest pass through the evaluation square,
+  2012-02-05 (that pass ±10 s, 709 s), mapped offline into a new store with the NCLT odometry
+  and backend parameters.
+- **Sessions:** for each later period (2012-03–05, 06–09, 2012-10–2013-04) the unused session
+  with the longest pass: 2012-03-25, 2012-08-20, 2012-12-01. Each gives an **in-area run** (its
+  pass ±10 s, 421–495 s) and an **out-of-area run** (the first 480 s of its longest stretch at
+  least 100 m from every position of the stored pass; closest approach 197.7–326.9 m).
+- Each run: `live --store COPY --relocalize-anywhere --realtime`, the in-area and out-of-area
+  runs of one session played at the same time (two at a time on this 4-core machine, as for the
+  development timing above), once each, then `evaluate_relocalize_anywhere.py` against the base
+  map (`holdout_anywhere_live.sh`).
+- **Correct anchor:** as calibrated above: `converged_apart` ≤ 0.25 m and ≤ 0.5°, and offset
+  from the ground-truth placement ≤ 4.0 m RMS. Any other anchor is wrong.
+- **Rule:** the mode works live on this store if (a) every in-area run anchors correctly within
+  180 s of data, (b) no run anchors wrongly, and (c) every run keeps the pose lag at p95 ≤ 1.0 s
+  and max ≤ 5.0 s (development, on the worker: p95 0.04–0.25 s, max 0.17–1.2 s). A run that never
+  anchors is a miss for (a), not a wrong anchor. All six runs are reported whatever the outcome.
+- If the rule holds, `--relocalize-anywhere` is proposed to leave experimental status (a separate
+  change, for the maintainer to decide).
+
+#### Live check results (2026-11-23)
+
+All six runs as preregistered (`holdout_anywhere_live.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | `converged_apart` | Verdict | Pose lag p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| 2012-03-25 in-area (495 s) | 48.0 s | 0.55 | 0.000 m | correct | 0.52 / 1.57 s |
+| 2012-08-20 in-area (464 s) | 40.2 s | 1.02 | 0.000 m | correct | **18.9 / 31.8 s** |
+| 2012-12-01 in-area (421 s) | 37.8 s | 0.67 | 0.002 m | correct | **11.3 / 23.2 s** |
+| 2012-03-25 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 1.54 s |
+| 2012-08-20 out-of-area (480 s) | — | — | — | no anchor | 0.05 / 0.15 s |
+| 2012-12-01 out-of-area (480 s) | — | — | — | no anchor | 0.04 / 0.07 s |
+
+(a) holds (every in-area run anchored correctly, in 38–48 s of data) and (b) holds (no wrong
+anchor, none of the out-of-area runs anchored), but **(c) fails**: two in-area runs fell behind
+real time by up to 32 s. **Under the preregistered rule the mode does not work live on this
+store**, and it stays experimental.
+
+Post-hoc diagnosis (not preregistered): 2012-08-20 in-area was played in real time again, alone,
+once with `--relocalize-anywhere` and once with no store at all (`anywhere_live_lag_probe.jsonl`).
+Both fell behind the same way (p95 19.9 s and 18.0 s, max 30.9 s and 26.0 s), and the per-pose lag
+was below 0.13 s for the first 300 s in both, so the search is not the cause. The lag builds up
+from about 420 s of data, where the path returns near its start: the backend registers a
+distance-based loop candidate on every new submap (most are then skipped as redundant), and each
+of those keyframes held tracking for 3.1–3.6 s. The failure of (c) is therefore a property of the
+live backend's loop closure, present without a store; `--relocalize-anywhere` itself met (a) and
+(b). Bounding the backend's loop-candidate work in live sessions (fewer candidates per submap, or
+loop closure off the tracking path like the search) is the next change, and it needs a new
+preregistered live check, on sessions not used here, before the mode can leave experimental.
+
+Where the time goes (post hoc, `py-spy --native` on 2012-08-20 in-area played offline with no
+store): 66 % of all samples are in `BackendCore::searchLoopForSubmap`, almost all of it small_gicp
+GICP verification of loop candidates (`knn_search` alone 49 %); the RKO-LIO frontend is 19 %. The
+existing `loop_search_query_stride` (search every N-th submap; 1 in the walking preset) bounds it
+without a code change. On the same run in real time, with the store (`anywhere_live_stride_probe.jsonl`;
+a session of the live check, so this is not a selection of the stride):
+
+| `loop_search_query_stride` | Anchored after | Pose lag p95 / max | Loop edges |
+| ---: | ---: | --- | ---: |
+| 1 (live check) | 40.2 s | 18.9 / 31.8 s | 2 |
+| 4 | 40.2 s | 0.38 / 3.56 s | 2 |
+| 8 | 39.0 s | 0.06 / 3.48 s | 2 |
+
+Its cost on the development sessions, each mapped offline alone (ATE against NCLT ground truth,
+rigid fit; optimized / causal trajectory):
+
+| Session | Stride 1 | Stride 4 | Loop edges (1 → 4) |
+| --- | --- | --- | --- |
+| 2012-01-15 | 0.376 / 0.391 m | 0.376 / 0.391 m | 0 → 0 |
+| 2012-05-11 | 0.605 / 0.675 m | 0.652 / 0.750 m | 6 → 5 |
+| 2012-06-15 | 0.447 / 0.500 m | 0.449 / 0.506 m | 4 → 4 |
+| 2012-05-26 | 0.478 / 0.499 m | 0.471 / 0.497 m | 5 → 5 |
+
+A stride of 4 keeps three sessions within 1.5 % and loses one loop on 2012-05-11 (+8 % ATE). The
+development sessions do not fall behind real time even with stride 1 (max lag 1.2 s above), so
+they cannot choose the stride by lag. Two ways on: a live setting with a coarser loop-search
+stride (simple; costs some loops), or loop verification off the tracking path as for the search
+(keeps every loop; a larger change to the shared offline pipeline, which must stay deterministic
+when not in real time). Either needs a new preregistered live check on unused sessions.
+
+### Backend loop search off the tracking path (development, 2026-11-23)
+
+Since this change, `background_loop_search` (set by `live.Session` for `background_search`, that
+is `replay`/`live --realtime`) runs the backend's loop search and its causal graph optimizations
+on a worker thread over a snapshot of the submaps. Every query still runs, in order, and the
+remaining ones run at `finish()`, so the loop edges and every output after the pass are the
+in-line ones; only the causal (live) corrections depend on timing. Without `--realtime` nothing
+changes.
+
+- 2012-08-20 in-area mapped offline with the worker and in line: `loop_edges.csv`,
+  `trajectory_optimized.tum`, `trajectory_raw.tum`, `odometry_tum.txt` and `map.pcd`
+  byte-identical; `trajectory_causal.tum` differs, as designed.
+- The same run in real time with the store (`anywhere_live_background_loop_probe.jsonl`; a session
+  of the live check, so post hoc): anchored after 40.2 s as before, both loop edges kept, pose lag
+  p95 0.045 s and max 0.14 s (18.9 s and 31.8 s with the search in line). The worker ran at most
+  19.8 s behind a submap's stamp, so live corrections arrive late instead of tracking stopping.
+
+### Second live check of `--relocalize-anywhere` (preregistered 2026-11-23, before the run)
+
+As the live check above, with the backend loop search on the worker (the change above) and new
+sessions. Windows from 1 Hz ground-truth positions only (`select_anywhere_live.py` with the four
+sessions of the first live check also excluded; `anywhere_live2_windows.json`):
+
+- **Store:** 2012-01-22 (its pass ±10 s, 518 s).
+- **Sessions:** 2012-03-31, 2012-08-04, 2013-02-23; in-area runs 466, 425 and 369 s; out-of-area
+  runs 480 s each, closest approach 186.8, 249.7 and 101.0 m.
+- Runs, correct-anchor check and **rule (a), (b), (c)** exactly as in the first live check
+  (`holdout_anywhere_live2.sh`): every in-area run anchors correctly within 180 s of data; no run
+  anchors wrongly; every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s. Reported whatever
+  the outcome.
+
+#### Second live check results (2026-11-23)
+
+All six runs as preregistered (`holdout_anywhere_live2.jsonl`):
+
+| Run | Anchored after | Offset from `T_g` (m RMS) | `converged_apart` | Verdict | Pose lag p95 / max |
+| --- | ---: | ---: | ---: | --- | --- |
+| 2012-03-31 in-area (466 s) | 175.4 s | 2.20 | 3.169 m, 3.00° | **wrong** | 0.026 / 0.072 s |
+| 2012-08-04 in-area (425 s) | **222.7 s** | 1.11 | 0.000 m | correct, late | 0.038 / 0.109 s |
+| 2013-02-23 in-area (369 s) | 7.0 s | 0.55 | 0.000 m | correct | 0.044 / 0.101 s |
+| 2012-03-31 out-of-area (480 s) | — | — | — | no anchor | 0.030 / 0.079 s |
+| 2012-08-04 out-of-area (480 s) | — | — | — | no anchor | 0.032 / 0.074 s |
+| 2013-02-23 out-of-area (480 s) | — | — | — | no anchor | 0.041 / 0.112 s |
+
+(c) now holds on every run (max pose lag 0.11 s), so the backend worker does what it was for. But
+(a) fails (2012-08-04 anchored after 222.7 s, beyond 180 s; 2012-03-31 anchored wrongly) and (b)
+fails (the 2012-03-31 anchor). **Under the preregistered rule the mode does not work live on this
+store**, and it stays experimental.
+
+Post hoc, about the 2012-03-31 anchor (not a change of verdict): ICP from the anchor moved it by
+0.13 m to a median residual of 0.131 m, while ICP from the ground-truth placement moved that by
+1.67 m to a higher residual, 0.169 m, 3.2 m and 3.0° away. The anchor is the better fit to the
+stored map by this measure, so the calibrated check, which takes the ground-truth start as the
+reference basin, may have called a good anchor wrong; it may equally be a wrong place that fits
+well. The check cannot tell these apart, which is its limit: the ground-truth placement is only
+good to 1–2 m and a few degrees. The late anchors (175 s and 223 s, against 7–48 s on the other
+five in-area runs of both live checks) are the other open point.
+
+Post-hoc diagnosis of the second live check (not preregistered). The two in-area runs that
+failed (a) were run again offline (in line, deterministic) with every search logged:
+
+- **Late anchors are the gate, not real time.** Offline, 2012-08-04 anchored after 126.4 s and
+  2012-03-31 after 252.0 s, also late. On the 2012-01-22 store the best Scan Context distance of
+  a search stayed above the 0.18 gate for most searches: median 0.201 (2012-08-04) and 0.262
+  (2012-03-31), with 8 of 35 and 3 of 43 searches under the gate, against median 0.225 and 9 of 60
+  for a development session (2012-06-15 on the 2012-01-15 store). The gate was chosen on one
+  development store; this winter store and spring/summer sessions sit further apart.
+- **The 2012-03-31 anchor is reproducible.** The offline run anchored at a different time from a
+  different keyframe and landed on the same placement: ICP from the anchor moved it 0.12 m to a
+  median residual of 0.131 m, again 3.17 m and 3.0° from where ICP from the ground-truth placement
+  converges (residual 0.169 m). Two independent anchors agreeing, with the better fit, point to the
+  check's reference basin (ICP from the 1–2 m ground-truth placement) rather than to the anchor.
+  This does not change the verdict.
+
+Next: a check that does not take the ground-truth start as the reference basin (for example ICP
+from several starts, the anchor's solution counting as correct when it is the best-residual one
+within the ground-truth tolerance), calibrated on development data and preregistered, and a
+look at the Scan Context gate across seasons on development stores.
+
+### Anchor check v2: the best fit near the ground truth (development, 2026-11-23)
+
+`evaluate_relocalize_anywhere.py --gt-starts` also runs ICP from eight perturbed copies of the
+ground-truth placement (`anywhere_gt_starts.txt`: 2 m in four directions, ±2° yaw, two
+shift-and-turn combinations). Among the solutions from the ground truth, those starts and the
+anchor that lie within 4.0 m RMS of the ground-truth placement, the one with the lowest median
+residual is the best fit; **v2 counts an anchor correct when ICP from it reaches that best fit
+(within 0.25 m and 0.5°) and the anchor lies within 4.0 m RMS of the ground-truth placement.** It
+no longer takes the ground-truth start, good only to 1–2 m and a few degrees, as the reference.
+
+On the development calibration (`anywhere_calibration_dev_v2.jsonl`: the same 3 sessions and
+38 perturbations per anchor) v2 gives the same verdict as v1 on all 117 perturbed starts and the
+3 anchors: every start within 2 m and 2° correct, every start 5 m or 5° off wrong, 7 of 12 at 3 m.
+
+Post hoc (not a check of anything: these runs were all scored before, and v2 was written after
+seeing the 2012-03-31 run), v2 on every in-area anchor of the second holdout and both live checks
+(`anywhere_rescore_v2_posthoc.jsonl`): all ten correct. The only change is 2012-03-31 (live
+check 2), whose anchor is itself the best fit (median residual 0.131 m against 0.145–0.169 m from
+the ground-truth starts). v2 must be preregistered before it decides anything; with it, the open
+point of `--relocalize-anywhere` is the late anchors on the 2012-01-22 store (the Scan Context
+gate), not wrong anchors.
+
+### The Scan Context gate across seasons (development, 2026-11-23)
+
+Post hoc on sessions already used (the development store and every run of the second holdout
+and both live checks are development data now), not a check of anything. Each of 25 sessions
+(`anywhere_gate_jobs.txt`) was run once with every keyframe's search input saved and no search
+(`record_anywhere_queries.py`); until a session anchors these inputs do not depend on the search.
+`gate_study.py` then replays `--relocalize-anywhere` in line at gates 0.18–0.26: the same
+candidates, registration, consensus, back-off and two-search agreement, each candidate registered
+once for all gates. At 0.18 the replay gives the current code's anchor time exactly (2012-05-11:
+92.79 s replayed and run; 2012-06-15: 140.98 s against 141.0 s). `gate_analysis.py` places every
+verified candidate and anchor against the ground-truth placement and marks a search in the store
+when the ground truth puts its keyframe within 5 m of the base session's path
+(`anywhere_gate_study.jsonl`).
+
+**No gate up to 0.26 gave a wrong candidate.** Of the 271 verified candidates of the replayed
+searches (counted once per gate), none was more than 4 m RMS from the ground-truth placement and
+none was found outside the store; none of the 12 out-of-area runs anchored at any gate. Registration, not the gate, keeps
+wrong places out on these data.
+
+**Anchor time counts time outside the store.** Several "in-area" windows start outside the
+stored area: 2012-08-04 (second live check) enters it after 75.2 s, 2012-05-11 and 2012-06-15
+after about 80 s. Seconds from entering the store to the anchor, 13 in-area runs:
+
+| Run | Enters store | 0.18 | 0.20 | 0.22 | 0.24 | 0.26 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2012-03-31 (live 2, winter store) | 9.7 s | **242.3** | 96.1 | 161.8 | 88.7 | 10.2 |
+| 2012-08-04 (live 2, winter store) | 75.2 s | 51.2 | 136.5 | 24.0 | 24.0 | 49.0 |
+| 2012-06-15 (development) | 79.6 s | 61.4 | 61.4 | 58.1 | 58.1 | 55.9 |
+| 2012-05-26 (development) | 0.1 s | 53.0 | 10.3 | 10.3 | 15.9 | 15.9 |
+| 9 other runs | 0.1–21.1 s | 3.3–12.6 | 3.3–11.0 | 3.3–13.8 | 3.3–11.6 | 3.3–13.1 |
+| median / max | | 7.1 / 242.3 | 7.1 / 136.5 | 7.4 / 161.8 | 8.6 / 88.7 | 8.0 / 55.9 |
+
+All anchors are within 2.32 m RMS of the ground-truth placement (the 2.3 m one is the 2012-03-31
+placement that v2 found to be the best fit). The time is not monotonic in the gate: a higher
+gate also lets more searches that find nothing double the wait (up to 8 s), so the searches
+that fall in the store change. Only 0.26 keeps every run within 60 s of entering the store, and
+that rests mostly on one run (2012-03-31).
+
+**Cost.** Candidates under the gate that a search registers (an upper bound: a disagreement
+stops early), all runs:
+
+| Gate | In-area searches / candidates | Out-of-area searches / candidates |
+| --- | --- | --- |
+| 0.18 | 193 / 113 | 1311 / 100 |
+| 0.22 | 137 / 266 | 621 / 1127 |
+| 0.26 | 94 / 522 | 604 / 2567 |
+
+A registration takes seconds, so out of the store 0.26 costs about 25 times the registration
+work of 0.18 (with the background worker this delays searches, not tracking).
+
+Next: a preregistered check of gate 0.26 with v2 as the anchor check and the anchor time
+counted from entering the store (ground truth, decided before the run), on sessions not used
+so far; the remaining unused NCLT sessions are few, so a new part of the campus is likely needed.
+
+### Check of the Scan Context gate at 0.26 in a new part of the campus (preregistered 2026-11-23, before the run)
+
+The development replay above raised the gate of `matchAnywhere` from 0.18 to 0.26
+(`startup_relocalization.hpp`, `ANYWHERE_DESCRIPTOR_GATE`). This check decides whether that
+holds on data not used for it. Everything below is fixed before any of these runs.
+
+- **Data.** Only NCLT sessions never used so far, in a new 150 m square that does not overlap the
+  old one, chosen from 1 Hz ground-truth positions only (`select_anywhere_gate.py`,
+  `anywhere_gate_windows.json`): x −60…90 m, y −260…−110 m.
+  - Store: 2012-01-08 (its pass ±10 s, 468 s).
+  - Sessions: 2012-02-04, 2012-02-12, 2012-02-19, 2012-04-29, 2013-01-10, 2013-04-05.
+  - Each gives an in-area run (its pass ±10 s; 412, 370, 431, 228, 227 and 250 s) and an
+    out-of-area run (480 s, 2013-01-10 255 s; at least 100 m from the store's path).
+- **Runs** (`holdout_anywhere_gate.sh`), as in the live checks: `live --relocalize-anywhere
+  --realtime` on a copy of the store, in-area and out-of-area runs of a session in parallel.
+- **Entering the store.** The first ground-truth position of the run within 5 m (XY) of a
+  ground-truth position of the store's window. A run that never comes that close is reported and
+  left out of (a).
+- **Anchor check v2**, as defined above (`--gt-starts` with `anywhere_gt_starts.txt`): an anchor
+  is correct when ICP from it reaches the best fit near the ground truth (within 0.25 m and 0.5°)
+  and it lies within 4.0 m RMS of the ground-truth placement.
+- **Rule.**
+  - **(a)** Every in-area run that enters the store anchors, correctly by v2, within 60 s of data
+    after entering it.
+  - **(b)** No run anchors wrongly: no anchor that v2 finds wrong, and no anchor in an
+    out-of-area run.
+  - **(c)** Every run keeps pose lag at p95 ≤ 1.0 s and max ≤ 5.0 s.
+
+  The gate stays at 0.26 only if (a), (b) and (c) all hold; otherwise it goes back to 0.18. The
+  result is reported whatever the outcome, with the anchor time from the start of each run as well.
+
+#### Results of the gate-0.26 check (2026-11-23)
+
+All twelve runs as preregistered (`holdout_anywhere_gate.jsonl`):
+
+| Session | In-area run | Enters store | Anchored after | After entering | v2 | Offset from `T_g` | Out-of-area run |
+| --- | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| 2012-02-04 | 412 s | 0.1 s | 83.0 s | **82.9 s** | correct | 0.25 m | no anchor |
+| 2012-02-12 | 370 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2012-02-19 | 431 s | 98.3 s | 141.0 s | 42.7 s | correct | 1.17 m | no anchor |
+| 2012-04-29 | 228 s | 70.4 s | **—** | — | — | — | no anchor |
+| 2013-01-10 | 227 s | 0.1 s | 6.8 s | 6.7 s | correct | 0.34 m | no anchor |
+| 2013-04-05 | 250 s | 0.1 s | 13.8 s | 13.7 s | correct | 1.16 m | no anchor (480 s) |
+
+(b) holds: every anchor is correct by v2 and no out-of-area run anchored. (c) holds: pose lag
+p95 ≤ 0.061 s and max ≤ 0.304 s in every run. **(a) fails**: 2012-02-04 anchored 82.9 s after
+entering the store, and 2012-02-12 and 2012-04-29 (299 s and 157 s of data after entering) did
+not anchor at all. **Under the preregistered rule the gate goes back to 0.18**, and
+`--relocalize-anywhere` stays experimental.
+
+What this says: on a new store and new sessions, a wider gate did not bring wrong anchors, but
+it did not make anchoring prompt either. The development replay credited 0.26 mostly to one run
+(2012-03-31); here three of six in-area runs were slow or never anchored with it. Why they did
+not anchor (no candidate under the gate, or candidates that registration rejected) is not known
+from this run and would be a post-hoc question on data that is now used.
+
+#### Why the gate-0.26 check failed (post hoc, 2026-11-23)
+
+Not preregistered; these sessions are used now. Three in-area runs were recorded again with every
+keyframe's search input (`record_anywhere_queries.py`) and diagnosed
+(`registration_diagnosis.py`: the session placed in the store by ICP from the ground truth;
+`anywhere_gate_posthoc.jsonl`):
+
+- **Registration is not what fails.** From its true pose, `match_with_reference` verifies 33 of
+  36, 9 of 12 and 118 of 120 sampled in-store keyframes (2012-02-12, 2012-04-29, 2012-02-04), and
+  most in-store keyframes with a candidate under 0.18 have a correct one (within 3 m and 20°).
+- **The real-time search with the wide gate is.** The same inputs replayed in line anchor early,
+  and the shipped gate in real time does too:
+
+  | Session | Check (0.26, real time) | In line, 0.26 | In line, 0.18 | Real time, 0.18 |
+  | --- | ---: | ---: | ---: | ---: |
+  | 2012-02-04 | 83.0 s | 3.4 s | 3.4 s | 6.8 s |
+  | 2012-02-12 | none | 77.1 s | 86.1 s | 89.4 s |
+  | 2012-04-29 | none | 219.2 s | 226.0 s | — |
+
+  At 0.26 a search registers several times as many candidates (development: 4–25×), each taking
+  seconds; with the search on the worker the next search waits for it, so in real time far
+  fewer keyframes are searched. 2012-02-12 is in the store only briefly (about 73–90 s, then from
+  about 298 s), and two agreeing searches did not fit. The wider gate made the real-time mode
+  worse, not better; the development replay, in line, could not show this.
+- **"Entering the store" overstated the time in it.** 2012-04-29 first comes within 5 m of the
+  store's path at 70.4 s but is in the store for only a few seconds then and again from about
+  207 s to its end (228 s); its in-line anchor at 226 s is late by the rule, but there was little
+  to anchor on. A future rule should count seconds of data in the store, not seconds since first
+  entering it.
+
+The gate stays at 0.18. What limits `--relocalize-anywhere` live is search cost per keyframe in
+real time, which a later change could bound (for example, register only the closest few
+candidates per search), checked in real time.
+
+#### Replaying the real-time search (post hoc, 2026-11-23)
+
+`gate_study.py --realtime` replays the background search of `live --realtime`: a search started
+at a keyframe ends its measured seconds later in data time (`--slowdown` scales that), keyframes
+before then are not searched, and its result is taken at the first keyframe after it ends.
+`--caps` registers at most that many candidates per search. On the three recorded runs it gives
+the real-time runs' anchor times (`anywhere_realtime_cap_replay.jsonl`, slowdown 1):
+
+| Session | Real time, 0.18 (run / replay) | Real time, 0.26 (check / replay) | 0.26, at most 3 / 2 candidates |
+| --- | ---: | ---: | ---: |
+| 2012-02-04 | 6.8 s / 5.8 s | 83.0 s / 83.0 s | 12.5 s / 11.2 s |
+| 2012-02-12 | 89.4 s / 89.4 s | none / none | 313.0 s / 307.5 s |
+| 2012-04-29 | — / none | none / none | none / none |
+
+- At 0.18 the cap changes nothing: few candidates pass the gate, a search takes 0.05 s (median),
+  and the real-time search behaves like the in-line one.
+- At 0.26 a search took 8–28 s (median) and up to 90 s with eight candidates. Capping at two or
+  three shortens it but does not bring back what the in-line search found (2012-02-12: 77 s in
+  line, 307 s or more capped).
+- **A single registration takes 4–7 s** here, on repeated calls too (it is not a one-time
+  preparation of the stored keyframe; preparing the query takes 0.04 s). This, not the number of
+  candidates, is what makes a wider gate unaffordable in real time.
+
+So capping candidates is not worth a product change. The lever is the cost of one registration
+(GICP against the stored keyframe windows, up to three neighbours, three stages, then
+confirmation), which can be measured directly and compared with identical verification
+outcomes on development data before any gate is widened again.
+
+### Cheaper registration for startup relocalization (development, 2026-11-24)
+
+A profile of `match_with_reference` put about 94% of the time in GICP. `registration_bench.py`
+writes `matchPrepared` again with the small_gicp Python bindings (same thinning, preparation,
+neighbours, stages, overlap and confirmation; on the first keyframes it gives the C++ verdicts
+and poses exactly) and runs variants from the same starts: every sixth recorded keyframe of nine
+sessions on five stores, its two or three closest Scan Context candidates
+(`anywhere_registration_iterations.jsonl`). A verified registration took 0.46 s, a rejected one
+6.5 s: candidates from wrong places do not converge and run all 30 iterations of each stage.
+
+| Variant | Faster | Verified ones lost | Rejected ones verified | Pose > 0.1 m from C++ |
+| --- | ---: | ---: | ---: | ---: |
+| 10 iterations per stage | 2.5× | 0 of 374 | 0 of 1042 | 0 |
+| 5 iterations per stage | 4.3× | 1 of 364 | 0 | 0 |
+| 10 iterations, 2 neighbours | 3.7× | 9 of 364 | 0 | 0 |
+| coarse first stage (1.0 m voxels) | 1.4× | 1 of 95 | 0 | 0 |
+| 4 threads | 1.4–1.6× | 0 of 95 | 0 | 0 |
+
+`StartupRelocalizer` now runs 10 iterations per stage (the offline multi-session join keeps 30):
+the same verdicts on all 1416 registrations, 2.5 times faster.
+
+Real-time replays with the new core (`gate_study.py --realtime`, slowdown 1): at the shipped gate
+(0.18) searches are short already (median 0.05–2.3 s) and the anchor times of the three runs with
+earlier real-time numbers did not change (2012-02-04 5.8 s, 2012-02-12 89.4 s, 2012-04-29 none).
+At 0.26 searches got shorter (2012-02-04 anchors after 28.9 s instead of 83.0 s; 2012-02-12 after
+305.2 s instead of never), but 0.26 is still slower than 0.18 in real time on seven of the nine
+sessions, so the gate stays at 0.18. The change cuts the cost of every relocalization
+registration without changing its outcome; it does not by itself make anchoring earlier.
