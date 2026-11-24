@@ -45,6 +45,9 @@ def main() -> int:
     parser.add_argument('--frames-per-session', type=int, default=10)
     parser.add_argument('--cell', type=float, default=0.4)
     parser.add_argument('--fps', type=int, default=12)
+    parser.add_argument('--dpi', type=int, default=100)
+    parser.add_argument('--wide', action='store_true',
+                        help='landscape layout: map on the left, text and timeline on the right')
     args = parser.parse_args()
 
     import matplotlib
@@ -110,9 +113,20 @@ def main() -> int:
     def rgb(hex_colour):
         return np.array([int(hex_colour[i:i + 2], 16) for i in (1, 3, 5)]) / 255
 
-    fig = plt.figure(figsize=(7.2, 8.0), dpi=100, facecolor=BG)
-    ax = fig.add_axes([0.03, 0.2, 0.94, 0.72])
-    tl = fig.add_axes([0.06, 0.06, 0.88, 0.07])
+    if args.wide:
+        fig = plt.figure(figsize=(9.6, 5.4), dpi=args.dpi, facecolor=BG)
+        ax = fig.add_axes([0.01, 0.02, 0.56, 0.96])
+        tl = fig.add_axes([0.60, 0.10, 0.37, 0.10])
+        bars = fig.add_axes([0.60, 0.27, 0.37, 0.33])
+        place = {'title': (0.60, 0.86), 'status': (0.60, 0.79), 'brand': (0.60, 0.94),
+                 'area': (0.60, 0.72), 'align': 'left', 'big': 17, 'small': 12}
+    else:
+        fig = plt.figure(figsize=(7.2, 8.0), dpi=args.dpi, facecolor=BG)
+        ax = fig.add_axes([0.03, 0.2, 0.94, 0.72])
+        tl = fig.add_axes([0.06, 0.06, 0.88, 0.07])
+        bars = None
+        place = {'title': (0.05, 0.955), 'status': (0.05, 0.925), 'brand': (0.95, 0.955),
+                 'area': (0.95, 0.925), 'align': 'right', 'big': 15, 'small': 11}
     dates = [dt.date.fromisoformat(d) for d in days]
     t0, t1 = dt.date(2012, 1, 1), dt.date(2013, 1, 1)
     span = (t1 - t0).days
@@ -165,12 +179,14 @@ def main() -> int:
                   f'relocalized from scratch after {anchors.get(d):.0f} s'
                   if anchors.get(d) is not None else 'not relocalized')
         fig.texts.clear()
-        fig.text(0.05, 0.955, f'{d}   session {k + 1} / {len(days)}', color='white',
-                 fontsize=15, fontweight='bold')
-        fig.text(0.05, 0.925, status, color=colour, fontsize=11)
-        fig.text(0.95, 0.955, 'lifelong map · NCLT', color='#9aa4b2', fontsize=11, ha='right')
-        fig.text(0.95, 0.925, f'+{a * args.cell ** 2:,.0f} m²  −{r * args.cell ** 2:,.0f} m²',
-                 color='#9aa4b2', fontsize=11, ha='right')
+        fig.text(*place['title'], f'{d}   session {k + 1} / {len(days)}', color='white',
+                 fontsize=place['big'], fontweight='bold')
+        fig.text(*place['status'], status, color=colour, fontsize=place['small'])
+        fig.text(*place['brand'], 'lifelong map · NCLT', color='#9aa4b2',
+                 fontsize=place['small'], ha=place['align'])
+        area = f'map +{a * args.cell ** 2:,.0f} m²  −{r * args.cell ** 2:,.0f} m²'
+        fig.text(*place['area'], area,
+                 color='#9aa4b2', fontsize=place['small'], ha=place['align'])
         tl.set_facecolor(BG)
         tl.set_xlim(0, span)
         tl.set_ylim(-1, 1)
@@ -184,6 +200,30 @@ def main() -> int:
             tl.text(x, -0.95, dt.date(2012 + (m // 12), m % 12 + 1, 1).strftime('%b %y'),
                     color='#6b7482', fontsize=8, ha='center', va='bottom')
         tl.axis('off')
+        if bars is not None:
+            # Seconds to relocalize from scratch, one bar per session (log scale).
+            bars.clear()
+            bars.set_facecolor(BG)
+            values = [anchors.get(days[j]) for j in range(1, k + 1)]
+            for j, v in enumerate(values, start=1):
+                if v is not None:
+                    bars.bar(j, v, width=0.7, color=SEASON[dates[j].month],
+                             alpha=1.0 if j == k else 0.55)
+            bars.set_yscale('log')
+            bars.set_ylim(2, 300)
+            bars.set_xlim(0.3, len(days) - 0.3)
+            bars.set_yticks([3, 10, 30, 100])
+            bars.set_yticklabels(['3 s', '10 s', '30 s', '100 s'], color='#6b7482', fontsize=8)
+            bars.minorticks_off()
+            bars.tick_params(axis='x', bottom=False, labelbottom=False)
+            bars.tick_params(axis='y', length=0)
+            for side in ('top', 'right', 'bottom'):
+                bars.spines[side].set_visible(False)
+            bars.spines['left'].set_color('#3a4250')
+            bars.grid(axis='y', color='#262c36', lw=0.6)
+            bars.set_axisbelow(True)
+            bars.set_title('time to relocalize, no initial pose', color='#9aa4b2', fontsize=9,
+                           loc='left', pad=4)
 
     anim = FuncAnimation(fig, draw, frames=frames)
     anim.save(args.out, writer=PillowWriter(fps=args.fps))
