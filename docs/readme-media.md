@@ -158,6 +158,24 @@ python3 bench_report/scripts/p3_multisession_glow_gif.py join_nc03_nc04_nc01/joi
 - The GIF is 720 px, 15 fps and 128 colours (4.4 MB). The script also writes a 960×540 MP4.
 - The captions are in English (`GIF_LANG=ja` gives Japanese).
 
+## One map kept for a year (`docs/assets/images/lifelong_nclt.gif`)
+
+**Data:** [NCLT](https://robots.engin.umich.edu/nclt/) (Michigan North Campus Long-Term dataset, ODbL 1.0). Velodyne HDL-32E and the MS25 IMU, converted window by window with `scripts/convert_nclt_session.py`.
+
+- 19 sessions from 2012-01-15 to 2012-12-01, each the pass of one 150 m square of the campus ±10 s (the windows of the long-term NCLT checks in [the long-term plan](roadmap/long-term-mapping-2026-11.md)).
+- The store starts from 2012-01-15. Every later session runs, in date order, as
+  `python -m lidarslam live BAG --store STORE --relocalize-anywhere --detect-changes` (in line, not `--realtime`)
+  with `rko_lio_nclt.yaml` and `lidarslam_mid360_rko_graph_walking.yaml`
+  (`bench_report/data/long_term_2026-11/lifelong/lifelong_chain.sh`).
+- Every session relocalized without an initial pose (`chain.jsonl`: 3.4–159.6 s of data). 2012-05-11 took 92.8 s against the first map alone and 4.5 s against the store after eight sessions.
+- A twentieth session (2013-02-23) was committed but the store's merged export ran out of memory (about 14 GB) and was not rewritten, so the GIF stops at 2012-12-01.
+
+**Render:** `render_lifelong_gif.py ROOT OUT.gif --wide --dpi 70 --frames-per-session 8 --fps 10`.
+
+- Top down in the store frame. The grey map is the store's merged export after each session, as point density in 0.4 m cells from 1 m below to 6 m above the store origin.
+- Each session's path is drawn in its season's colour, placed by the transform it committed. Cells it added light up in that colour; cells change detection removed light up in red.
+- The bars are the seconds to relocalize, on a log scale. The GIF is 672×378, 10 fps (4.2 MB).
+
 ## KITTI street as a 3DGS driving simulator (`lidarslam/images/kitti_3dgs_drive_sim.gif`)
 
 **Data:** [KITTI raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) drive `2011_09_30_drive_0018` (CC BY-NC-SA 3.0, non-commercial), Velodyne HDL-64 + OXTS IMU + left colour camera, about 2.2 km.
