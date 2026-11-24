@@ -54,7 +54,9 @@ def main() -> int:
 
     root = args.root
     store = json.loads((root / 'stores/lifelong/store.json').read_text())
-    chain = [json.loads(line) for line in (root / 'lifelong/chain.jsonl').read_text().splitlines()]
+    # Sessions the store committed (a run that did not finish is left out).
+    chain = [c for c in map(json.loads, (root / 'lifelong/chain.jsonl').read_text().splitlines())
+             if c['exit'] == 0][:len(store['sessions']) - 1]
     days = ['2012-01-15'] + [c['day'] for c in chain]
     exports = {d: root / f'lifelong/export_{d}.pcd' for d in days}
     days = [d for d in days if exports[d].is_file()]
@@ -112,7 +114,7 @@ def main() -> int:
     ax = fig.add_axes([0.03, 0.2, 0.94, 0.72])
     tl = fig.add_axes([0.06, 0.06, 0.88, 0.07])
     dates = [dt.date.fromisoformat(d) for d in days]
-    t0, t1 = dt.date(2012, 1, 1), dt.date(2013, 3, 1)
+    t0, t1 = dt.date(2012, 1, 1), dt.date(2013, 1, 1)
     span = (t1 - t0).days
     frames = []
     for k in range(len(days)):
@@ -177,7 +179,7 @@ def main() -> int:
             x = (day - t0).days
             tl.plot(x, 0, 'o', ms=7 if j == k else 4,
                     color=SEASON[day.month] if j <= k else '#3a4250')
-        for m in range(0, 14, 2):
+        for m in range(0, 13, 2):
             x = (dt.date(2012 + (m // 12), m % 12 + 1, 1) - t0).days
             tl.text(x, -0.95, dt.date(2012 + (m // 12), m % 12 + 1, 1).strftime('%b %y'),
                     color='#6b7482', fontsize=8, ha='center', va='bottom')
