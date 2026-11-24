@@ -1608,3 +1608,32 @@ So capping candidates is not worth a product change. The lever is the cost of on
 (GICP against the stored keyframe windows, up to three neighbours, three stages, then
 confirmation), which can be measured directly and compared with identical verification
 outcomes on development data before any gate is widened again.
+
+### Cheaper registration for startup relocalization (development, 2026-11-24)
+
+A profile of `match_with_reference` put about 94% of the time in GICP. `registration_bench.py`
+writes `matchPrepared` again with the small_gicp Python bindings (same thinning, preparation,
+neighbours, stages, overlap and confirmation; on the first keyframes it gives the C++ verdicts
+and poses exactly) and runs variants from the same starts: every sixth recorded keyframe of nine
+sessions on five stores, its two or three closest Scan Context candidates
+(`anywhere_registration_iterations.jsonl`). A verified registration took 0.46 s, a rejected one
+6.5 s: candidates from wrong places do not converge and run all 30 iterations of each stage.
+
+| Variant | Faster | Verified ones lost | Rejected ones verified | Pose > 0.1 m from C++ |
+| --- | ---: | ---: | ---: | ---: |
+| 10 iterations per stage | 2.5× | 0 of 374 | 0 of 1042 | 0 |
+| 5 iterations per stage | 4.3× | 1 of 364 | 0 | 0 |
+| 10 iterations, 2 neighbours | 3.7× | 9 of 364 | 0 | 0 |
+| coarse first stage (1.0 m voxels) | 1.4× | 1 of 95 | 0 | 0 |
+| 4 threads | 1.4–1.6× | 0 of 95 | 0 | 0 |
+
+`StartupRelocalizer` now runs 10 iterations per stage (the offline multi-session join keeps 30):
+the same verdicts on all 1416 registrations, 2.5 times faster.
+
+Real-time replays with the new core (`gate_study.py --realtime`, slowdown 1): at the shipped gate
+(0.18) searches are short already (median 0.05–2.3 s) and the anchor times of the three runs with
+earlier real-time numbers did not change (2012-02-04 5.8 s, 2012-02-12 89.4 s, 2012-04-29 none).
+At 0.26 searches got shorter (2012-02-04 anchors after 28.9 s instead of 83.0 s; 2012-02-12 after
+305.2 s instead of never), but 0.26 is still slower than 0.18 in real time on seven of the nine
+sessions, so the gate stays at 0.18. The change cuts the cost of every relocalization
+registration without changing its outcome; it does not by itself make anchoring earlier.
