@@ -29,10 +29,13 @@ SEASON = {12: '#7fb3ff', 1: '#7fb3ff', 2: '#7fb3ff', 3: '#7ee0a1', 4: '#7ee0a1',
           6: '#ffc457', 7: '#ffc457', 8: '#ffc457', 9: '#ff8a5c', 10: '#ff8a5c', 11: '#ff8a5c'}
 
 
-def cells(points: np.ndarray, cell: float, origin: np.ndarray) -> set:
+def cells(points: np.ndarray, cell: float, origin: np.ndarray) -> dict:
+    """Occupied cells (points between 1 m below and 6 m above the store origin) and their
+    point counts."""
     keep = (points[:, 2] > -1.0) & (points[:, 2] < 6.0)
     ij = np.floor((points[keep, :2] - origin) / cell).astype(np.int64)
-    return set(map(tuple, np.unique(ij, axis=0)))
+    keys, counts = np.unique(ij, axis=0, return_counts=True)
+    return dict(zip(map(tuple, keys), counts))
 
 
 def main() -> int:
@@ -76,19 +79,29 @@ def main() -> int:
         paths[d] = xyz @ t[:3, :3].T + t[:3, 3]
     anchors = {c['day']: c['anchor_after_s'] for c in chain}
 
-    every = np.array(sorted(set().union(*grids.values())))
-    extent = (every.min(0), every.max(0))
-    size = (extent[1] - extent[0] + 1)
+    # The view: every session's path with a 40 m margin.
+    placed = np.concatenate([p[:, :2] for p in paths.values() if p is not None])
+    lo = np.floor((placed.min(0) - 40.0 - origin) / args.cell).astype(np.int64)
+    hi = np.floor((placed.max(0) + 40.0 - origin) / args.cell).astype(np.int64)
+    extent = (lo, hi)
+    size = (hi - lo + 1)
+    peak = np.log1p(max(max(g.values()) for g in grids.values() if g))
+
+    def inside(keys):
+        ij = np.array(list(keys)).reshape(-1, 2) - lo
+        ok = (ij >= 0).all(1) & (ij < size).all(1)
+        return ij[ok], ok
 
     def image(grid, colour_cells=None):
         img = np.zeros((size[1], size[0], 3))
         img[:] = np.array([14, 17, 22]) / 255
         if grid:
-            ij = np.array(list(grid)) - extent[0]
-            img[ij[:, 1], ij[:, 0]] = np.array([150, 158, 170]) / 255
+            ij, ok = inside(grid.keys())
+            level = 0.18 + 0.72 * np.log1p(np.array(list(grid.values()))[ok]) / peak
+            img[ij[:, 1], ij[:, 0]] = level[:, None] * np.array([0.92, 0.95, 1.0])
         for colour, sel in (colour_cells or []):
             if sel:
-                ij = np.array(list(sel)) - extent[0]
+                ij, _ = inside(sel)
                 img[ij[:, 1], ij[:, 0]] = colour
         return img
 
@@ -110,8 +123,8 @@ def main() -> int:
     totals = []
     for k, d in enumerate(days):
         if k:
-            added_total += len(grids[d] - grids[days[k - 1]])
-            removed_total += len(grids[days[k - 1]] - grids[d])
+            added_total += len(grids[d].keys() - grids[days[k - 1]].keys())
+            removed_total += len(grids[days[k - 1]].keys() - grids[d].keys())
         totals.append((added_total, removed_total))
 
     def draw(frame):
@@ -126,8 +139,8 @@ def main() -> int:
             prev = grids[days[k - 1]] if k else grids[d]
             img = image(prev)
         else:
-            gone = grids[days[k - 1]] - grids[d]
-            new = grids[d] - grids[days[k - 1]]
+            gone = grids[days[k - 1]].keys() - grids[d].keys()
+            new = grids[d].keys() - grids[days[k - 1]].keys()
             img = image(grids[d], [(rgb('#ff4d4d'), gone), (rgb(colour), new)])
         ax.imshow(img, origin='lower', interpolation='nearest',
                   extent=(extent[0][0] * args.cell + origin[0],
