@@ -1622,8 +1622,8 @@ sessions on five stores, its two or three closest Scan Context candidates
 | Variant | Faster | Verified ones lost | Rejected ones verified | Pose > 0.1 m from C++ |
 | --- | ---: | ---: | ---: | ---: |
 | 10 iterations per stage | 2.5× | 0 of 374 | 0 of 1042 | 0 |
-| 5 iterations per stage | 4.3× | 1 of 275 | 0 | 0 |
-| 10 iterations, 2 neighbours | 3.7× | 9 of 275 | 0 | 0 |
+| 5 iterations per stage | 4.3× | 1 of 364 | 0 | 0 |
+| 10 iterations, 2 neighbours | 3.7× | 9 of 364 | 0 | 0 |
 | coarse first stage (1.0 m voxels) | 1.4× | 1 of 95 | 0 | 0 |
 | 4 threads | 1.4–1.6× | 0 of 95 | 0 | 0 |
 
