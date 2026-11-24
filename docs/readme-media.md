@@ -157,3 +157,15 @@ python3 bench_report/scripts/p3_multisession_glow_gif.py join_nc03_nc04_nc01/joi
 - The walks then move onto the map in the order the tool joined them. The lines show the matched places. At the end, the joined map is shown in 3-D.
 - The GIF is 720 px, 15 fps and 128 colours (4.4 MB). The script also writes a 960×540 MP4.
 - The captions are in English (`GIF_LANG=ja` gives Japanese).
+
+## KITTI street as a 3DGS driving simulator (`lidarslam/images/kitti_3dgs_drive_sim.gif`)
+
+**Data:** [KITTI raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) drive `2011_09_30_drive_0018` (CC BY-NC-SA 3.0, non-commercial), Velodyne HDL-64 + OXTS IMU + left colour camera, about 2.2 km.
+
+**How:**
+- This SLAM (RKO-LIO + `graph_based_slam`) maps the drive from LiDAR and IMU only. KITTI's GPS/INS ground truth is not used anywhere in the pipeline.
+- The optimized trajectory, through the KITTI camera calibration, poses the camera images (`scripts/export_kitti_colmap.py`). Seven overlapping 3D Gaussian Splatting segments are trained from them.
+- [RobotNativeEngine](https://github.com/rsasaki0109/RobotNativeEngine) examples 160-162 drive a car through the splats (`tools/rne_kitti_splat_drive` here, `docs/KITTI_SPLAT_DRIVE.md` there). Cars cut from the splat and a CG ego car (CarConcept glTF sample, CC BY 4.0) are movable splat actors.
+- The minimap is this SLAM's LiDAR map.
+
+**Result:** in the closed loop the car steers on visual localization of its own rendered camera and finishes the whole drive: 580 / 633 visual fixes, position error mean 0.25 m / max 2.54 m, cross-track max 0.84 m. With wheel odometry alone the error reaches 389 m.
