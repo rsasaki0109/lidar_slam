@@ -187,3 +187,32 @@ python3 bench_report/scripts/p3_multisession_glow_gif.py join_nc03_nc04_nc01/joi
 - The minimap is this SLAM's LiDAR map.
 
 **Result:** in the closed loop the car steers on visual localization of its own rendered camera and finishes the whole drive: 580 / 633 visual fixes, position error mean 0.25 m / max 2.54 m, cross-track max 0.84 m. With wheel odometry alone the error reaches 389 m.
+
+## 3DGS from LiDAR SLAM poses vs SfM poses (`lidarslam/images/slam_vs_sfm_3dgs.gif`)
+
+**Data:** the same KITTI 0018 drive as above.
+- Segment a: 199 left colour images (frames 2-398, every 2nd, 613 x 185), about 291 m.
+- Both arms use the same images and the same intrinsics.
+
+**Arms:**
+- **SLAM:** poses from this SLAM's trajectory (`scripts/export_kitti_colmap.py`). The initial points are LiDAR map points.
+- **SfM:** COLMAP through pycolmap 4.2.1 on the same images. SIFT, sequential matching (overlap 10), incremental mapping, intrinsics fixed. The initial points are SfM's sparse points.
+- Both arms are trained with visloc-rs `gsplat_train --steps 7000 --max-gaussians 600000`. Every 8th image is held out, 25 views in all, and each arm renders those views from its own poses.
+
+The comparison plan and its decision rule (a held-out PSNR difference within 0.5 dB counts as the same image quality) were written before the runs. The `--max-gaussians` cap was added to both arms after the first run hit the CPU renderer's 128 MiB buffer limit, and before any final result was seen.
+
+**Result (one segment, one run each):**
+
+| | LiDAR SLAM poses | SfM poses |
+| --- | --- | --- |
+| held-out PSNR / SSIM (25 views) | 19.16 dB / 0.677 | 18.78 dB / 0.667 |
+| images registered | 199 / 199 | 199 / 199 |
+| scale | metres | unknown (x19.3 to metres) |
+| gravity | aligned | arbitrary |
+| path vs SLAM after the best Sim(3) fit | reference | 4.2 m RMSE, up to 16.9 m; rotation up to 36 deg |
+| time to get poses | none extra | 55 s |
+
+The image quality is the same by the plan's rule. The difference is the world frame: a simulator or a robot needs metres and gravity, and SfM gives neither.
+
+The GIF stops at frame 316, because a delivery truck's brand logo fills the later frames. The numbers above are over the whole segment.
+
