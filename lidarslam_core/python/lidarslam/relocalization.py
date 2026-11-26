@@ -146,6 +146,10 @@ class StartupRelocalization:
 
             self.matcher = _core.StoreRelocalizer(directories, transforms, [{}] * len(opened),
                                                   poses, on_demand, loader)
+            if anywhere:
+                # Read and describe every stored keyframe before the session starts, as the
+                # search needs them all and should not spend its first search reading them.
+                self.matcher.describe_all()
             windows = []
         self._surfaces = None
         if shared_surfaces and sum(bool(window) for window in windows) >= 2:

@@ -407,6 +407,8 @@ public:
     return matcher_.rankAnywhere(query, count);
   }
 
+  void describeAll() {matcher_.describeAll();}
+
   py::object matchAnywhere(const Eigen::Ref<const Eigen::MatrixX3f> & points)
   {
     const auto query = keyframe(points);
@@ -795,6 +797,7 @@ void bind_backend(py::module_ & m)
   .def("match_near_launch", &StoreRelocalizer::matchNearLaunch)
   .def("match_anywhere", &StoreRelocalizer::matchAnywhere)
   .def("rank_anywhere", &StoreRelocalizer::rankAnywhere)
+  .def("describe_all", &StoreRelocalizer::describeAll)
   .def("session_poses", &StoreRelocalizer::sessionPoses)
   .def("optimize_tracking", &StoreRelocalizer::optimizeTracking)
   .def_static("thin", &StoreRelocalizer::thin);

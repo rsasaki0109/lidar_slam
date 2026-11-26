@@ -111,6 +111,16 @@ public:
       std::numeric_limits<double>::infinity());
   }
 
+  // Describes every stored keyframe now (otherwise the first search does), so that keyframes
+  // read on demand are read before a session starts rather than during its first search.
+  void describeAll()
+  {
+    if (!all_descriptors_) {
+      all_descriptors_ = descriptors(Eigen::Vector3d::Zero(),
+          std::numeric_limits<double>::infinity());
+    }
+  }
+
   // Scan Context distances of the closest stored keyframes (index, distance, sector shift).
   std::vector<std::tuple<double, std::size_t, int>> rankAnywhere(
     const Keyframe & query,
