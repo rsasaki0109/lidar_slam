@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -187,7 +188,6 @@ private:
     const graphslam::map_store::StoredSubmap & stored, const Eigen::Matrix4d & pose,
     const Eigen::Vector3d * range_origin = nullptr)
   {
-    std::vector<State> states;
     for (const auto & entry : submapCentroids(stored)) {
       const Eigen::Vector3d local = entry.second.sum / entry.second.count;
       if (range_origin && (local - *range_origin).squaredNorm() > 1600.) {
@@ -196,33 +196,20 @@ private:
       const Eigen::Vector3d center = pose.topLeftCorner<3, 3>() * local + pose.topRightCorner<3, 1>();
       const changes::Point world{center.x(), center.y(), center.z()};
       if (changes::usable(world)) {
-        states.push_back({static_cast<std::int32_t>(session), static_cast<std::int32_t>(submap),
+        states_.push_back({static_cast<std::int32_t>(session), static_cast<std::int32_t>(submap),
           entry.first, world});
       }
     }
-    states.shrink_to_fit();
-    pending_.push_back(std::move(states));
   }
 
-  // Group the states by world cell, so that a cell is one range of states_ (the rows are
-  // sorted when they are written, so their order here does not matter).
+  // Group the states by world cell in place, so that a cell is one range of states_ (the rows
+  // are sorted when they are written, so their order here does not matter). states_ is a deque:
+  // it grows and sorts without a second copy of the states.
   void index()
   {
-    // Move the submaps' states into one array of the exact size, freeing each as it goes, so
-    // that the peak stays near one copy of them.
-    std::size_t total = states_.size();
-    for (const auto & states : pending_) {
-      total += states.size();
-    }
-    if (total >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+    if (states_.size() >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
       throw std::length_error("too many stored voxels for change evidence");
     }
-    states_.reserve(total);
-    for (auto & states : pending_) {
-      states_.insert(states_.end(), states.begin(), states.end());
-      std::vector<State>().swap(states);
-    }
-    std::vector<std::vector<State>>().swap(pending_);
     const auto key = [](const State & state) {return changes::voxel(state.center);};
     std::sort(states_.begin(), states_.end(), [&](const State & a, const State & b) {
         return key(a) < key(b);
@@ -258,8 +245,7 @@ private:
 
   std::unordered_map<changes::Voxel, std::pair<std::uint32_t, std::uint32_t>,
     changes::VoxelHash> cells_;
-  std::vector<State> states_;
-  std::vector<std::vector<State>> pending_;
+  std::deque<State> states_;
   std::int64_t frame_{0};
   bool refined_{false};
 };
