@@ -1800,3 +1800,80 @@ the sessions before it (development):
 
 The check takes 1–2.5 s on this store. It keeps a drifted session from spoiling the map; it does
 not repair the session.
+
+#### Odometry settings against the 2012-03-31 climb (exploratory, development, 2026-11-26)
+
+`python -m lidarslam odometry` on `bags/2012-03-31_live2in` with one RKO-LIO setting changed at a
+time, placed by the lifelong store transform of session 0007, against the first seven sessions'
+submaps within 1.5 m (every 5th pose; no ground truth):
+
+| Setting | 95th pct. \|dz\| | Median dz after 320 s | End minus start height |
+| --- | ---: | ---: | ---: |
+| `rko_lio_nclt.yaml` | 3.44 m | +1.98 m | +8.58 m |
+| `inertial_window: true` | 5.91 m | −4.19 m | −6.88 m |
+| `degeneracy_aware_solve: true` | 2.77 m | +1.38 m | +5.31 m |
+| `icp_levenberg_marquardt: true` | 3.06 m | +2.42 m | +5.81 m |
+| `voxel_size: 0.3` | 5.07 m | +3.57 m | +9.93 m |
+| `max_range: 120` | 2.19 m | +1.24 m | +6.96 m |
+
+Every setting drifts by metres in the same stretch, with signs and sizes that change with the
+setting: height is barely observed there, so no single setting fixes it. One session only; no
+setting was changed.
+
+What the stretch looks like (every 10th scan in the base frame): until 200 s the scans reach
+15–22 m and 14–43% of their points lie within 0.3 m of the ground; from 200 to 320 s the median
+range drops to 3.3 m, with 6% near the ground and 2% above 3 m (a confined passage); after
+320 s the view opens again. The odometry pitch changes by about 16 degrees across the passage
+(median −1.0 degree before 320 s, −17.1 degrees from 320 to 370 s) and the path climbs from
+there: an attitude error picked up in the passage, not a slow drift in height.
+
+The bag starts while moving (RKO-LIO: "Moving start ... IMU biases left at zero"), and its
+world frame comes from 5 IMU samples. Re-estimating gravity from the first seconds of motion
+(`moving_start_gravity_window_sec`, used on GrandTour) finds it 15.3–15.4 degrees from that
+initial world z. With the window set to 5 s the drift is unchanged (95th percentile 3.40 m); with
+10 s it falls to 2.20 m (last part +1.40 m against +1.98 m). One session; no setting was changed.
+
+#### Check of moving-start gravity on every lifelong update (preregistered 2026-11-26, before the runs)
+
+- **Sessions:** the 19 updates of the lifelong chain (`lifelong_chain.sh`, 2012-01-22 to
+  2013-02-23), each from the bag the chain used.
+- **Arms:** `python -m lidarslam odometry` with `rko_lio_nclt.yaml` (A) and with
+  `moving_start_gravity_window_sec: 10.0` added (G).
+- **Measure, no ground truth:** each arm's odometry is placed by the store transform the session
+  committed in the lifelong store, and every 5th pose with at least three submap positions of the
+  other 19 sessions within 1.5 m (XY) gives dz, its height minus their median height. Per session:
+  the 95th percentile of |dz|.
+- **Rule:** G **reduces the height drift** when, over the 19 sessions, the median of the per-session
+  95th percentile falls by at least 20% from A, no more sessions are above 1.5 m than with A, and no
+  session rises by more than 0.5 m. Then `rko_lio_nclt.yaml` takes the window; otherwise it stays.
+  The result is reported whatever it is.
+
+#### Results of the moving-start gravity check (2026-11-26)
+
+All 19 updates start while moving; with the 10 s window RKO-LIO re-estimated gravity 1.1–15.3
+degrees from the initial world z (median 4.8). Per-session 95th percentile of |dz| (m):
+
+| Update | A | G | | Update | A | G |
+| --- | ---: | ---: | --- | --- | ---: | ---: |
+| 2012-01-22 | 1.10 | 1.38 | | 2012-08-04 | 0.60 | 0.61 |
+| 2012-02-02 | 0.76 | 0.79 | | 2012-08-20 | 2.34 | 1.25 |
+| 2012-02-05 | 2.79 | 1.63 | | 2012-09-28 | 0.96 | 0.94 |
+| 2012-02-18 | 0.78 | 1.09 | | 2012-10-28 | 0.45 | 0.46 |
+| 2012-03-17 | 0.91 | 1.11 | | 2012-11-04 | 0.80 | 0.86 |
+| 2012-03-25 | 1.66 | 1.61 | | 2012-11-16 | 1.65 | 0.48 |
+| 2012-03-31 | 4.24 | 2.72 | | 2012-11-17 | 3.29 | 3.52 |
+| 2012-05-11 | 3.18 | 2.55 | | 2012-12-01 | 2.16 | 1.03 |
+| 2012-05-26 | 0.64 | 0.68 | | 2013-02-23 | 0.66 | 0.63 |
+| 2012-06-15 | 3.08 | 0.78 | | | | |
+
+| Over 19 updates | A | G | Rule |
+| --- | ---: | ---: | --- |
+| median of the 95th percentiles | 1.10 m | 1.03 m (−6.6%) | needs −20%: **fails** |
+| sessions above 1.5 m | 9 | 5 | met |
+| largest rise | — | +0.31 m | met (≤ 0.5 m) |
+
+Under the preregistered rule G does **not** reduce the height drift, and `rko_lio_nclt.yaml`
+stays as it is. What the rule did not capture: the window mostly acts on the worst sessions
+(2012-06-15 3.08 → 0.78 m, 2012-11-16 1.65 → 0.48 m, 2012-02-05, 08-20 and 12-01 by about 1.1 m
+each) while the well-behaved ones move by a few tenths either way, so the median barely changes.
+A rule on the tail would have to be set before another run on other sessions.
