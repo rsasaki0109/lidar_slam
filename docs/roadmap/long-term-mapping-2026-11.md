@@ -1692,3 +1692,22 @@ The relocalizer takes 0.18 GB after construction (was 4.72 GB). The session's ou
 evidence, submaps, keyframe windows, pose graph, store entry) and the exported `map.pcd` are again
 byte-identical, and it anchors at the same data time (101.6 s). What grows with every session
 now is the change evidence (4.1 GB here, built once the session is anchored).
+
+#### Compact change evidence (development, 2026-11-26)
+
+The change evidence keeps one state per stored 0.15 m voxel centroid (about 4 GB for this store
+with 20 sessions). A state now takes 88 bytes instead of 120 (32-bit session, submap and
+counters), and the states sit in a deque sorted by world cell in place, so a cell is one range of
+it instead of its own vector of indices. Building it frees many small temporary blocks between the
+ones it keeps; glibc kept those pages, so the heap's free pages are returned to the system after
+it is built and again after the session releases it (`_core.release_free_memory`, nothing to do
+off glibc). Two first attempts that moved the states into one array of the exact size raised the
+peak instead (two copies at once: 7.3 and 7.4 GB).
+
+| 2013-02-23 again | Peak during the session | Held at the export | Process peak |
+| --- | ---: | ---: | ---: |
+| Stored keyframes on demand | 6.5 GB | 1.6 GB | 9.0 GB |
+| and compact change evidence | 5.1 GB | 0.24 GB | 7.6 GB |
+
+The outputs are byte-identical again (the rows are sorted when they are written, so the new
+order of the states does not show). The process peak is now the export of the merged map.

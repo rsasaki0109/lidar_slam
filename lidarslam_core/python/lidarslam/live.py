@@ -288,6 +288,7 @@ class Session:
                 self._startup.release()
             self._changes = self._change_rows = self._windows = self._pipeline = None
             gc.collect()
+            _core.release_free_memory()
             self._store.export_if_aligned(log=self._log)
         return summary
 

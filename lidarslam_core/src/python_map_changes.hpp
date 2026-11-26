@@ -3,8 +3,11 @@
 #ifndef LIDARSLAM_CORE__PYTHON_MAP_CHANGES_HPP_
 #define LIDARSLAM_CORE__PYTHON_MAP_CHANGES_HPP_
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <deque>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -13,6 +16,10 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
+
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 #include "graph_based_slam/map_change_evidence.hpp"
 #include "graph_based_slam/map_store.hpp"
@@ -64,6 +71,15 @@ inline std::unordered_map<changes::Voxel, VoxelCentroid, changes::VoxelHash> sub
   return centers;
 }
 
+// Return the heap's free pages to the system (glibc keeps them otherwise; elsewhere nothing to
+// do). Building the change evidence frees many small temporary blocks between the ones it keeps.
+inline void releaseFreeMemory()
+{
+#if defined(__GLIBC__)
+  malloc_trim(0);
+#endif
+}
+
 class MapChangeEvidence
 {
 public:
@@ -89,6 +105,8 @@ public:
         addSubmap(session, submap, stored.submaps[submap], poses[session][submap]);
       }
     }
+    index();
+    releaseFreeMemory();
   }
 
   void observe(const changes::Point & origin, const Eigen::Ref<const Scan> & endpoints)
@@ -104,7 +122,7 @@ public:
         continue;
       }
       const bool remove = state.separated &&
-        state.misses >= 8 * std::max(std::int64_t{1}, state.hits);
+        state.misses >= 8 * std::max(std::int32_t{1}, state.hits);
       const bool keep = state.hits >= 2 && state.hits >= state.misses;
       rows.push_back({state.session, state.submap, state.local[0], state.local[1],
         state.local[2], state.hits, state.misses, state.separated, remove ? 2 : (keep ? 1 : 0)});
@@ -167,13 +185,15 @@ private:
       });
     }
   }
+  // One stored voxel centroid: 88 bytes. The frame counters fit 32 bits (a frame is one
+  // submap of the session being recorded).
   struct State
   {
-    std::int64_t session, submap;
+    std::int32_t session, submap;
     changes::Voxel local;
     changes::Point center;
     changes::Point first_view{};
-    std::int64_t hits{0}, misses{0}, last_hit{-1}, last_miss{-1};
+    std::int32_t hits{0}, misses{0}, last_hit{-1}, last_miss{-1};
     bool separated{false}, marked{false};
   };
 
@@ -190,10 +210,39 @@ private:
       const Eigen::Vector3d center = pose.topLeftCorner<3, 3>() * local + pose.topRightCorner<3, 1>();
       const changes::Point world{center.x(), center.y(), center.z()};
       if (changes::usable(world)) {
-        cells_[changes::voxel(world)].push_back(states_.size());
-        states_.push_back({static_cast<std::int64_t>(session), static_cast<std::int64_t>(submap),
+        states_.push_back({static_cast<std::int32_t>(session), static_cast<std::int32_t>(submap),
           entry.first, world});
       }
+    }
+  }
+
+  // Group the states by world cell in place, so that a cell is one range of states_ (the rows
+  // are sorted when they are written, so their order here does not matter). states_ is a deque:
+  // it grows and sorts without a second copy of the states.
+  void index()
+  {
+    if (states_.size() >= static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())) {
+      throw std::length_error("too many stored voxels for change evidence");
+    }
+    const auto key = [](const State & state) {return changes::voxel(state.center);};
+    std::sort(states_.begin(), states_.end(), [&](const State & a, const State & b) {
+        return key(a) < key(b);
+      });
+    cells_.clear();
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < states_.size(); ++i) {
+      count += i == 0 || key(states_[i]) != key(states_[i - 1]);
+    }
+    cells_.reserve(count);
+    for (std::size_t begin = 0; begin < states_.size(); ) {
+      const auto cell = key(states_[begin]);
+      std::size_t end = begin + 1;
+      while (end < states_.size() && key(states_[end]) == cell) {
+        ++end;
+      }
+      cells_.emplace(cell, std::make_pair(static_cast<std::uint32_t>(begin),
+        static_cast<std::uint32_t>(end)));
+      begin = end;
     }
   }
 
@@ -202,14 +251,15 @@ private:
   {
     const auto found = cells_.find(key);
     if (found != cells_.end()) {
-      for (const auto id : found->second) {
+      for (auto id = found->second.first; id < found->second.second; ++id) {
         visit(states_[id]);
       }
     }
   }
 
-  std::unordered_map<changes::Voxel, std::vector<std::size_t>, changes::VoxelHash> cells_;
-  std::vector<State> states_;
+  std::unordered_map<changes::Voxel, std::pair<std::uint32_t, std::uint32_t>,
+    changes::VoxelHash> cells_;
+  std::deque<State> states_;
   std::int64_t frame_{0};
   bool refined_{false};
 };
@@ -247,6 +297,7 @@ public:
       }
       current.addSubmap(0, index, session.submaps[index], pose, &sensor_in_base);
     }
+    current.index();
     // Build the entire candidate index before voting, so early free space counts.
     for (const auto & scan : scans_) {
       current.observeRays(scan.origin, scan.rays);
