@@ -16,6 +16,14 @@
   error). Gravity-prior and plane-revisit edges are not written to `pose_graph.g2o`, so with
   either enabled (off by default) the report leaves them out. Eigen only,
   byte-reproducible, and the SLAM outputs are unchanged.
+- Backend pose uncertainty (active SLAM P1). `optimizePoseGraph` can return each submap's
+  marginal covariance from g2o, with every edge it optimized (GNSS anchors, gravity priors,
+  plane revisit). New report-only offline parameters: `pose_uncertainty_output` writes
+  `pose_uncertainty.csv` and `pose_uncertainty_summary.yaml` for the final graph;
+  `pose_uncertainty_timeline` writes `pose_uncertainty_timeline.csv` (the graph as it stood
+  after each new submap and each loop-edge change) and `pose_uncertainty_timeline_loops.csv`.
+  Off by default; with them on, every other output is byte-identical.
+  `tools/readme_media/render_pose_uncertainty.py` renders a timeline as a GIF.
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists

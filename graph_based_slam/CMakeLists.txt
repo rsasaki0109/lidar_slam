@@ -909,6 +909,7 @@ if(BUILD_TESTING)
     test_public_suite_gate
     test_radarless_tunnel_benchmark_tools
     test_realtime_colored_map_evaluator
+    test_render_pose_uncertainty
     test_rko_lio_graph_benchmark_script
     test_rtk_slam_download_script
     test_run_lidar_slam

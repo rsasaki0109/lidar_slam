@@ -5,7 +5,8 @@ itself: where the map is still unobserved, where the trajectory is weakly constr
 revisit would close a loop. The SLAM proposes goals and scores them; driving there is left to an
 existing navigation stack (Nav2). This repository gains no motion planner or controller.
 
-Status: P1 started. Done: the offline pose-graph uncertainty report (below, P1 "Done").
+Status: P1 in progress. Done: the offline pose-graph uncertainty report, and the backend's
+own uncertainty outputs (final graph and timeline) in the offline pipeline (below, P1 "Done").
 
 Decisions (maintainer, 2026-11-26):
 
@@ -82,8 +83,40 @@ profile's `gravity_prior_info: 1000`), the report overstates the uncertainty the
 SE3 edges and every vertex's weakest direction came out vertical. The in-backend computation
 (next step) sees every edge and removes this limit. Cost: one sparse Cholesky plus 6 solves per vertex.
 
-Next in P1: time the report on the largest existing bundles; expose the same computation in the
-backend (after each optimization, off by default) and the `SlamUncertainty` message; then
+Done (2026-11-26): the backend computes the uncertainty itself.
+`pose_graph::optimizePoseGraph(..., compute_marginals)` re-linearizes the graph at the optimized
+poses and returns each submap's marginal covariance from g2o's `computeMarginals`, so every edge
+the optimization used counts (GNSS anchors, gravity priors, plane revisit, robust-kernel
+weights), which removes the limit of the file report. Off by default; with it on the poses and
+the saved `pose_graph.g2o` are byte-identical (test `OffByDefaultAndPosesUnchanged`). On an
+SE3-only graph its marginals match the file report within 1e-3 relative; with gravity priors
+the far end's vertical variance drops by more than half. The offline pipeline
+(`graph_slam_offline_runner`, `lidarslam` core) gains three report-only parameters:
+
+- `pose_uncertainty_output`: `pose_uncertainty.csv` / `pose_uncertainty_summary.yaml` of the
+  final graph.
+- `pose_uncertainty_timeline` (+ `pose_uncertainty_timeline_every_n_submaps`, default 1):
+  `pose_uncertainty_timeline.csv`, the uncertainty of the graph as it stood during the pass
+  (the submaps so far and the loop edges found so far, optimized after each new submap and each
+  change of the loop edges), and `pose_uncertainty_timeline_loops.csv`, the loop edges of each
+  of those states. In-line loop search only, so deterministic. The timeline graph has the
+  odometry, loop and gravity-prior edges, not GNSS anchors or plane revisit (only the final
+  graph has those).
+
+On the synthetic two-lap room (`lidarslam_core/test/test_python_backend.py`) every other output
+is byte-identical with the parameters on and off, two runs give the same bytes, and when the
+second lap first closes a loop (to the fixed start) the newest submap's sigma drops from 0.23 to
+0.003. Later loop edges there are to submaps several metres away, so the newest submap keeps
+that submap's heading uncertainty times the distance (0.17 at 4 m): the 6-DoF marginals show the
+lever arm. The loop edges also change during the pass (the dedup window keeps the newest edge
+of a revisit: 0-13, 1-14, 3-16, 5-20, then 12-25), which the final `loop_edges.csv` cannot show;
+hence the per-state loop file.
+
+`tools/readme_media/render_pose_uncertainty.py` renders a timeline as the interim GIF (Demo GIF
+below).
+
+Next in P1: the interim GIF on a public recording with loops (the README's `outdoor_hard_02a`
+closes none); the same timeline in the live node with the `SlamUncertainty` message; then
 coverage/frontiers from the surfel evidence.
 
 ### P2. Goal candidates

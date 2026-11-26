@@ -77,6 +77,7 @@
 #include "graph_based_slam/pointcloud2_conversion.hpp"
 #include "graph_based_slam/pointcloud_conversion.hpp"
 #include "graph_based_slam/pose_graph_optimization.hpp"
+#include "graph_based_slam/pose_graph_uncertainty.hpp"
 #include "graph_based_slam/probabilistic_surfel_map.hpp"
 #include "graph_based_slam/registration_factory.hpp"
 #include "graph_based_slam/registration_plugin_adapter.hpp"
@@ -489,6 +490,22 @@ struct RunnerConfig
   // 0.3-0.45 x the bytes (0.001-0.005 m on six recorded runs,
   // bench_report/data/sz3_cloud_store_2026-11-17); outputs then differ slightly.
   double submap_cloud_max_error_m = 0.0;
+
+  // Pose uncertainty (docs/roadmap/active-slam-2026-11.md, P1). Report-only: the optimized
+  // poses and every other output are the same with these on or off.
+  // pose_uncertainty_output: pose_uncertainty.csv and pose_uncertainty_summary.yaml, the
+  // marginal covariance of every submap pose of the final graph, computed by g2o from every
+  // edge the final optimization used (GNSS anchors, gravity priors and plane revisit included).
+  bool pose_uncertainty_output = false;
+  // pose_uncertainty_timeline: pose_uncertainty_timeline.csv, the same for the graph as it stood
+  // during the pass: the submaps so far and the loop edges found so far (their odometry and
+  // gravity-prior edges; no GNSS anchors or plane revisit, which only the final graph has),
+  // optimized and reported after every pose_uncertainty_timeline_every_n_submaps-th new submap
+  // and after every submap whose loop search changed the loop edges (0: only then); the loop
+  // edges of each of those graph states go to pose_uncertainty_timeline_loops.csv. It needs
+  // the in-line loop search (not background_loop_search), so it is deterministic.
+  bool pose_uncertainty_timeline = false;
+  int pose_uncertainty_timeline_every_n_submaps = 1;
 };
 
 // Reads the bag and output locations and the registration and submap
@@ -1279,6 +1296,12 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or("background_loop_search", config.background_loop_search, false);
   // See RunnerConfig::submap_cloud_max_error_m.
   node.get_parameter_or("submap_cloud_max_error_m", config.submap_cloud_max_error_m, 0.0);
+  // See RunnerConfig::pose_uncertainty_output and pose_uncertainty_timeline.
+  node.get_parameter_or("pose_uncertainty_output", config.pose_uncertainty_output, false);
+  node.get_parameter_or("pose_uncertainty_timeline", config.pose_uncertainty_timeline, false);
+  node.get_parameter_or(
+    "pose_uncertainty_timeline_every_n_submaps",
+    config.pose_uncertainty_timeline_every_n_submaps, 1);
 }
 
 // The resolver and session are shell-owned.  Declaration order is
@@ -1610,6 +1633,14 @@ struct BagPass
   std::size_t causal_optimizations = 0U;
   std::ofstream causal_tum;
 
+  // pose_uncertainty_timeline state: the CSV, the number of graph states written, the submaps
+  // since the last one, and whether a loop search changed the loop edges since then.
+  std::ofstream uncertainty_timeline;
+  std::ofstream uncertainty_timeline_loops;
+  std::size_t uncertainty_timeline_steps = 0U;
+  int submaps_since_uncertainty = 0;
+  bool loop_edges_changed_since_uncertainty = false;
+
   // background_loop_search: the running job (at most one) and the records whose PCL cloud
   // has been dropped so far.
   struct DeferredLog
@@ -1641,6 +1672,19 @@ struct BagPass
       config.loop_edge_dedup_index_window < 0 ? 0 : config.loop_edge_dedup_index_window);
     if (config.causal_trajectory_output) {
       causal_tum.open(config.output_dir + "/trajectory_causal.tum");
+    }
+    if (config.pose_uncertainty_timeline) {
+      if (backgroundLoopSearch()) {
+        GRAPHSLAM_LOG_WARN(
+          logger, "pose_uncertainty_timeline needs the in-line loop search; not written with "
+          "background_loop_search");
+      } else {
+        uncertainty_timeline.open(config.output_dir + "/pose_uncertainty_timeline.csv");
+        uncertainty_timeline << graphslam::pose_graph_uncertainty::timelineCsvHeader();
+        uncertainty_timeline_loops.open(
+          config.output_dir + "/pose_uncertainty_timeline_loops.csv");
+        uncertainty_timeline_loops << "step,from,to\n";
+      }
     }
   }
 
@@ -1751,6 +1795,12 @@ struct BagPass
         config.submap_cloud_max_error_m, bag.cloud_stats.quantized, bag.records.size(),
         bag.cloud_stats.stored_bytes);
     }
+    if (uncertainty_timeline.is_open()) {
+      uncertainty_timeline.close();
+      uncertainty_timeline_loops.close();
+      GRAPHSLAM_LOG_INFO(
+        logger, "Pose uncertainty timeline: %zu graph states", uncertainty_timeline_steps);
+    }
     if (config.causal_trajectory_output) {
       causal_tum.close();
       GRAPHSLAM_LOG_INFO(
@@ -1845,6 +1895,7 @@ struct BagPass
         launchLoopJob();
       } else {
         drainQueries();
+        writeUncertaintyTimeline(record.stamp_sec);
       }
       if (config.causal_trajectory_output && !backgroundLoopSearch()) {
         bool optimized = false;
@@ -1927,7 +1978,80 @@ struct BagPass
   // fixed loop edges there is no search.
   void drainQueries()
   {
-    runQueries(bag.records, bag.cloud_stats, next_query_idx, loop_edges_changed, nullptr);
+    bool changed = false;
+    runQueries(bag.records, bag.cloud_stats, next_query_idx, changed, nullptr);
+    if (changed) {
+      loop_edges_changed = true;
+      loop_edges_changed_since_uncertainty = true;
+    }
+  }
+
+  // The loop edges found so far as pose-graph constraints.
+  std::vector<graphslam::pose_graph::LoopConstraint> loopConstraintsSoFar() const
+  {
+    std::vector<graphslam::pose_graph::LoopConstraint> constraints;
+    constraints.reserve(bag.edge_set.edges().size());
+    for (const auto & edge : bag.edge_set.edges()) {
+      graphslam::pose_graph::LoopConstraint constraint;
+      constraint.from = edge.pair_id.first;
+      constraint.to = edge.pair_id.second;
+      constraint.relative_pose = edge.relative_pose;
+      constraint.fitness_score = edge.fitness_score;
+      constraint.registration_information_valid = edge.registration_information_valid;
+      constraint.registration_information = edge.registration_information;
+      constraints.push_back(constraint);
+    }
+    return constraints;
+  }
+
+  // pose_uncertainty_timeline: after a new submap's loop search, when one is due, the marginal
+  // pose uncertainty of the graph so far (RunnerConfig::pose_uncertainty_timeline).
+  void writeUncertaintyTimeline(double stamp_sec)
+  {
+    if (!uncertainty_timeline.is_open()) {
+      return;
+    }
+    ++submaps_since_uncertainty;
+    const int every_n = config.pose_uncertainty_timeline_every_n_submaps;
+    const bool due = loop_edges_changed_since_uncertainty ||
+      (every_n > 0 && submaps_since_uncertainty >= every_n);
+    if (!due || bag.records.size() < 2U) {
+      return;
+    }
+    std::vector<graphslam::pose_graph::SubmapNode> nodes;
+    nodes.reserve(bag.records.size());
+    for (const auto & record : bag.records) {
+      graphslam::pose_graph::SubmapNode node;
+      node.pose = Eigen::Isometry3d(record.meta.pose.matrix());
+      node.odometry_covariance = record.odometry_covariance;
+      if (config.gravity_prior_info > 0.0) {
+        node.gravity_prior_info = config.gravity_prior_info;
+        node.gravity_up_body = node.pose.linear().transpose() * Eigen::Vector3d::UnitZ();
+      }
+      nodes.push_back(node);
+    }
+    const std::vector<graphslam::pose_graph::LoopConstraint> constraints = loopConstraintsSoFar();
+    const graphslam::pose_graph::OptimizationResult result =
+      graphslam::pose_graph::optimizePoseGraph(
+      nodes, constraints, {}, {}, config.adjacent_config, config.loop_config, config.imu_config,
+      graphslam::pose_graph::Chi2Collection::NONE, true, 10, {}, 0, true);
+    submaps_since_uncertainty = 0;
+    loop_edges_changed_since_uncertainty = false;
+    if (!result.marginals_valid) {
+      GRAPHSLAM_LOG_WARN(
+        logger, "pose uncertainty not computed for %zu submaps (singular information)",
+        nodes.size());
+      return;
+    }
+    uncertainty_timeline << graphslam::pose_graph_uncertainty::timelineRows(
+      uncertainty_timeline_steps, stamp_sec, constraints.size(),
+      graphslam::pose_graph_uncertainty::reportFromMarginals(
+        result.poses, result.marginal_covariances));
+    for (const auto & constraint : constraints) {
+      uncertainty_timeline_loops << uncertainty_timeline_steps << ',' << constraint.from << ',' <<
+        constraint.to << '\n';
+    }
+    ++uncertainty_timeline_steps;
   }
 
   bool backgroundLoopSearch() const
@@ -2120,18 +2244,7 @@ struct BagPass
       submap_node.odometry_covariance = record.odometry_covariance;
       nodes.push_back(submap_node);
     }
-    std::vector<graphslam::pose_graph::LoopConstraint> constraints;
-    constraints.reserve(bag.edge_set.edges().size());
-    for (const auto & edge : bag.edge_set.edges()) {
-      graphslam::pose_graph::LoopConstraint constraint;
-      constraint.from = edge.pair_id.first;
-      constraint.to = edge.pair_id.second;
-      constraint.relative_pose = edge.relative_pose;
-      constraint.fitness_score = edge.fitness_score;
-      constraint.registration_information_valid = edge.registration_information_valid;
-      constraint.registration_information = edge.registration_information;
-      constraints.push_back(constraint);
-    }
+    const std::vector<graphslam::pose_graph::LoopConstraint> constraints = loopConstraintsSoFar();
     const graphslam::pose_graph::OptimizationResult result =
       graphslam::pose_graph::optimizePoseGraph(
       nodes, constraints, {}, {}, config.adjacent_config, config.loop_config, config.imu_config,
@@ -2425,6 +2538,30 @@ void writePlaneRevisitReport(
   report << "  chi2_after: " << result.plane_revisit_chi2_after << "\n";
 }
 
+// pose_uncertainty_output: the final graph's per-submap marginal pose uncertainty.
+void writePoseUncertainty(
+  const RunnerConfig & config, const graphslam::pose_graph::OptimizationResult & result,
+  const FinalPoseGraph & graph, const RunnerLog & logger)
+{
+  namespace pgu = graphslam::pose_graph_uncertainty;
+  pgu::UncertaintyReport report;
+  if (result.marginals_valid) {
+    report = pgu::reportFromMarginals(result.poses, result.marginal_covariances);
+  } else {
+    report.error = "the information matrix is singular";
+  }
+  std::ofstream summary(config.output_dir + "/pose_uncertainty_summary.yaml");
+  summary << pgu::formatReportSummaryYaml(report);
+  summary << "loop_edges: " << graph.loop_constraints.size() << "\n";
+  summary << "gnss_anchors: " << graph.gnss_constraints.size() << "\n";
+  if (!report.ok) {
+    GRAPHSLAM_LOG_WARN(logger, "pose uncertainty not computed: %s", report.error.c_str());
+    return;
+  }
+  std::ofstream csv(config.output_dir + "/pose_uncertainty.csv");
+  csv << pgu::formatCsv(report);
+}
+
 // --- Final pose-graph optimization from raw odometry poses plus the
 // accumulated loop edges, like the live doPoseAdjustment with IMU off: with use_gnss the GNSS
 // anchors of the submap stamps and the yaw alignment, and the gravity prior.
@@ -2500,8 +2637,11 @@ void optimizeFinalPoseGraph(
       graph.submap_nodes, graph.loop_constraints, {}, graph.gnss_constraints,
       config.adjacent_config, config.loop_config, config.imu_config,
       graphslam::pose_graph::Chi2Collection::NONE, graph.fix_first_vertex, 10,
-      plane_revisit.result.constraints);
+      plane_revisit.result.constraints, 0, config.pose_uncertainty_output);
     graph.optimized_poses = result.poses;
+    if (config.pose_uncertainty_output) {
+      writePoseUncertainty(config, result, graph, logger);
+    }
     if (config.map_bundle) {
       graph.pose_graph_g2o = result.pose_graph_g2o;
     }

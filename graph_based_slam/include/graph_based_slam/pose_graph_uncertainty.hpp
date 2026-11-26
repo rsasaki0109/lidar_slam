@@ -302,16 +302,18 @@ struct UncertaintyReport
 
 namespace detail
 {
-
 inline Eigen::Vector3d canonicalDirection(const Eigen::Vector3d & direction)
 {
   Eigen::Index largest = 0;
   direction.cwiseAbs().maxCoeff(&largest);
   return direction(largest) < 0.0 ? Eigen::Vector3d(-direction) : direction;
 }
+}  // namespace detail
 
+// Fills the summary fields of a vertex from its covariance.
 inline void summarizeCovariance(VertexUncertainty & vertex)
 {
+  using detail::canonicalDirection;
   const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> translation(
     vertex.covariance.topLeftCorner<3, 3>());
   const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> rotation(
@@ -327,8 +329,6 @@ inline void summarizeCovariance(VertexUncertainty & vertex)
   }
   vertex.log_det_covariance = log_det;
 }
-
-}  // namespace detail
 
 // Computes the marginal covariance of every free vertex. A vertex not reached
 // by any edge, or a direction no edge constrains, makes H singular; the
@@ -449,12 +449,60 @@ inline UncertaintyReport computeUncertainty(const ParsedGraph & graph)
         report.per_vertex[free_index[static_cast<std::size_t>(first + v)]];
       const Matrix6d covariance = solution.block<6, 6>(6 * (first + v), 6 * v);
       out.covariance = 0.5 * (covariance + covariance.transpose());
-      detail::summarizeCovariance(out);
+      summarizeCovariance(out);
     }
   }
   report.ok = true;
   return report;
 }
+
+// The per-vertex report of marginal covariances computed elsewhere (e.g. by
+// g2o in pose_graph::optimizePoseGraph with compute_marginals): vertex i has
+// id i, the position of poses[i], and is fixed when its covariance is zero.
+// Graph-level fields (log_det_information, d_optimality) are left at zero.
+template<typename CovarianceVector>
+UncertaintyReport reportFromMarginals(
+  const std::vector<Eigen::Isometry3d> & poses, const CovarianceVector & covariances)
+{
+  UncertaintyReport report;
+  if (poses.size() != covariances.size()) {
+    report.error = "poses and covariances differ in count";
+    return report;
+  }
+  report.vertices = poses.size();
+  report.per_vertex.resize(poses.size());
+  for (std::size_t i = 0; i < poses.size(); ++i) {
+    VertexUncertainty & v = report.per_vertex[i];
+    v.id = static_cast<int>(i);
+    v.position = poses[i].translation();
+    v.covariance = covariances[i];
+    v.fixed = v.covariance.isZero(0.0);
+    if (!v.fixed) {
+      ++report.free_vertices;
+      summarizeCovariance(v);
+    }
+  }
+  report.ok = true;
+  return report;
+}
+
+namespace detail
+{
+inline void writeVertexRow(std::ostream & out, const VertexUncertainty & v)
+{
+  constexpr double kRadToDeg = 57.29577951308232;
+  out << v.id << ',' << (v.fixed ? 1 : 0) << ',' << v.position.x() << ',' << v.position.y() <<
+    ',' << v.position.z() << ',' << v.sigma_translation_max << ',' <<
+    v.sigma_translation_min << ',' << v.weakest_translation_direction.x() << ',' <<
+    v.weakest_translation_direction.y() << ',' << v.weakest_translation_direction.z() <<
+    ',' << v.sigma_rotation_max * kRadToDeg << ',' << v.log_det_covariance << '\n';
+}
+
+constexpr const char * kVertexColumns =
+  "id,fixed,x,y,z,sigma_translation_max,sigma_translation_min,"
+  "weak_direction_x,weak_direction_y,weak_direction_z,sigma_rotation_max_deg,"
+  "log_det_covariance";
+}  // namespace detail
 
 // One CSV row per vertex, in file order, fixed precision (byte-reproducible).
 inline std::string formatCsv(const UncertaintyReport & report)
@@ -462,16 +510,58 @@ inline std::string formatCsv(const UncertaintyReport & report)
   std::ostringstream out;
   out.setf(std::ios::fixed);
   out.precision(9);
-  out << "id,fixed,x,y,z,sigma_translation_max,sigma_translation_min,"
-    "weak_direction_x,weak_direction_y,weak_direction_z,sigma_rotation_max_deg,"
-    "log_det_covariance\n";
-  constexpr double kRadToDeg = 57.29577951308232;
+  out << detail::kVertexColumns << '\n';
   for (const VertexUncertainty & v : report.per_vertex) {
-    out << v.id << ',' << (v.fixed ? 1 : 0) << ',' << v.position.x() << ',' << v.position.y() <<
-      ',' << v.position.z() << ',' << v.sigma_translation_max << ',' <<
-      v.sigma_translation_min << ',' << v.weakest_translation_direction.x() << ',' <<
-      v.weakest_translation_direction.y() << ',' << v.weakest_translation_direction.z() <<
-      ',' << v.sigma_rotation_max * kRadToDeg << ',' << v.log_det_covariance << '\n';
+    detail::writeVertexRow(out, v);
+  }
+  return out.str();
+}
+
+// Timeline CSV (one block of rows per pose-graph state, e.g. after each
+// causal optimization): the header, then timelineRows for each state.
+inline std::string timelineCsvHeader()
+{
+  return std::string("step,stamp_sec,submaps,loop_edges,") + detail::kVertexColumns + '\n';
+}
+
+inline std::string timelineRows(
+  std::size_t step, double stamp_sec, std::size_t loop_edges, const UncertaintyReport & report)
+{
+  std::ostringstream out;
+  out.setf(std::ios::fixed);
+  out.precision(9);
+  for (const VertexUncertainty & v : report.per_vertex) {
+    out << step << ',' << stamp_sec << ',' << report.per_vertex.size() << ',' << loop_edges << ',';
+    detail::writeVertexRow(out, v);
+  }
+  return out.str();
+}
+
+// Summary of a report as YAML, fixed precision (byte-reproducible). Graph-level
+// D-optimality is written only when it was computed (computeUncertainty).
+inline std::string formatReportSummaryYaml(const UncertaintyReport & report)
+{
+  std::ostringstream out;
+  out.setf(std::ios::fixed);
+  out.precision(9);
+  out << "ok: " << (report.ok ? "true" : "false") << '\n';
+  if (!report.ok) {
+    out << "error: \"" << report.error << "\"\n";
+  }
+  out << "vertices: " << report.vertices << '\n';
+  out << "free_vertices: " << report.free_vertices << '\n';
+  if (!report.ok) {
+    return out.str();
+  }
+  const VertexUncertainty * worst = nullptr;
+  for (const VertexUncertainty & v : report.per_vertex) {
+    if (!v.fixed && (worst == nullptr || v.sigma_translation_max > worst->sigma_translation_max)) {
+      worst = &v;
+    }
+  }
+  if (worst != nullptr) {
+    out << "max_sigma_translation: " << worst->sigma_translation_max << '\n';
+    out << "max_sigma_translation_vertex: " << worst->id << '\n';
   }
   return out.str();
 }
