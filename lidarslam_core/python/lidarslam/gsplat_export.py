@@ -10,6 +10,14 @@ log's ``sensor_msgs/msg/CameraInfo``.
   OUT/images/<n>.jpg
   OUT/sparse/0/cameras.txt  images.txt  points3D.txt
   OUT/image_stamps.txt      <image name> <stamp in seconds> per image
+  OUT/depth_priors/<image name>.bin   with ``depth_lidar_topic``: a LiDAR depth per image
+
+With ``depth_lidar_topic`` each image also gets the LiDAR scan nearest its stamp projected into
+it, for depth-supervised 3DGS (visloc-rs ``gsplat_train --depth-prior OUT/depth_priors``): the
+scan is placed in the world at its own stamp and seen from the camera at the image's, both by
+the run's poses; the nearest point per pixel is kept. The file is ``u32 width, u32 height`` and
+then ``width x height`` little-endian ``f32`` camera-z depths in metres, row-major, 0 where no
+point falls.
 
 The layout is COLMAP's text model, as 3DGS trainers read it (``gsplat_train --data`` of
 visloc-rs, the original 3DGS, nerfstudio's ``colmap`` loader). Images are written as they come
@@ -37,6 +45,8 @@ IMAGE = 'sensor_msgs/msg/Image'
 COMPRESSED_IMAGE = 'sensor_msgs/msg/CompressedImage'
 CAMERA_INFO = 'sensor_msgs/msg/CameraInfo'
 TF_MESSAGE = 'tf2_msgs/msg/TFMessage'
+POINT_CLOUD2 = 'sensor_msgs/msg/PointCloud2'
+_FLOAT_FIELDS = {7: '<f4', 8: '<f8'}  # sensor_msgs/PointField FLOAT32, FLOAT64
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,16 @@ class Camera:
             x, y = (x * radial + 2 * p1 * x * y + p2 * (r2 + 2 * x * x),
                     y * radial + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y)
         return fx * x + cx, fy * y + cy
+
+    def in_range(self, points: np.ndarray) -> np.ndarray:
+        """Camera-frame points the distortion maps one-to-one (no fold-back from outside)."""
+        if self.model not in ('OPENCV', 'FULL_OPENCV'):
+            return np.ones(len(points), dtype=bool)
+        z = np.maximum(points[:, 2], 1e-9)
+        r2 = (points[:, 0] / z) ** 2 + (points[:, 1] / z) ** 2
+        k1, k2 = self.params[4:6]
+        k3 = self.params[8] if self.model == 'FULL_OPENCV' else 0.0
+        return 1 + r2 * (3 * k1 + r2 * (5 * k2 + r2 * 7 * k3)) > 0  # d(r * radial)/dr > 0
 
     def line(self, camera_id: int = 1) -> str:
         return f'{camera_id} {self.model} {self.width} {self.height} ' + \
@@ -175,6 +195,45 @@ def decode_image(msg: Any, msgtype: str) -> Any:
         return Image.fromarray((values * (255.0 / top)).astype(np.uint8), 'L').convert('RGB')
     raise ValueError(f'image encoding {msg.encoding!r} is not supported '
                      '(rgb8, bgr8, rgba8, bgra8, mono8, mono16 or a CompressedImage)')
+
+
+def pointcloud_xyz(msg: Any) -> np.ndarray:
+    """XYZ of a ``sensor_msgs/msg/PointCloud2`` as float64 (N, 3), non-finite points dropped."""
+    fields = {f.name: f for f in msg.fields}
+    if any(a not in fields or fields[a].datatype not in _FLOAT_FIELDS for a in 'xyz'):
+        raise ValueError('PointCloud2 needs floating-point x, y, z fields')
+    if msg.is_bigendian:
+        raise ValueError('big-endian PointCloud2 is not supported')
+    count = int(msg.width) * int(msg.height)
+    rows = np.frombuffer(bytes(msg.data), dtype=np.uint8)
+    if int(msg.height) > 1:
+        rows = rows.reshape(int(msg.height), int(msg.row_step))[:, :int(msg.width) * msg.point_step]
+    rows = rows.reshape(-1)[:count * msg.point_step].reshape(count, msg.point_step)
+    xyz = np.column_stack([
+        rows[:, fields[a].offset:fields[a].offset + np.dtype(_FLOAT_FIELDS[fields[a].datatype])
+             .itemsize].copy().view(_FLOAT_FIELDS[fields[a].datatype])[:, 0] for a in 'xyz'])
+    xyz = xyz.astype(np.float64)
+    return xyz[np.all(np.isfinite(xyz), axis=1)]
+
+
+def depth_map(camera: Camera, cam_points: np.ndarray, min_depth: float,
+              max_depth: float) -> np.ndarray:
+    """Camera-z of the nearest point per pixel (float32, row-major, 0 = no point)."""
+    z = cam_points[:, 2]
+    keep = (z > min_depth) & (z < max_depth)
+    keep[keep] = camera.in_range(cam_points[keep])
+    u, v = camera.project(cam_points[keep])
+    u, v, z = np.floor(u).astype(np.int64), np.floor(v).astype(np.int64), z[keep]
+    inside = (u >= 0) & (u < camera.width) & (v >= 0) & (v < camera.height)
+    depth = np.full(camera.width * camera.height, np.inf, dtype=np.float32)
+    np.minimum.at(depth, v[inside] * camera.width + u[inside], z[inside].astype(np.float32))
+    depth[~np.isfinite(depth)] = 0.0
+    return depth
+
+
+def write_depth_map(path: Path, camera: Camera, depth: np.ndarray) -> None:
+    path.write_bytes(np.array([camera.width, camera.height], dtype='<u4').tobytes()
+                     + depth.astype('<f4').tobytes())
 
 
 def read_tum(path: Path) -> tuple[np.ndarray, np.ndarray, Rotation]:
@@ -294,6 +353,8 @@ class Summary:
     points: int
     camera: Camera
     out: Path
+    depth_priors: int = 0
+    depth_coverage: float = 0.0
 
 
 def _messages(reader: AnyReader, topics: set[str]) -> Iterator[tuple[str, str, Any]]:
@@ -307,7 +368,9 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
            camera_frame: str | None = None,
            extrinsic: Sequence[float] | None = None, every: int = 1, scale: float = 1.0,
            points: int = 400_000, max_depth: float = 40.0, min_depth: float = 1.0,
-           jpeg_quality: int = 95) -> Summary:
+           jpeg_quality: int = 95, depth_lidar_topic: str | None = None,
+           lidar_frame: str | None = None, lidar_extrinsic: Sequence[float] | None = None,
+           depth_max: float = 80.0, depth_max_gap: float = 0.2) -> Summary:
     """Write the COLMAP scene of ``image_topic`` in ``log`` posed by the lidar_slam run ``run``.
 
     ``extrinsic`` is ``base_from_camera`` as ``[x, y, z, qx, qy, qz, qw]`` of the camera's
@@ -315,6 +378,12 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
     from ``/tf_static`` (``base_frame`` to ``camera_frame``, by default the CameraInfo's
     ``header.frame_id``). ``camera_info_topic`` defaults to the image topic's sibling
     ``camera_info`` (``.../image_raw[/compressed]`` -> ``.../camera_info``).
+
+    ``depth_lidar_topic`` (a ``sensor_msgs/msg/PointCloud2`` topic) also writes a LiDAR depth per
+    image to ``OUT/depth_priors`` from the scan nearest the image stamp (at most
+    ``depth_max_gap`` s away; an image without one gets none), z in (``min_depth``,
+    ``depth_max``). ``lidar_extrinsic`` is ``base_from_lidar`` as for ``extrinsic``; without it
+    the transform comes from ``/tf_static`` (``lidar_frame``, by default the scans' frame_id).
     """
     from PIL import Image  # noqa: F401  (fail early without Pillow)
     log, run, out = Path(log), Path(run), Path(out)
@@ -338,23 +407,35 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
                            '(pass camera_info_topic)')
         info = next(m for _, _, m in _messages(reader, {camera_info_topic}))
         camera = camera_from_info(info)
-        if extrinsic is not None:
-            if len(extrinsic) != 7:
-                raise ValueError('extrinsic is x y z qx qy qz qw')
-            base_from_camera = _matrix(extrinsic[:3], extrinsic[3:])
-        else:
-            edges: dict[tuple[str, str], np.ndarray] = {}
-            tf_topics = {t for t, ty in types.items()
-                         if ty == TF_MESSAGE and t.endswith('tf_static')}
-            for _, _, message in _messages(reader, tf_topics):
-                for tf in message.transforms:
-                    q, p = tf.transform.rotation, tf.transform.translation
-                    edges[(_strip(tf.header.frame_id), _strip(tf.child_frame_id))] = _matrix(
-                        (p.x, p.y, p.z), (q.x, q.y, q.z, q.w))
-            source = _strip(camera_frame or info.header.frame_id)
-            if not edges:
-                raise KeyError(f'{log} has no /tf_static; pass extrinsic (base_from_camera)')
-            base_from_camera = static_transform(edges, _strip(base_frame), source)
+        edges: dict[tuple[str, str], np.ndarray] | None = None
+
+        def static_edges() -> dict[tuple[str, str], np.ndarray]:
+            nonlocal edges
+            if edges is None:
+                edges = {}
+                tf_topics = {t for t, ty in types.items()
+                             if ty == TF_MESSAGE and t.endswith('tf_static')}
+                for _, _, message in _messages(reader, tf_topics):
+                    for tf in message.transforms:
+                        q, p = tf.transform.rotation, tf.transform.translation
+                        edges[(_strip(tf.header.frame_id), _strip(tf.child_frame_id))] = \
+                            _matrix((p.x, p.y, p.z), (q.x, q.y, q.z, q.w))
+            return edges
+
+        def base_from(frame: str, given: Sequence[float] | None, what: str,
+                      child: str) -> np.ndarray:
+            if given is not None:
+                if len(given) != 7:
+                    raise ValueError(f'{what} is x y z qx qy qz qw')
+                return _matrix(given[:3], given[3:])
+            if not static_edges():
+                raise KeyError(f'{log} has no /tf_static; pass {what} (base_from_{child})')
+            return static_transform(static_edges(), _strip(base_frame), _strip(frame))
+
+        base_from_camera = base_from(camera_frame or info.header.frame_id, extrinsic,
+                                     'extrinsic', 'camera')
+        if depth_lidar_topic is not None and types.get(depth_lidar_topic) != POINT_CLOUD2:
+            raise KeyError(f'{depth_lidar_topic!r} is not a PointCloud2 topic in {log}')
 
         out_camera = camera.scaled(scale)
         images_dir = out / 'images'
@@ -362,9 +443,44 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
         images_dir.mkdir(parents=True, exist_ok=True)
         sparse.mkdir(parents=True, exist_ok=True)
         names, world_from_cams, stamps = [], [], []
+        depth_dir = out / 'depth_priors'
+        coverage: list[float] = []
+        pending: list[int] = []  # images waiting for the next scan
+        previous: tuple[float, np.ndarray] | None = None  # (stamp, world points) of a scan
+        base_from_lidar: np.ndarray | None = None
+
+        def write_prior(i: int, scans: list[tuple[float, np.ndarray]]) -> None:
+            if not scans:
+                return
+            t_scan, world = min(scans, key=lambda s: abs(s[0] - stamps[i]))
+            if abs(t_scan - stamps[i]) > depth_max_gap:
+                return
+            pose = world_from_cams[i]
+            depth = depth_map(out_camera, (world - pose[:3, 3]) @ pose[:3, :3], min_depth,
+                              depth_max)
+            write_depth_map(depth_dir / f'{names[i]}.bin', out_camera, depth)
+            coverage.append(float((depth > 0).mean()))
+
+        topics = {image_topic} | ({depth_lidar_topic} if depth_lidar_topic else set())
+        if depth_lidar_topic:
+            depth_dir.mkdir(parents=True, exist_ok=True)
         seen = 0
-        for _, msgtype, msg in _messages(reader, {image_topic}):
+        for topic, msgtype, msg in _messages(reader, topics):
             t = _stamp(msg.header)
+            if topic == depth_lidar_topic and topic != image_topic:
+                if not begin - depth_max_gap <= t <= end + depth_max_gap:
+                    continue
+                if base_from_lidar is None:
+                    base_from_lidar = base_from(lidar_frame or msg.header.frame_id,
+                                                lidar_extrinsic, 'lidar_extrinsic', 'lidar')
+                world_from_lidar = poses.at(t) @ base_from_lidar
+                scan = (t, pointcloud_xyz(msg) @ world_from_lidar[:3, :3].T
+                        + world_from_lidar[:3, 3])
+                for i in [i for i in pending if stamps[i] <= t]:
+                    write_prior(i, [s for s in (previous, scan) if s is not None])
+                    pending.remove(i)
+                previous = scan
+                continue
             if not begin <= t <= end:
                 continue
             seen += 1
@@ -381,6 +497,10 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
             names.append(name)
             stamps.append(t)
             world_from_cams.append(poses.at(t) @ base_from_camera)
+            if depth_lidar_topic:
+                pending.append(len(names) - 1)
+        for i in pending:
+            write_prior(i, [previous] if previous is not None else [])
     if not names:
         raise ValueError(f'no {image_topic} image inside the run span [{begin:.3f}, {end:.3f}] s '
                          '(header stamps and trajectory times must share a clock)')
@@ -422,4 +542,5 @@ def export(log: str | Path, run: str | Path, out: str | Path, image_topic: str, 
     with (sparse / 'points3D.txt').open('w') as stream:
         for i, (p, c) in enumerate(zip(cloud, colours), start=1):
             stream.write(f'{i} {p[0]:.4f} {p[1]:.4f} {p[2]:.4f} {c[0]} {c[1]} {c[2]} 0\n')
-    return Summary(len(names), len(cloud), out_camera, out)
+    return Summary(len(names), len(cloud), out_camera, out, len(coverage),
+                   float(np.mean(coverage)) if coverage else 0.0)

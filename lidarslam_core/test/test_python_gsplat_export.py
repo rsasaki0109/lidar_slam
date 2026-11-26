@@ -50,9 +50,41 @@ def _tf(parent: str, child: str, m: np.ndarray):
             rotation=t['geometry_msgs/msg/Quaternion'](x=q[0], y=q[1], z=q[2], w=q[3])))
 
 
-def _write_log(path: Path, stamps: list[float]) -> None:
+BASE_FROM_LIDAR = _pose([0.3, 0.0, 1.5], Rotation.from_euler('z', -20, degrees=True))
+
+
+def _header(stamp: float, frame: str):
+    t = TS.types
+    return t['std_msgs/msg/Header'](
+        stamp=t['builtin_interfaces/msg/Time'](sec=int(stamp),
+                                               nanosec=int(round(stamp % 1 * 1e9))),
+        frame_id=frame)
+
+
+def _cloud(stamp: float, xyz: np.ndarray):
+    """A PointCloud2 (x, y, z float32, an intensity in between to exercise offsets)."""
+    t = TS.types
+    rows = np.zeros(len(xyz), dtype=[('x', '<f4'), ('i', '<f4'), ('y', '<f4'), ('z', '<f4')])
+    rows['x'], rows['y'], rows['z'] = xyz.T
+    field = t['sensor_msgs/msg/PointField']
+    fields = [field(name=n, offset=o, datatype=7, count=1)
+              for n, o in (('x', 0), ('intensity', 4), ('y', 8), ('z', 12))]
+    return t['sensor_msgs/msg/PointCloud2'](
+        header=_header(stamp, 'lidar'), height=1, width=len(xyz), fields=fields,
+        is_bigendian=False, point_step=16, row_step=16 * len(xyz),
+        data=np.frombuffer(rows.tobytes(), dtype=np.uint8), is_dense=True)
+
+
+def _write_log(path: Path, stamps: list[float],
+               scans: list[tuple[float, np.ndarray]] = ()) -> None:
     t = TS.types
     with Writer(path, version=8) as writer:
+        if scans:
+            lidar_c = writer.add_connection('/points', 'sensor_msgs/msg/PointCloud2',
+                                            typestore=TS)
+            for stamp, xyz in scans:
+                writer.write(lidar_c, int(round(stamp * 1e9)),
+                             TS.serialize_cdr(_cloud(stamp, xyz), 'sensor_msgs/msg/PointCloud2'))
         tf = writer.add_connection('/tf_static', 'tf2_msgs/msg/TFMessage', typestore=TS)
         info_c = writer.add_connection('/cam/camera_info', 'sensor_msgs/msg/CameraInfo',
                                        typestore=TS)
@@ -60,7 +92,8 @@ def _write_log(path: Path, stamps: list[float]) -> None:
         # Child-to-parent order on purpose: the tree is walked in both directions.
         msg = t['tf2_msgs/msg/TFMessage'](transforms=[
             _tf('base_link', 'mount', BASE_FROM_MOUNT), _tf('cam_optical', 'mount',
-                                                            np.linalg.inv(MOUNT_FROM_CAM))])
+                                                            np.linalg.inv(MOUNT_FROM_CAM)),
+            _tf('base_link', 'lidar', BASE_FROM_LIDAR)])
         writer.write(tf, 10_000_000_000, TS.serialize_cdr(msg, 'tf2_msgs/msg/TFMessage'))
         for k, stamp in enumerate(stamps):
             header = t['std_msgs/msg/Header'](
@@ -244,3 +277,57 @@ def test_missing_transform_and_clock_mismatch(tmp_path: Path) -> None:
     _write_log(tmp_path / 'log2', [5.0])
     with pytest.raises(ValueError, match='share a clock'):
         ge.export(tmp_path / 'log2', tmp_path / 'run', tmp_path / 'o2', '/cam/image_raw')
+
+
+def test_lidar_depth_priors(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    truth = _write_run(tmp_path / 'run')
+    base_from_cam = BASE_FROM_MOUNT @ MOUNT_FROM_CAM
+    # A cloud of world points ahead of the cameras, seen by each scan from where the base is
+    # at the scan's stamp (the run's poses: the keyframes, odometry in between).
+    poses = ge.RunPoses(tmp_path / 'run')
+    rng = np.random.default_rng(1)
+    first_cam = truth[100.0] @ base_from_cam
+    in_cam = np.column_stack([rng.uniform(-4, 4, 400), rng.uniform(-3, 3, 400),
+                              rng.uniform(5, 15, 400)])
+    world = in_cam @ first_cam[:3, :3].T + first_cam[:3, 3]
+
+    def scan(t: float) -> tuple[float, np.ndarray]:
+        lidar = poses.at(t) @ BASE_FROM_LIDAR
+        return t, (world - lidar[:3, 3]) @ lidar[:3, :3]
+
+    # Images at 100, 100.75 and 101.5; scans at 99.95, 100.7, 100.8 (nearest to 100.75) and
+    # none near 101.5 (the next at 101.9, past the 0.2 s gap).
+    _write_log(tmp_path / 'log', [100.0, 100.75, 101.5],
+               [scan(t) for t in (99.95, 100.7, 100.8, 101.9)])
+    assert main(['colmap', str(tmp_path / 'log'), '--run', str(tmp_path / 'run'),
+                 '--image-topic', '/cam/image_raw', '--out', str(tmp_path / 'out'),
+                 '--depth-lidar-topic', '/points']) == 0
+    assert '"depth_priors": 2' in capsys.readouterr().out
+    priors = tmp_path / 'out' / 'depth_priors'
+    assert sorted(p.name for p in priors.iterdir()) == ['000000.jpg.bin', '000001.jpg.bin']
+    camera = ge.Camera('PINHOLE', W, H, (F, F, W / 2, H / 2))
+    for name, t in (('000000.jpg', 100.0), ('000001.jpg', 100.75)):
+        raw = (priors / f'{name}.bin').read_bytes()
+        assert struct.unpack('<II', raw[:8]) == (W, H)
+        depth = np.frombuffer(raw[8:], dtype='<f4').reshape(H, W)
+        cam = poses.at(t) @ base_from_cam
+        local = (world - cam[:3, 3]) @ cam[:3, :3]
+        u, v = camera.project(local)
+        inside = (u >= 0) & (u < W) & (v >= 0) & (v < H)
+        want = np.zeros((H, W))
+        for x, y, z in zip(u[inside].astype(int), v[inside].astype(int), local[inside, 2]):
+            want[y, x] = z if want[y, x] == 0 else min(want[y, x], z)
+        np.testing.assert_allclose(depth, want, atol=1e-4)
+        assert (depth > 0).sum() > 50
+
+
+def test_depth_map_drops_points_distortion_folds_back() -> None:
+    # Strong barrel distortion (k1 < 0): r * (1 + k1 r^2) turns back past r = 1 / sqrt(3 |k1|),
+    # so a point far off-axis would land inside the image; it must be dropped instead.
+    camera = ge.Camera('OPENCV', 100, 100, (50.0, 50.0, 50.0, 50.0, -0.3, 0.0, 0.0, 0.0))
+    points = np.array([[0.0, 0.0, 10.0], [20.0, 0.0, 10.0]])  # on axis; r = 2 off axis
+    u, _ = camera.project(points[1:])
+    assert 0 <= u[0] < 100  # it would fold back into the image
+    depth = ge.depth_map(camera, points, 1.0, 80.0).reshape(100, 100)
+    assert depth[50, 50] == pytest.approx(10.0)
+    assert (depth > 0).sum() == 1
