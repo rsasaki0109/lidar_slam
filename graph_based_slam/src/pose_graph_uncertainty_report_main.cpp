@@ -51,7 +51,9 @@ void printUsage()
     "                                     --output-dir <dir>\n"
     "  Writes pose_graph_uncertainty.csv and pose_graph_uncertainty_summary.yaml.\n"
     "  Sigmas are in the units the backend's edge information weights imply: they rank\n"
-    "  vertices and compare graphs built with the same weights; they are not metres of error.\n";
+    "  vertices and compare graphs built with the same weights; they are not metres of error.\n"
+    "  Gravity-prior and plane-revisit edges are not written to pose_graph.g2o by g2o, so with\n"
+    "  gravity_prior_info > 0 or plane revisit on, the report covers the graph without them.\n";
 }
 
 bool writeFile(const std::filesystem::path & path, const std::string & bytes)

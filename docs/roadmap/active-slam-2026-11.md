@@ -74,8 +74,13 @@ Laplacian, because heading error is what makes the far end of a corridor uncerta
 (test `HeadingErrorMakesTheWeakDirectionLateral`). Checked against g2o `computeMarginals` on a
 40-vertex graph with rotations and three loops: 6x6 blocks within 3e-5 relative. Limits: the
 sigmas are in the units of the configured edge information weights, not calibrated metres;
-robust kernels and non-SE3 edges (gravity prior, plane revisit) are not in the g2o text and are
-ignored (counted in the summary). Cost: one sparse Cholesky plus 6 solves per vertex.
+robust kernels are not in the g2o text; the backend's gravity-prior and plane-revisit edges are
+not registered with g2o, so g2o does not write them and the report cannot see or count them. With
+the default parameters (both off) the saved graph is complete; with either on (e.g. the RTK-GNSS
+profile's `gravity_prior_info: 1000`), the report overstates the uncertainty they remove. On a
+60-vertex graph from `optimizePoseGraph` with 12 gravity priors, the file held only the 286
+SE3 edges and every vertex's weakest direction came out vertical. The in-backend computation
+(next step) sees every edge and removes this limit. Cost: one sparse Cholesky plus 6 solves per vertex.
 
 Next in P1: time the report on the largest existing bundles; expose the same computation in the
 backend (after each optimization, off by default) and the `SlamUncertainty` message; then

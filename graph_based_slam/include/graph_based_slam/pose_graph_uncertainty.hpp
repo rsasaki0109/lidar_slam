@@ -44,8 +44,15 @@
 // the sigmas are in the units those weights imply. They rank vertices (which
 // part of the trajectory is least constrained, in which direction) and
 // compare graphs built with the same weights; they are not metres of error.
-// Robust kernels are not in the g2o text and are ignored, as are edge types
-// other than EDGE_SE3:QUAT (counted in ParsedGraph::ignored_tags).
+// Robust kernels are not in the g2o text and are ignored. Edge types other
+// than EDGE_SE3:QUAT that are in the text are counted in
+// ParsedGraph::ignored_tags; the backend's own edge types (GravityPriorEdge,
+// PlaneRevisitEdge) are not registered with g2o's factory, so g2o does not
+// write them at all and nothing here can see or count them. With the default
+// parameters (gravity_prior_info 0, plane revisit off) the saved graph is
+// complete; with either on, the report covers the graph without those edges
+// (it overstates the uncertainty they would reduce, e.g. vertical with
+// gravity priors off the file).
 //
 // Determinism: no randomness, no wall clock; vertices and edges are processed
 // in file order and the sparse factorization uses a fixed (AMD) ordering, so

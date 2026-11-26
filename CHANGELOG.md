@@ -13,7 +13,9 @@
   `pose_graph_uncertainty_summary.yaml`. On a 40-vertex graph with rotations and loops the
   marginals match g2o's `computeMarginals` within 3e-5 relative. Sigmas are in the units
   of the backend's edge information weights (they rank vertices; they are not metres of
-  error). Eigen only, byte-reproducible, and the SLAM outputs are unchanged.
+  error). Gravity-prior and plane-revisit edges are not written to `pose_graph.g2o`, so with
+  either enabled (off by default) the report leaves them out. Eigen only,
+  byte-reproducible, and the SLAM outputs are unchanged.
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
