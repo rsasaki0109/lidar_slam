@@ -17,6 +17,10 @@
 #include <utility>
 #include <vector>
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #include "graph_based_slam/map_change_evidence.hpp"
 #include "graph_based_slam/map_store.hpp"
 
@@ -67,6 +71,15 @@ inline std::unordered_map<changes::Voxel, VoxelCentroid, changes::VoxelHash> sub
   return centers;
 }
 
+// Return the heap's free pages to the system (glibc keeps them otherwise; elsewhere nothing to
+// do). Building the change evidence frees many small temporary blocks between the ones it keeps.
+inline void releaseFreeMemory()
+{
+#if defined(__GLIBC__)
+  malloc_trim(0);
+#endif
+}
+
 class MapChangeEvidence
 {
 public:
@@ -93,6 +106,7 @@ public:
       }
     }
     index();
+    releaseFreeMemory();
   }
 
   void observe(const changes::Point & origin, const Eigen::Ref<const Scan> & endpoints)

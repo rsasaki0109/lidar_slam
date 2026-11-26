@@ -846,6 +846,9 @@ void bind_backend(py::module_ & m)
     "After finish() with keep_session_map: writes the submaps at their optimized poses "
     "(submaps.bin, pose_graph.g2o) to directory; returns the number of submaps.");
   m.def(
+    "release_free_memory", &lidarslam_core::releaseFreeMemory,
+    "Returns the heap's free pages to the system (glibc; elsewhere does nothing).");
+  m.def(
     "export_store_bundle", &exportStoreBundle, py::arg("session_dirs"), py::arg("params"),
     py::arg("out_dir"), py::arg("log") = py::none(),
     py::arg("transforms") = std::vector<Eigen::Matrix4d>{},
