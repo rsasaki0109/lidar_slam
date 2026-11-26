@@ -252,6 +252,13 @@ class StartupRelocalization:
             self._executor = None
             self._pending = None
 
+    def release(self):
+        """Drop the stored keyframes (the matcher and shared surfaces) once the session is over;
+        the anchor, its transform and the tracking observations stay."""
+        self.close()
+        self.matcher = None
+        self._surfaces = None
+
     def _accept(self, stamp, index, odometry, local_map, reference, observed, shared, prior):
         if self.transform is None and self.anywhere:
             candidate = observed @ np.linalg.inv(local_map)
