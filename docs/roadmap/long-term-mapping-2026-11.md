@@ -1672,3 +1672,23 @@ anchors after 101.6 s of data with no initial pose. Both copies of the store (re
 change evidence) still grow with every session, about 0.23 GB each per session here, so a store
 of a few dozen sessions needs them smaller (for example thinned keyframe windows, or one
 shared copy of the stored points).
+
+#### Stored keyframes read on demand (development, 2026-11-26)
+
+The relocalizer held every stored keyframe window in memory: 7191 keyframes of about 40,000
+points each (already thinned to 0.2 m), 4.7 GB for this store. It now keeps only their frames and
+reads a window from `keyframe_windows.npz` when the keyframe is described or registered, without
+keeping it (`StoreRelocalizer(..., on_demand, loader)`); with `--relocalize-anywhere` every
+keyframe is described once at startup (`describe_all`), before playback, so the first search does
+not spend about two minutes reading them. Shared-surface tracking still loads the windows, as it
+needs them all.
+
+| 2013-02-23 again | Peak during the session | Held at the export |
+| --- | ---: | ---: |
+| Release before export, change evidence once anchored | 9.7 GB | 4.9 GB |
+| and stored keyframes on demand | 6.5 GB | 1.6 GB |
+
+The relocalizer takes 0.18 GB after construction (was 4.72 GB). The session's outputs (change
+evidence, submaps, keyframe windows, pose graph, store entry) and the exported `map.pcd` are again
+byte-identical, and it anchors at the same data time (101.6 s). What grows with every session
+now is the change evidence (4.1 GB here, built once the session is anchored).
