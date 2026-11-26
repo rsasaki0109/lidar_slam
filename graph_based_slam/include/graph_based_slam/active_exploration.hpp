@@ -93,6 +93,9 @@ struct CoverageGridConfig
   // A cell is occupied when its obstacle hits are at least this fraction of all rays that
   // reached it (hits + pass-throughs); it is free when only passed through.
   double occupied_ratio {0.25};
+  // [m] cells this close to the sensor are free (the robot stands there): a LiDAR does not see
+  // the floor right below it, which would leave unknown cells (a frontier) under the robot.
+  double clear_radius {0.5};
 };
 
 struct SubmapScan
@@ -225,10 +228,18 @@ public:
       hi = hi.cwiseMax(b);
       rays.push_back({b, obstacle});
     }
-    if (rays.empty()) {
-      return;
-    }
+    const int clear = static_cast<int>(std::ceil(config.clear_radius / resolution_));
+    lo = lo.cwiseMin(a - Eigen::Vector2i::Constant(clear));
+    hi = hi.cwiseMax(a + Eigen::Vector2i::Constant(clear));
     reserve(lo, hi);
+    const double clear2 = std::pow(config.clear_radius / resolution_, 2);
+    for (int oy = -clear; oy <= clear; ++oy) {
+      for (int ox = -clear; ox <= clear; ++ox) {
+        if (ox * ox + oy * oy <= clear2) {
+          ++passes_[cell(a.x() + ox, a.y() + oy)];
+        }
+      }
+    }
     for (const Ray & ray : rays) {
       detail::walkCells(a, ray.end, [this](int x, int y) {++passes_[cell(x, y)];});
       if (ray.obstacle) {
@@ -429,6 +440,50 @@ public:
     return !grid_.inside(x, y) || blocked_[static_cast<std::size_t>(grid_.index(x, y))];
   }
 
+  // The shortest path from the start to the cell of a world position, as cell centres from
+  // the start's cell to the goal's (empty when unreachable): from the goal, step to the
+  // neighbour with the smallest path length until the start (ties: the first in scan order).
+  std::vector<Eigen::Vector2d> pathTo(const Eigen::Vector2d & goal) const
+  {
+    Eigen::Vector2i c = grid_.cellOf(goal);
+    double d = distanceToCell(c.x(), c.y());
+    if (!std::isfinite(d)) {
+      return {};
+    }
+    std::vector<Eigen::Vector2i> cells{c};
+    while (d > 0.0) {
+      Eigen::Vector2i best = c;
+      double best_d = d;
+      for (int oy = -1; oy <= 1; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+          if (ox == 0 && oy == 0) {
+            continue;
+          }
+          if (ox != 0 && oy != 0 && (blocked(c.x() + ox, c.y()) || blocked(c.x(), c.y() + oy))) {
+            continue;
+          }
+          const double nd = distanceToCell(c.x() + ox, c.y() + oy);
+          if (nd < best_d) {
+            best_d = nd;
+            best = Eigen::Vector2i(c.x() + ox, c.y() + oy);
+          }
+        }
+      }
+      if (best == c) {
+        break;  // cannot happen for a finite distance; guards against a loop
+      }
+      c = best;
+      d = best_d;
+      cells.push_back(c);
+    }
+    std::vector<Eigen::Vector2d> path;
+    path.reserve(cells.size());
+    for (auto it = cells.rbegin(); it != cells.rend(); ++it) {
+      path.push_back(grid_.centerOf(it->x(), it->y()));
+    }
+    return path;
+  }
+
 private:
   const CoverageGrid & grid_;
   std::vector<double> distance_;
@@ -440,7 +495,12 @@ private:
 struct FrontierConfig
 {
   int min_cells {3};  // smaller frontier clusters are noise
-  double gain_radius {4.0};  // [m] unknown area counted around a frontier's goal
+  // [m] unknown area counted around a frontier's goal: the unknown cells within this radius
+  // with a straight line of sight from the goal (no occupied cell in between), so the unknown
+  // beyond a wall, which the robot cannot see from there, does not count.
+  double gain_radius {4.0};
+  // [m] frontier cells closer than this (path length) are not goals: the robot is there.
+  double min_goal_distance {1.0};
 };
 
 struct Frontier
@@ -452,7 +512,7 @@ struct Frontier
   Eigen::Vector2d goal {Eigen::Vector2d::Zero()};
   bool reachable {false};
   double path_length {std::numeric_limits<double>::infinity()};
-  double unknown_area {0.0};  // [m^2] unknown cells within gain_radius of the goal
+  double unknown_area {0.0};  // [m^2] unknown cells in line of sight within gain_radius
 };
 
 inline std::vector<Frontier> findFrontiers(
@@ -508,7 +568,7 @@ inline std::vector<Frontier> findFrontiers(
       double best = std::numeric_limits<double>::infinity();
       for (const Eigen::Vector2i & c : frontier.cells) {
         const double path = paths.distanceToCell(c.x(), c.y());
-        if (!std::isfinite(path)) {
+        if (!std::isfinite(path) || path < config.min_goal_distance) {
           continue;
         }
         const double to_centroid = (grid.centerOf(c.x(), c.y()) - frontier.centroid).norm();
@@ -531,9 +591,15 @@ inline std::vector<Frontier> findFrontiers(
       int unknown = 0;
       for (int oy = -reach; oy <= reach; ++oy) {
         for (int ox = -reach; ox <= reach; ++ox) {
-          if (ox * ox + oy * oy <= reach2 && state(g.x() + ox, g.y() + oy) == Cell::UNKNOWN) {
-            ++unknown;
+          if (ox * ox + oy * oy > reach2 || state(g.x() + ox, g.y() + oy) != Cell::UNKNOWN) {
+            continue;
           }
+          bool visible = true;
+          detail::walkCells(
+            g, Eigen::Vector2i(g.x() + ox, g.y() + oy), [&](int x, int y) {
+              visible = visible && state(x, y) != Cell::OCCUPIED;
+            });
+          unknown += visible ? 1 : 0;
         }
       }
       frontier.unknown_area = unknown * grid.resolution() * grid.resolution();
@@ -566,6 +632,10 @@ struct SelectionConfig
   double anchor_sigma_ratio {0.5};
   // [m] a revisit goal this close to the robot is pointless (the loop search has seen it).
   double min_revisit_distance {3.0};
+  // [m] a frontier goal the robot has come this close to (path length) and that is still a
+  // frontier cannot be seen from there (a shadow the sensor does not reach): it is marked
+  // visited, and frontier goals within this distance of a visited one are not chosen again.
+  double visited_radius {1.5};
 };
 
 struct GoalCandidate
@@ -597,6 +667,7 @@ struct Decision
 struct ExplorerState
 {
   bool revisit_mode {false};
+  std::vector<Eigen::Vector2d> visited_frontiers;  // see SelectionConfig::visited_radius
 };
 
 // Submap positions and sigmas of the graph so far (index = submap index, last = newest).
@@ -619,9 +690,27 @@ inline Decision selectGoal(
   }
   decision.revisit_mode = state.revisit_mode;
 
+  for (const Frontier & f : frontiers) {
+    if (f.reachable && f.path_length < config.visited_radius) {
+      bool known = false;
+      for (const Eigen::Vector2d & v : state.visited_frontiers) {
+        known = known || (v - f.goal).norm() < 1e-9;
+      }
+      if (!known) {
+        state.visited_frontiers.push_back(f.goal);
+      }
+    }
+  }
   for (std::size_t i = 0; i < frontiers.size(); ++i) {
     const Frontier & f = frontiers[i];
     if (!f.reachable) {
+      continue;
+    }
+    bool visited = false;
+    for (const Eigen::Vector2d & v : state.visited_frontiers) {
+      visited = visited || (v - f.goal).norm() < config.visited_radius;
+    }
+    if (visited) {
       continue;
     }
     GoalCandidate c;

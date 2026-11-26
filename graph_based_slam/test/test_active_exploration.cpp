@@ -274,6 +274,40 @@ TEST(ActiveExploration, CloserFrontierWinsWhenGainsAreEqual)
   EXPECT_GT(decision.candidates[static_cast<std::size_t>(decision.chosen)].goal.x(), 9.0);
 }
 
+TEST(ActiveExploration, UnknownBeyondAWallIsNoGainAndAReachedFrontierIsDropped)
+{
+  // The doorway room: the unknown outside the walls is not in sight of a frontier there, so the
+  // doorway's gain is the unknown seen through the opening only. A frontier the robot stands
+  // next to that is still a frontier is marked visited and not chosen again.
+  const auto walls = room(true);
+  const ae::CoverageGridConfig config = gridConfig();
+  const ae::CoverageGrid grid = ae::buildCoverageGrid(
+    {scanFrom({3.0, 3.0}, walls), scanFrom({7.0, 3.0}, walls)}, config);
+  {
+    const ae::PathField paths(grid, config, ae::PlannerConfig(), {7.0, 3.0});
+    const auto frontiers = ae::findFrontiers(grid, config, paths, ae::FrontierConfig());
+    ASSERT_EQ(frontiers.size(), 1U);
+    // A 4 m disc is 50 m^2; behind the 2 m doorway the visible unknown is a wedge of it.
+    EXPECT_LT(frontiers[0].unknown_area, 20.0);
+    EXPECT_GT(frontiers[0].unknown_area, 3.0);
+  }
+  ae::GraphUncertainty graph;
+  graph.positions = {{3.0, 3.0}, {9.0, 3.0}};
+  graph.sigma = {0.0, 0.1};
+  ae::ExplorerState state;
+  const ae::PathField near(grid, config, ae::PlannerConfig(), {8.8, 3.0});
+  const auto frontiers = ae::findFrontiers(grid, config, near, ae::FrontierConfig());
+  ae::Decision decision = ae::selectGoal(near, frontiers, graph, ae::SelectionConfig(), state);
+  EXPECT_EQ(decision.status, ae::Decision::Status::EXPLORATION_DONE) << decision.reason;
+  EXPECT_EQ(state.visited_frontiers.size(), 1U);
+  // From afar it stays visited.
+  const ae::PathField far(grid, config, ae::PlannerConfig(), {3.0, 3.0});
+  decision = ae::selectGoal(
+    far, ae::findFrontiers(grid, config, far, ae::FrontierConfig()), graph,
+    ae::SelectionConfig(), state);
+  EXPECT_EQ(decision.status, ae::Decision::Status::EXPLORATION_DONE);
+}
+
 TEST(ActiveExploration, DecisionIsDeterministic)
 {
   const auto walls = room(true);

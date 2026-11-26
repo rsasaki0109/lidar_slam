@@ -47,9 +47,11 @@
 #include <Eigen/Geometry>
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "graph_based_slam/cloud_message.hpp"
 #include "graph_based_slam/gnss_anchor_store.hpp"
@@ -79,6 +81,27 @@ struct LivePose
 
 using LivePoseListener = std::function<void (const LivePose &)>;
 
+// The explorer's next goal now (active_exploration.hpp; docs/roadmap/active-slam-2026-11.md),
+// for a robot at a position in the odometry frame: OfflinePipeline::decideExploration.
+struct ExplorationDecision
+{
+  // "goal", "exploration_done", "no_reachable_goal", or "disabled" (active_exploration_timeline
+  // is off) / "no_submaps" (nothing mapped yet).
+  std::string status {"disabled"};
+  std::string kind;  // "frontier" or "revisit" with a goal
+  bool revisit_mode {false};
+  double newest_sigma {0.0};  // the newest submap's sigma in the latest uncertainty state
+  Eigen::Vector2d goal {Eigen::Vector2d::Zero()};  // odometry frame
+  double path_length {0.0};
+  std::vector<Eigen::Vector2d> path;  // from the robot's cell to the goal's (odometry frame)
+  double unknown_area {0.0};
+  double uncertainty_drop {0.0};
+  std::size_t submaps {0U};
+  std::size_t frontiers {0U};
+  std::size_t reachable_frontiers {0U};
+  std::size_t revisit_candidates {0U};
+};
+
 // The map-saving parameters (offline_map_bundle's map_leaf_size, map_grid_size_x, ...), with the
 // live node's defaults. Throws ParameterTypeError for a parameter of the wrong type.
 map_export::MapExportConfig mapExportConfig(const Parameters & parameters);
@@ -107,6 +130,27 @@ public:
   // causal_trajectory_output (without it the listener is not called). Set before begin(). The
   // outputs are the same with or without a listener.
   void setLivePoseListener(LivePoseListener listener);
+
+  // With active_exploration_timeline (and pose_uncertainty_timeline): the goal the explorer
+  // would choose now for a robot at robot_xy (odometry frame), from the coverage grid of the
+  // submaps so far and the latest uncertainty state. For a closed loop in which a controller
+  // drives the robot (tools/rne_active_slam_env). In-line loop search only. Does not change
+  // any output file.
+  ExplorationDecision decideExploration(const Eigen::Vector2d & robot_xy);
+
+  // The explorer's coverage grid now: cell states (0 unknown, 1 free, 2 occupied) row by row
+  // (y outer), cell (x0, y0) first, cells of `resolution` metres with integer coordinates
+  // floor(world / resolution). Empty without active_exploration_timeline.
+  struct ExplorationGrid
+  {
+    int x0 {0};
+    int y0 {0};
+    int width {0};
+    int height {0};
+    double resolution {0.0};
+    std::vector<std::uint8_t> cells;
+  };
+  ExplorationGrid explorationGrid() const;
 
   // Keep the session's submaps (stamps, odometry and optimized poses, compressed scans) for
   // sessionMap(), the session of a long-term map store (map_store.hpp). Set before begin(). The

@@ -33,6 +33,14 @@
   length) with a revisit mode while the newest submap's sigma is high. The offline parameter
   `active_exploration_timeline` replays its decisions on a recorded run
   (`active_exploration_timeline.csv`, `exploration_*` parameters). Report-only, off by default.
+- Closed-loop active SLAM simulation (`tools/rne_active_slam_env`): RobotNativeEngine's Livox
+  Mid-360 model on a kinematic robot in a box world, in lockstep with `lidarslam.live.Session`,
+  which now answers `decide_exploration(x, y)` (goal and path) and `exploration_grid()`. The
+  explorer marks the cells around the sensor free, skips frontiers closer than 1 m, counts only
+  unknown cells in line of sight as gain, and drops frontiers the robot reached without seeing
+  them (`exploration_clear_radius`, `exploration_min_goal_distance`,
+  `exploration_visited_radius`). First comparison in docs/roadmap/active-slam-2026-11.md (one
+  world, one seed).
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists

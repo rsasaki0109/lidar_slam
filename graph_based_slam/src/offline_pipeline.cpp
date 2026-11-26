@@ -1326,6 +1326,7 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or("exploration_obstacle_min_z", grid.obstacle_min_z, grid.obstacle_min_z);
   node.get_parameter_or("exploration_obstacle_max_z", grid.obstacle_max_z, grid.obstacle_max_z);
   node.get_parameter_or("exploration_max_range", grid.max_range, grid.max_range);
+  node.get_parameter_or("exploration_clear_radius", grid.clear_radius, grid.clear_radius);
   node.get_parameter_or(
     "exploration_inflation_radius", config.exploration_planner.inflation_radius,
     config.exploration_planner.inflation_radius);
@@ -1335,6 +1336,9 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or(
     "exploration_gain_radius", config.exploration_frontier.gain_radius,
     config.exploration_frontier.gain_radius);
+  node.get_parameter_or(
+    "exploration_min_goal_distance", config.exploration_frontier.min_goal_distance,
+    config.exploration_frontier.min_goal_distance);
   auto & selection = config.exploration_selection;
   node.get_parameter_or("exploration_info_weight", selection.info_weight, selection.info_weight);
   node.get_parameter_or(
@@ -1357,6 +1361,8 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or(
     "exploration_min_revisit_distance", selection.min_revisit_distance,
     selection.min_revisit_distance);
+  node.get_parameter_or(
+    "exploration_visited_radius", selection.visited_radius, selection.visited_radius);
   node.get_parameter_or(
     "exploration_max_points_per_scan", config.exploration_max_points_per_scan,
     config.exploration_max_points_per_scan);
@@ -1700,6 +1706,8 @@ struct BagPass
   graphslam::active_exploration::CoverageGrid exploration_grid;
   graphslam::active_exploration::ExplorerState explorer_state;
   std::ofstream exploration_timeline;
+  // The latest uncertainty state's submap positions (odometry) and sigmas.
+  graphslam::active_exploration::GraphUncertainty exploration_graph;
   std::size_t uncertainty_timeline_steps = 0U;
   int submaps_since_uncertainty = 0;
   bool loop_edges_changed_since_uncertainty = false;
@@ -2133,6 +2141,75 @@ struct BagPass
     ++uncertainty_timeline_steps;
   }
 
+  // OfflinePipeline::decideExploration.
+  graphslam::offline::ExplorationDecision decideExploration(const Eigen::Vector2d & robot_xy)
+  {
+    namespace ae = graphslam::active_exploration;
+    graphslam::offline::ExplorationDecision out;
+    if (!exploration_timeline.is_open()) {
+      return out;
+    }
+    if (bag.records.empty()) {
+      out.status = "no_submaps";
+      return out;
+    }
+    // Submaps created since the latest uncertainty state take the newest sigma known.
+    ae::GraphUncertainty graph = exploration_graph;
+    const double newest = graph.sigma.empty() ? 0.0 : graph.sigma.back();
+    for (std::size_t i = graph.positions.size(); i < bag.records.size(); ++i) {
+      graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
+      graph.sigma.push_back(newest);
+    }
+    const ae::PathField paths(
+      exploration_grid, config.exploration_grid, config.exploration_planner, robot_xy);
+    const std::vector<ae::Frontier> frontiers = ae::findFrontiers(
+      exploration_grid, config.exploration_grid, paths, config.exploration_frontier);
+    const ae::Decision decision = ae::selectGoal(
+      paths, frontiers, graph, config.exploration_selection, explorer_state);
+    out.status = decision.status == ae::Decision::Status::GOAL ? "goal" :
+      decision.status == ae::Decision::Status::EXPLORATION_DONE ? "exploration_done" :
+      "no_reachable_goal";
+    out.revisit_mode = decision.revisit_mode;
+    out.newest_sigma = graph.sigma.back();
+    out.submaps = bag.records.size();
+    out.frontiers = frontiers.size();
+    for (const ae::GoalCandidate & c : decision.candidates) {
+      out.reachable_frontiers += c.kind == ae::GoalKind::FRONTIER ? 1U : 0U;
+      out.revisit_candidates += c.kind == ae::GoalKind::REVISIT ? 1U : 0U;
+    }
+    if (decision.chosen >= 0) {
+      const ae::GoalCandidate & c = decision.candidates[static_cast<std::size_t>(decision.chosen)];
+      out.kind = c.kind == ae::GoalKind::FRONTIER ? "frontier" : "revisit";
+      out.goal = c.goal;
+      out.path_length = c.path_length;
+      out.unknown_area = c.unknown_area;
+      out.uncertainty_drop = c.uncertainty_drop;
+      out.path = paths.pathTo(c.goal);
+    }
+    return out;
+  }
+
+  graphslam::offline::OfflinePipeline::ExplorationGrid explorationGrid() const
+  {
+    graphslam::offline::OfflinePipeline::ExplorationGrid out;
+    if (!exploration_timeline.is_open() || exploration_grid.empty()) {
+      return out;
+    }
+    out.x0 = exploration_grid.x0();
+    out.y0 = exploration_grid.y0();
+    out.width = exploration_grid.width();
+    out.height = exploration_grid.height();
+    out.resolution = exploration_grid.resolution();
+    out.cells.reserve(static_cast<std::size_t>(out.width) * out.height);
+    for (int y = out.y0; y < out.y0 + out.height; ++y) {
+      for (int x = out.x0; x < out.x0 + out.width; ++x) {
+        out.cells.push_back(static_cast<std::uint8_t>(
+          exploration_grid.state(x, y, config.exploration_grid.occupied_ratio)));
+      }
+    }
+    return out;
+  }
+
   // active_exploration_timeline: a new submap's scan into the coverage grid.
   void addToExplorationGrid(
     const Eigen::Affine3d & pose, const pcl::PointCloud<pcl::PointXYZI> & cloud)
@@ -2161,6 +2238,7 @@ struct BagPass
       graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
       graph.sigma.push_back(report.per_vertex[i].sigma_translation_max);
     }
+    exploration_graph = graph;
     const ae::PathField paths(
       exploration_grid, config.exploration_grid, config.exploration_planner,
       graph.positions.back());
@@ -3701,6 +3779,22 @@ void OfflinePipeline::setLivePoseListener(LivePoseListener listener)
 }
 
 void OfflinePipeline::keepSessionMap(bool keep) {impl_->keep_session_map = keep;}
+
+OfflinePipeline::ExplorationGrid OfflinePipeline::explorationGrid() const
+{
+  if (!impl_->bag_pass) {
+    return ExplorationGrid();
+  }
+  return impl_->bag_pass->explorationGrid();
+}
+
+ExplorationDecision OfflinePipeline::decideExploration(const Eigen::Vector2d & robot_xy)
+{
+  if (!impl_->bag_pass) {
+    return ExplorationDecision();
+  }
+  return impl_->bag_pass->decideExploration(robot_xy);
+}
 
 const graphslam::map_store::SessionMap & OfflinePipeline::sessionMap() const
 {

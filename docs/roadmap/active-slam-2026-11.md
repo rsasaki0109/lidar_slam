@@ -206,6 +206,52 @@ Known limits of this version, next in P3:
 - Worlds: an office with rooms, a long featureless corridor (degenerate), a warehouse with loops.
 - Baselines: nearest frontier, random frontier, the proposed utility.
 
+Done (2026-11-26), first closed loop: `tools/rne_active_slam_env` (prototype kept in this
+repository while it settles; RNE write access was not available to this work).
+
+- Changes from the plan above: a kinematic differential-drive robot instead of the Go2 (no
+  locomotion error mixed into the SLAM), and no ROS 2 / Nav2: the env is a Rust program
+  (RNE's `sample_livox_mid360` against an analytic box world, an IMU with noise and bias) driven
+  over stdin / stdout in lockstep, and the loop is one Python process with
+  `lidarslam.live.Session` (new: `decide_exploration`, `exploration_grid`) and a pure-pursuit
+  controller on the SLAM's own odometry pose. Determinism: two runs of each policy gave
+  byte-identical `frames.csv` and decisions.
+- Checks of the simulated data: points moved to the world with the true pose at each point's
+  own time all land on the world's surfaces (80-88 % with one pose per frame while turning at
+  0.8 rad/s). The messages follow `livox_ros_driver2` (the header carries the first point's time:
+  RKO-LIO's timestamp check rejects a header 2 ms earlier).
+- What the simulation showed before any comparison:
+  - RKO-LIO presets: in place turns at the stop of a corridor drive slide the car preset 2.7 m
+    and the handheld-outdoor preset 1.0 m along the corridor; the indoor (walking) preset holds
+    (0.24 m at most, 0.03 m after). The walking preset is the default, with
+    `imu_acceleration_unit: auto` (the env sends g like the real driver; the handheld preset read
+    1 g as 1 m/s^2 and estimated an 8.8 m/s^2 bias).
+  - Flat walls alone leave a corridor's axis unobservable; the `ring` world has pilasters every
+    3 m and crates.
+  - Explorer fixes found in the loop: the floor under a LiDAR is never seen, so the cells around
+    the sensor are marked free (`clear_radius`) and frontiers closer than `min_goal_distance` are
+    not goals; a frontier's gain counts only unknown cells in line of sight (the unknown behind a
+    wall made a shadow behind a crate the best goal); a frontier still there when the robot has
+    come within `visited_radius` is marked visited.
+- First comparison (`ring`: a 5 m corridor around a 30 x 14 m block, ~100 m loop; one seed;
+  400 s budget; neither policy finished):
+
+  | | nearest frontier | active (trigger 1.5, release 0.5) |
+  | --- | --- | --- |
+  | floor coverage | 72.7 % | 76.5 % |
+  | distance | 144 m | 216 m |
+  | live position error RMSE / max | 0.52 / 0.63 m | 0.16 / 0.54 m |
+  | loop edges | 0 | 2 (back at the start) |
+  | frames in collision | 138 | 0 |
+
+  One world and one seed: an observation, not the preregistered evaluation (below).
+- Seen in the active run: about 130 s in revisit mode chasing revisit targets 3-4 m away where
+  no loop edge was accepted; sigma stayed between release and trigger, so the mode did not end.
+  This is the stand-in revisit gain (P3 limits): it rates a close target with half the sigma above
+  the well-known start. Next: the predicted-loop-edge gain, revisit targets the robot reached
+  without a loop marked visited (as frontiers), then the preregistered evaluation (several worlds
+  and seeds).
+
 ## Demo GIF (the deliverable that shows the result)
 
 Recorded once P5 has a result, from the same runs the evaluation counts (not a separate
