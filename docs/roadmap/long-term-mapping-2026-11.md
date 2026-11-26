@@ -1757,3 +1757,20 @@ transform from its anchor, so drift inside it reaches the map. `--track-store` a
   baseline's number of compared submaps, and its 95th percentile of |dz| is at most half the
   baseline's. If both do, the one with the lower 95th percentile is preferred. The result is
   reported whatever it is; it does not by itself change the chain's defaults.
+
+#### Results of the store-tracking check (2026-11-26)
+
+| Arm | Store factors | Compared submaps | Median dz | 95th pct. of \|dz\| | Last quarter | Rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| baseline (lifelong session 0007) | — | 185 | −0.41 m | 3.44 m | +2.57 m | — |
+| T, `--track-store` | 10 | 213 | −0.09 m | 5.12 m | +4.25 m | fails |
+| S, `--track-shared-surfaces` | 73 | 220 | −0.02 m | 9.16 m | +7.70 m | fails |
+
+Neither arm reduces the drift; both raise it at the end of the session. S also peaked at
+13.9 GB during the session: the shared-surface target still loads every stored keyframe window.
+
+The drift is already in the odometry. The update's odometry, placed by its store transform,
+stays about 0.7 m below the earlier sessions' submaps until about 320 s, then climbs to +5 m
+over the last 100 s, where only three or four earlier submap positions lie within 1.5 m; the
+committed submaps follow it (first and last heights −1.05 and 7.55 m against −1.05 and 7.53 m
+in the odometry). Store factors along the path have little to hold on to there.
