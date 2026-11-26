@@ -1729,3 +1729,31 @@ the lists).
 
 The outputs are byte-identical again. The peak is now the change evidence held during the session
 (about 4 GB of it) and, about as high, the export.
+
+### Vertical drift in the lifelong store (development, 2026-11-26)
+
+An audit of the lifelong NCLT store (`lifelong/transient_audit.py`, descriptive) found 4.1% of
+the exported points, in cells that at least five sessions passed within 15 m, seen by one
+session alone; at 0.3–2.2 m above the ground, where people and cars are, 2.1%. Most of it came
+from five sessions whose map sits above or below the others'. Their committed submap positions,
+compared with those of the other sessions within 1.5 m (XY), drift in height along the session:
+2012-03-31 goes from −0.8 m in its first quarter to +3.8 m in its last, 2012-11-16 from −0.1 m
+to −1.3 m, while the steadiest sessions stay within ±0.2 m. A session is placed by one rigid
+transform from its anchor, so drift inside it reaches the map. `--track-store` and
+`--track-shared-surfaces` add store factors along the session but were only tried on LUH.
+
+#### Check of store tracking against vertical drift (preregistered 2026-11-26, before the runs)
+
+- **Update:** 2012-03-31 (`bags/2012-03-31_live2in`, development), appended to the lifelong
+  store as it was before it (its first seven sessions, 2012-01-15 to 2012-03-25).
+- **Arms:** baseline, the lifelong chain's own run (`--relocalize-anywhere --detect-changes`,
+  session 0007 of the store); T, the same plus `--track-store`; S, the same plus
+  `--track-shared-surfaces`.
+- **Measure, no ground truth:** for each committed submap of the update with at least three
+  submap positions of the first seven sessions within 1.5 m (XY), dz is its height minus their
+  median height. Reported: the number of such submaps, the median dz, the 95th percentile of
+  |dz| and the median dz of the last quarter of them in session order.
+- **Rule:** an arm **reduces the drift** when it anchors and commits, keeps at least 80% of the
+  baseline's number of compared submaps, and its 95th percentile of |dz| is at most half the
+  baseline's. If both do, the one with the lower 95th percentile is preferred. The result is
+  reported whatever it is; it does not by itself change the chain's defaults.
