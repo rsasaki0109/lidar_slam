@@ -390,7 +390,9 @@ def main(argv: list[str] | None = None) -> int:
                 record = {k: decision[k] for k in decision if k != 'path'}
                 record.update({'frame': frame, 'path_points': len(decision['path'])})
                 decisions.write(json.dumps(record) + '\n')
-                done_count = done_count + 1 if decision['status'] == 'exploration_done' else 0
+                # Nothing left to explore and no revisit target reachable: the mission is over.
+                done_count = (done_count + 1 if decision['status'] in
+                              ('exploration_done', 'no_reachable_goal') else 0)
             frames_since_decision += 1
             status = decision.get('status', 'init')
             if path and len(path) > 1:
