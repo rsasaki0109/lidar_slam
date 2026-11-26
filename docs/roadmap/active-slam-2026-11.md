@@ -315,13 +315,86 @@ commands, commit, metrics, render command).
   per-optimization uncertainty output (P1 next step); the current report reads only the final
   graph, so it cannot animate.
 
-## Evaluation (to be fixed in P0, before any closed-loop run)
+## Evaluation (P0 draft, 2026-11-26; not yet approved by the maintainer)
 
-- Metrics per run: ATE against RNE ground truth vs distance driven; coverage vs distance driven;
-  map MME and plane thickness (`run_map_quality_check.sh`); loops closed; failure (SLAM divergence
-  or stuck) rate.
-- Runs: N seeds per world per method (N to be fixed).
-- Success rule: thresholds on ATE and coverage improvement over nearest frontier (to be fixed).
+Fixed before any holdout run; changed only by a dated note in this file, before those runs.
+
+### Question
+
+Does choosing revisits from the SLAM's own uncertainty make the map more accurate than
+exploring alone, without costing coverage? The revisits are isolated by an ablation: the
+`active` policy is the `frontier_info` policy plus revisits, everything else equal.
+
+### Policies
+
+| Policy | Frontier utility | Revisits |
+| --- | --- | --- |
+| `nearest_frontier` (baseline) | `- 1.0 x path length` | no |
+| `frontier_info` (ablation) | `1.0 x visible unknown area - 0.5 x path length` | no |
+| `active` (proposed) | as `frontier_info` | yes: `w_u x predicted sigma fraction removed - 0.5 x path length`, in revisit mode only |
+
+### Worlds
+
+- Development (already run, may be looked at and tuned on): `ring` (100 m loop around a block),
+  `grid` (3 m corridors around a 3 x 2 grid of blocks).
+- Holdout (defined here, never run before the freeze):
+  - `branches`: a 60 m main corridor with six 15-25 m dead-end side corridors, some ending in a
+    room: exploring means going out and back; the only loop is the main corridor's end joined
+    back to its start through one long return corridor.
+  - `big_loop`: a 3 m corridor around a 70 m x 40 m block (~220 m loop) with sparse features
+    (pilasters every 6 m), so drift grows before the loop closes by itself.
+- All worlds: wall height 2.5 m, floor box, crates and pilasters as in the development worlds;
+  the robot, sensor, IMU noise model and controller as in `tools/rne_active_slam_env`.
+
+### Seeds
+
+A seed sets the start pose (one of 10 fixed free-space poses per world, with heading) and the
+noise seeds of the LiDAR model and the IMU. Development: seeds 1-3. Holdout: seeds 101-110. A
+run is deterministic given (world, seed, policy, commit).
+
+### Budget and stop
+
+600 s of simulated time, or earlier when the explorer reports `exploration_done` three times in a
+row. A run also stops as failed when the live position error exceeds 2 m (SLAM diverged).
+
+### Metrics (per run)
+
+- Primary accuracy: **final-map ATE**: RMSE of the optimized submap positions
+  (`trajectory_optimized.tum`) against the true positions at the same stamps, after an SE(2)
+  alignment (the odometry frame starts at the start pose; the alignment only removes the start
+  error).
+- Primary coverage: **floor coverage at the stop** (cells with a floor return / free floor cells,
+  0.5 m cells, from the true poses).
+- Secondary (reported, not judged): live position error RMSE and max; time and distance to 90 %
+  coverage; distance driven; loop edges; revisit decisions taken; collision frames, rejected
+  goals; map MME and plane thickness of `map.pcd` (`run_map_quality_check.sh`).
+- Failure: diverged (above), or coverage below 50 % at 600 s.
+
+### Success rule (holdout only, `active` vs `frontier_info`, paired by seed)
+
+Per holdout world, all of:
+
+1. final-map ATE: median paired reduction of at least 15 %, and `active` lower in at least 7 of
+   the 10 seeds;
+2. coverage at the stop: median paired difference no worse than -5 percentage points;
+3. failures: no more failed runs than `frontier_info`.
+
+The method passes if both holdout worlds pass. `active` vs `nearest_frontier` is reported with
+the same statistics but does not decide. Results are reported whatever they are, failures
+included.
+
+### What may be tuned, and where
+
+On development seeds and worlds only: the revisit weight `w_u`, the revisit trigger and release
+(per parameter preset, as sigma's scale depends on it), `min_predicted_drop`, the inflation
+radius. Frozen in `tools/rne_active_slam_env/eval_config.yaml` and its commit recorded here
+before the first holdout run; the holdout worlds are run once at that commit.
+
+### To build before the runs
+
+`--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
+(truth by stamp), the `frontier_info` policy, an `eval` driver that runs a world x seed x policy
+table and writes the summary, and `eval_config.yaml`.
 
 ## Risks
 
