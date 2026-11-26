@@ -5,7 +5,7 @@ itself: where the map is still unobserved, where the trajectory is weakly constr
 revisit would close a loop. The SLAM proposes goals and scores them; driving there is left to an
 existing navigation stack (Nav2). This repository gains no motion planner or controller.
 
-Status: plan only. Nothing below is implemented.
+Status: P1 started. Done: the offline pose-graph uncertainty report (below, P1 "Done").
 
 Decisions (maintainer, 2026-11-26):
 
@@ -65,6 +65,21 @@ This file is completed with the evaluation thresholds (below) before any closed-
   `run_offline_determinism_check.sh`); existing outputs unchanged with the feature off.
 
 This phase is useful on its own: it shows where a finished map is weak.
+
+Done (2026-11-26): `pose_graph_uncertainty_report` (`pose_graph_uncertainty.hpp`). It reads the
+map bundle's `pose_graph.g2o`, linearizes each `EDGE_SE3:QUAT` at the optimized poses as g2o's
+`EdgeSE3` does, and writes per-vertex marginal covariance summaries (CSV) and the graph's log
+det / D-optimality (YAML). Choice of measure: full 6-DoF marginals, not a translation-only
+Laplacian, because heading error is what makes the far end of a corridor uncertain sideways
+(test `HeadingErrorMakesTheWeakDirectionLateral`). Checked against g2o `computeMarginals` on a
+40-vertex graph with rotations and three loops: 6x6 blocks within 3e-5 relative. Limits: the
+sigmas are in the units of the configured edge information weights, not calibrated metres;
+robust kernels and non-SE3 edges (gravity prior, plane revisit) are not in the g2o text and are
+ignored (counted in the summary). Cost: one sparse Cholesky plus 6 solves per vertex.
+
+Next in P1: time the report on the largest existing bundles; expose the same computation in the
+backend (after each optimization, off by default) and the `SlamUncertainty` message; then
+coverage/frontiers from the surfel evidence.
 
 ### P2. Goal candidates
 

@@ -4,6 +4,17 @@
 
 ### Added
 
+- Pose-graph uncertainty report (`ros2 run graph_based_slam pose_graph_uncertainty_report
+  --input <map_bundle_dir | pose_graph.g2o> --output-dir <dir>`), the first step of the
+  active SLAM plan (`docs/roadmap/active-slam-2026-11.md`, P1). It linearizes the saved
+  graph's `EDGE_SE3:QUAT` edges at the optimized poses and writes each vertex's marginal
+  covariance summary (largest/smallest translation sigma, weakest direction, largest
+  rotation sigma) to `pose_graph_uncertainty.csv` and the graph's D-optimality to
+  `pose_graph_uncertainty_summary.yaml`. On a 40-vertex graph with rotations and loops the
+  marginals match g2o's `computeMarginals` within 3e-5 relative. Sigmas are in the units
+  of the backend's edge information weights (they rank vertices; they are not metres of
+  error). Eigen only, byte-reproducible, and the SLAM outputs are unchanged.
+
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
   the changes as object-sized clusters (old points removed, new points held
