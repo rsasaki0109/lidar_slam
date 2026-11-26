@@ -166,8 +166,8 @@ def test_pose_uncertainty_outputs(tmp_path: Path) -> None:
         '    submap_distance_threshold: 1.5\n',
         encoding='utf-8')
     base = load_parameters(params_file)
-    on = apply_overrides(
-        base, ['pose_uncertainty_output:=true', 'pose_uncertainty_timeline:=true'])
+    on = apply_overrides(  # apply_overrides changes the dict it is given
+        dict(base), ['pose_uncertainty_output:=true', 'pose_uncertainty_timeline:=true'])
     run(log, base, tmp_path / 'off', log=lambda level, msg: None)
     run(log, on, tmp_path / 'on1', log=lambda level, msg: None)
     run(log, on, tmp_path / 'on2', log=lambda level, msg: None)
