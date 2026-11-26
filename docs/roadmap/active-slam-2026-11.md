@@ -121,6 +121,25 @@ coverage/frontiers from the surfel evidence.
 - Worlds: an office with rooms, a long featureless corridor (degenerate), a warehouse with loops.
 - Baselines: nearest frontier, random frontier, the proposed utility.
 
+## Demo GIF (the deliverable that shows the result)
+
+Recorded once P5 has a result, from the same runs the evaluation counts (not a separate
+hand-picked run), and documented in `docs/readme-media.md` like the other README media (data,
+commands, commit, metrics, render command).
+
+- **Final GIF (closed loop, RNE):** one RNE world, the same seed, side by side: nearest-frontier
+  baseline vs the proposed method, Go2 with the Mid-360 model. Each panel shows the map as it
+  is built, the trajectory coloured by the per-vertex uncertainty (relative scale, labelled as
+  such), the goal candidates by kind (explore / revisit / de-degenerate) with the chosen one
+  highlighted, and the moment a revisit closes a loop and the colour drops. Underneath: ATE and
+  coverage against distance driven for both. Rendered by RNE's wgpu renderer with its metadata
+  JSON, and labelled "simulation".
+- **Interim GIF (open loop, after P1 is in the backend):** a public bag (e.g. the Koide
+  MID-360 sequence already used for the README) replayed, trajectory coloured by uncertainty
+  after each optimization: it grows along the path and drops at loop closures. Needs the
+  per-optimization uncertainty output (P1 next step); the current report reads only the final
+  graph, so it cannot animate.
+
 ## Evaluation (to be fixed in P0, before any closed-loop run)
 
 - Metrics per run: ATE against RNE ground truth vs distance driven; coverage vs distance driven;
