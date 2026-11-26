@@ -1832,3 +1832,18 @@ world frame comes from 5 IMU samples. Re-estimating gravity from the first secon
 (`moving_start_gravity_window_sec`, used on GrandTour) finds it 15.3–15.4 degrees from that
 initial world z. With the window set to 5 s the drift is unchanged (95th percentile 3.40 m); with
 10 s it falls to 2.20 m (last part +1.40 m against +1.98 m). One session; no setting was changed.
+
+#### Check of moving-start gravity on every lifelong update (preregistered 2026-11-26, before the runs)
+
+- **Sessions:** the 19 updates of the lifelong chain (`lifelong_chain.sh`, 2012-01-22 to
+  2013-02-23), each from the bag the chain used.
+- **Arms:** `python -m lidarslam odometry` with `rko_lio_nclt.yaml` (A) and with
+  `moving_start_gravity_window_sec: 10.0` added (G).
+- **Measure, no ground truth:** each arm's odometry is placed by the store transform the session
+  committed in the lifelong store, and every 5th pose with at least three submap positions of the
+  other 19 sessions within 1.5 m (XY) gives dz, its height minus their median height. Per session:
+  the 95th percentile of |dz|.
+- **Rule:** G **reduces the height drift** when, over the 19 sessions, the median of the per-session
+  95th percentile falls by at least 20% from A, no more sessions are above 1.5 m than with A, and no
+  session rises by more than 0.5 m. Then `rko_lio_nclt.yaml` takes the window; otherwise it stays.
+  The result is reported whatever it is.
