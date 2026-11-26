@@ -115,8 +115,17 @@ hence the per-state loop file.
 `tools/readme_media/render_pose_uncertainty.py` renders a timeline as the interim GIF (Demo GIF
 below).
 
-Next in P1: the interim GIF on a public recording with loops (the README's `outdoor_hard_02a`
-closes none); the same timeline in the live node with the `SlamUncertainty` message; then
+Done (2026-11-26): the interim GIF, `lidarslam/images/pose_uncertainty_mid360_drive.gif`, on
+the public MID-360 drive of the Docker first-map demo (1.1 km, one block and back to the start;
+`docs/readme-media.md` has the commands and numbers). The newest submap's sigma climbs to 74
+and drops to 1.4 when the loop closes. Two full runs (RKO-LIO and backend) gave byte-identical
+timelines and the same GIF bytes; with the parameters off, the run's other 379 files (map
+tiles, trajectories, `pose_graph.g2o`) were byte-identical. Data tried and not used: the README's `outdoor_hard_02a` and
+the other Koide outdoor sequences close no loop; the Koide indoor sequences are an Azure Kinect
+depth camera, not a LiDAR; NTU VIRAL (9 loop edges on `tnp_01`) was down for maintenance;
+the HILTI 2022 bucket refused the download here.
+
+Next in P1: the same timeline in the live node with the `SlamUncertainty` message; then
 coverage/frontiers from the surfel evidence.
 
 ### P2. Goal candidates

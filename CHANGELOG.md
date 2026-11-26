@@ -23,7 +23,10 @@
   `pose_uncertainty_timeline` writes `pose_uncertainty_timeline.csv` (the graph as it stood
   after each new submap and each loop-edge change) and `pose_uncertainty_timeline_loops.csv`.
   Off by default; with them on, every other output is byte-identical.
-  `tools/readme_media/render_pose_uncertainty.py` renders a timeline as a GIF.
+  `tools/readme_media/render_pose_uncertainty.py` renders a timeline as a GIF;
+  `lidarslam/images/pose_uncertainty_mid360_drive.gif` is the 1.1 km public MID-360 drive,
+  where the newest submap's sigma drops from 74 to 1.4 at the loop closure
+  (`docs/readme-media.md`).
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists

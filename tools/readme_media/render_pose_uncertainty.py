@@ -119,8 +119,42 @@ def ramp_color(value: float, top: float) -> tuple[int, int, int]:
     return tuple(int(round(a[k] + (b[k] - a[k]) * f)) for k in range(3))
 
 
+def lzf_decompress(data: bytes, size: int) -> bytes:
+    """Decompress LZF data (PCD DATA binary_compressed) of a known uncompressed size."""
+    out = bytearray(size)
+    i = o = 0
+    n = len(data)
+    while i < n:
+        ctrl = data[i]
+        i += 1
+        if ctrl < 32:  # literal run of ctrl + 1 bytes
+            length = ctrl + 1
+            out[o:o + length] = data[i:i + length]
+            i += length
+            o += length
+            continue
+        length = ctrl >> 5
+        if length == 7:
+            length += data[i]
+            i += 1
+        ref = o - ((ctrl & 0x1f) << 8) - data[i] - 1
+        i += 1
+        length += 2
+        if ref < 0 or o + length > size:
+            raise ValueError('corrupt LZF data')
+        if ref + length <= o:
+            out[o:o + length] = out[ref:ref + length]
+        else:  # overlapping back-reference: copy byte by byte
+            for k in range(length):
+                out[o + k] = out[ref + k]
+        o += length
+    if o != size:
+        raise ValueError(f'LZF data decompressed to {o} bytes, expected {size}')
+    return bytes(out)
+
+
 def load_pcd_xy(path: Path, z_min: float, z_max: float, max_points: int) -> np.ndarray:
-    """x, y of an ascii or binary PCD's points with z_min <= z <= z_max (every n-th point)."""
+    """Read x, y of the PCD points with z_min <= z <= z_max (every n-th point, at most max)."""
     raw = path.read_bytes()
     header: dict[str, list[str]] = {}
     offset = 0
@@ -149,8 +183,22 @@ def load_pcd_xy(path: Path, z_min: float, z_max: float, max_points: int) -> np.n
                           for n, s, t, c in zip(names, sizes, types, counts)])
         table = np.frombuffer(raw, dtype=dtype, count=points, offset=offset)
         xyz = np.stack([table[k][:, 0].astype(np.float64) for k in 'xyz'], axis=1)
+    elif kind == 'binary_compressed':
+        compressed, size = np.frombuffer(raw, dtype='<u4', count=2, offset=offset)
+        data = lzf_decompress(raw[offset + 8:offset + 8 + int(compressed)], int(size))
+        # Field by field: all points' first field, then all points' second, ...
+        columns = {}
+        start = 0
+        for n, s, t, c in zip(names, sizes, types, counts):
+            width = s * c * points
+            if n in 'xyz':
+                kind_char = {'F': 'f', 'I': 'i', 'U': 'u'}[t]
+                columns[n] = np.frombuffer(data, dtype=f'<{kind_char}{s}', count=points * c,
+                                           offset=start)[::c].astype(np.float64)
+            start += width
+        xyz = np.stack([columns[k] for k in 'xyz'], axis=1)
     else:
-        raise ValueError(f'{path}: PCD DATA {kind} is not supported (ascii or binary only)')
+        raise ValueError(f'{path}: PCD DATA {kind} is not supported')
     keep = np.isfinite(xyz).all(axis=1) & (xyz[:, 2] >= z_min) & (xyz[:, 2] <= z_max)
     xy = xyz[keep, :2]
     if len(xy) > max_points:
@@ -203,11 +251,9 @@ class Layout:
     chart_box: tuple[int, int, int, int] = (588, 96, 932, 392)
 
 
-def world_to_map(states: list[GraphState], box, extra_xy: np.ndarray | None):
-    """Return a uniform-scale transform that fits every submap position (and the map) in box."""
+def world_to_map(states: list[GraphState], box):
+    """Return a uniform-scale transform that fits every submap position in box."""
     xy = np.array([p for s in states for p in s.xy])
-    if extra_xy is not None and len(extra_xy):
-        xy = np.vstack([xy, extra_xy])
     lo, hi = xy.min(axis=0), xy.max(axis=0)
     span = np.maximum(hi - lo, 1e-6)
     left, top, right, bottom = box
@@ -222,10 +268,32 @@ def world_to_map(states: list[GraphState], box, extra_xy: np.ndarray | None):
     return to_px, scale
 
 
+def select_states(states: list[GraphState], max_frames: int) -> list[int]:
+    """
+    Pick about max_frames state indices.
+
+    They are evenly spaced, plus every loop closure, the state before it, and the last state.
+    """
+    if max_frames <= 0 or len(states) <= max_frames:
+        return list(range(len(states)))
+    keep = set(np.linspace(0, len(states) - 1, max_frames).round().astype(int).tolist())
+    for c in loop_closure_steps(states):
+        keep.update((c - 1, c))
+    keep.add(len(states) - 1)
+    return sorted(keep)
+
+
 def render(states: list[GraphState], title: str, caption: str,
-           map_xy: np.ndarray | None = None, scale: int = 2) -> list[Image.Image]:
+           map_xy: np.ndarray | None = None, scale: int = 2,
+           frames_of: list[int] | None = None) -> list[Image.Image]:
+    """Draw the frames of the states with the indices frames_of (default: every state)."""
     lay = Layout()
-    to_px, px_per_m = world_to_map(states, lay.map_box, map_xy)
+    to_px, px_per_m = world_to_map(states, lay.map_box)
+    if frames_of is None:
+        frames_of = list(range(len(states)))
+    # A dense graph is drawn as a thick line coloured per segment, a sparse one as dots.
+    dense = max(len(s.sigma) for s in states) > 150
+    radius = 4.5
     top_sigma = max(max(s.sigma) for s in states)
     closures = set(loop_closure_steps(states))
     max_submaps = max(len(s.sigma) for s in states)
@@ -235,11 +303,15 @@ def render(states: list[GraphState], title: str, caption: str,
     map_layer = None
     if map_xy is not None and len(map_xy):
         map_layer = Frame(lay.width, lay.height, scale)
+        left, top, right, bottom = lay.map_box
         for x, y in map_xy:
-            map_layer.circle(to_px(x, y), 0.6, fill=MAP_POINT)
+            px, py = to_px(x, y)
+            if left <= px <= right and top <= py <= bottom:
+                map_layer.circle((px, py), 0.6, fill=MAP_POINT)
 
     frames = []
-    for index, state in enumerate(states):
+    for index in frames_of:
+        state = states[index]
         f = Frame(lay.width, lay.height, scale)
         if map_layer is not None:
             f.image.paste(map_layer.image)
@@ -249,18 +321,25 @@ def render(states: list[GraphState], title: str, caption: str,
         # Left: submaps from above, loop edges as dashed dark lines.
         f.text((lay.map_box[0], lay.map_box[1] - 6), 'Submaps, top view', size=13, bold=True)
         pts = [to_px(x, y) for x, y in state.xy]
-        f.line(pts, fill=AXIS, width=1.5)
+        if dense:
+            for k in range(1, len(pts)):
+                f.line([pts[k - 1], pts[k]], fill=ramp_color(state.sigma[k], top_sigma),
+                       width=5)
+        else:
+            f.line(pts, fill=AXIS, width=1.5)
         index_of = {vertex_id: k for k, vertex_id in enumerate(state.ids)}
         for a, b in state.loops:
             if a in index_of and b in index_of:
                 _dashed(f, pts[index_of[a]], pts[index_of[b]], TEXT_PRIMARY, 1.5)
         for p, sigma, fixed in zip(pts, state.sigma, state.fixed):
+            if dense and not fixed:
+                continue
             if fixed:
                 f.rect((p[0] - 4, p[1] - 4, p[0] + 4, p[1] + 4), fill=SURFACE,
                        outline=TEXT_SECONDARY)
             else:
-                f.circle(p, 4.5, fill=ramp_color(sigma, top_sigma), outline=SURFACE, width=1)
-        f.circle(pts[-1], 8.5, outline=TEXT_PRIMARY, width=2)
+                f.circle(p, radius, fill=ramp_color(sigma, top_sigma), outline=SURFACE, width=1)
+        f.circle(pts[-1], radius + 4, outline=TEXT_PRIMARY, width=2)
         # Scale bar (metres) under the map.
         bar_m = _nice_length(60.0 / px_per_m)
         bx, by = lay.map_box[0] + 8, lay.map_box[3] + 13
@@ -360,10 +439,13 @@ def _tick(value: float, step: float) -> str:
     return f'{value:.{decimals}f}'
 
 
-def frame_durations(states: list[GraphState], ms: int, hold_ms: int) -> list[int]:
-    """Each frame shows for ms; a loop closure and the last frame are held for hold_ms."""
+def frame_durations(states: list[GraphState], ms: int, hold_ms: int,
+                    frames_of: list[int] | None = None) -> list[int]:
+    """Return each frame's duration: ms, hold_ms for a loop closure, twice that for the last."""
+    if frames_of is None:
+        frames_of = list(range(len(states)))
     closures = set(loop_closure_steps(states))
-    durations = [hold_ms if i in closures else ms for i in range(len(states))]
+    durations = [hold_ms if i in closures else ms for i in frames_of]
     durations[-1] = max(durations[-1], 2 * hold_ms)
     return durations
 
@@ -373,7 +455,8 @@ def main() -> int:
     parser.add_argument('--timeline', type=Path, required=True,
                         help='pose_uncertainty_timeline.csv')
     parser.add_argument('--out', type=Path, required=True, help='output .gif')
-    parser.add_argument('--map', type=Path, help='optional ascii/binary PCD drawn underneath')
+    parser.add_argument('--map', type=Path, help='optional PCD map drawn underneath (ascii, '
+                        'binary or binary_compressed)')
     parser.add_argument('--map-z-min', type=float, default=-1e9)
     parser.add_argument('--map-z-max', type=float, default=1e9)
     parser.add_argument('--map-max-points', type=int, default=60000)
@@ -381,6 +464,8 @@ def main() -> int:
     parser.add_argument('--caption', default='Each submap coloured by its marginal translation '
                         'σ in the pose graph so far')
     parser.add_argument('--frame-ms', type=int, default=180)
+    parser.add_argument('--max-frames', type=int, default=150,
+                        help='evenly spaced states, plus every loop closure (0: every state)')
     parser.add_argument('--hold-ms', type=int, default=1000)
     parser.add_argument('--frames-dir', type=Path, help='also write each frame as PNG here')
     args = parser.parse_args()
@@ -389,16 +474,17 @@ def main() -> int:
     map_xy = None
     if args.map is not None:
         map_xy = load_pcd_xy(args.map, args.map_z_min, args.map_z_max, args.map_max_points)
-    frames = render(states, args.title, args.caption, map_xy)
+    frames_of = select_states(states, args.max_frames)
+    frames = render(states, args.title, args.caption, map_xy, frames_of=frames_of)
     if args.frames_dir is not None:
         args.frames_dir.mkdir(parents=True, exist_ok=True)
         for i, frame in enumerate(frames):
             frame.save(args.frames_dir / f'frame_{i:04d}.png')
-    paletted = [frame.convert('P', palette=Image.Palette.ADAPTIVE, colors=128)
-                for frame in frames]
+    paletted = [frame.convert('P', palette=Image.Palette.ADAPTIVE, colors=96,
+                              dither=Image.Dither.NONE) for frame in frames]
     paletted[0].save(args.out, save_all=True, append_images=paletted[1:], loop=0,
-                     duration=frame_durations(states, args.frame_ms, args.hold_ms),
-                     optimize=False, disposal=1)
+                     duration=frame_durations(states, args.frame_ms, args.hold_ms, frames_of),
+                     optimize=True, disposal=1)
     print(f'{args.out}: {len(frames)} frames, {len(loop_closure_steps(states))} loop closures')
     return 0
 
