@@ -1637,3 +1637,38 @@ At 0.26 searches got shorter (2012-02-04 anchors after 28.9 s instead of 83.0 s;
 305.2 s instead of never), but 0.26 is still slower than 0.18 in real time on seven of the nine
 sessions, so the gate stays at 0.18. The change cuts the cost of every relocalization
 registration without changing its outcome; it does not by itself make anchoring earlier.
+
+### Memory of a long-lived store (development, 2026-11-26)
+
+The lifelong NCLT chain (`bench_report/data/long_term_2026-11/lifelong/`) ran out of memory
+(about 14 GB, killed) on its twentieth session, 2013-02-23, while committing it. Measured on
+that store (19 sessions, 7191 stored keyframes):
+
+- Exporting the merged map on its own peaks at 3.4 GB (20 sessions, 50.3 M points streamed in 18
+  passes to 15.2 M), mostly the change-evidence removal masks.
+- The live session held 10.8 GB when it began the export: the relocalizer's stored keyframes
+  (4.7 GB), the change evidence over every stored submap (4.1 GB) and the backend, all still
+  alive. The export on top of that was the kill.
+
+Two changes, neither of which changes an output:
+
+1. `live` commits the session, then releases the relocalizer's stored keyframes, the change
+   evidence and the backend, and only then exports the store (`Store.export_if_aligned`).
+2. Change evidence loads the stored sessions when the session is anchored (its first traced
+   scan), after the relocalizer has released its copy; a session that does not track the store
+   (no `--track-store` or shared surfaces) has no use for it once anchored.
+
+2013-02-23 again on a hard-linked copy of the store, in line:
+
+| | Peak during the session | Held at the export | Finished |
+| --- | ---: | ---: | --- |
+| Before | — | 10.8 GB + export | killed (about 14 GB) |
+| Change 1 | 12.5 GB | 6.0 GB | yes |
+| Changes 1 and 2 | 9.7 GB | 4.9 GB | yes |
+
+Changes 1 and 2 give byte-identical outputs to change 1 alone: the session's change evidence,
+submaps, keyframe windows, pose graph, store entry and the exported `map.pcd`. The session
+anchors after 101.6 s of data with no initial pose. Both copies of the store (relocalizer and
+change evidence) still grow with every session, about 0.23 GB each per session here, so a store
+of a few dozen sessions needs them smaller (for example thinned keyframe windows, or one
+shared copy of the stored points).

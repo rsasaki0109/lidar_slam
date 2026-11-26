@@ -168,7 +168,7 @@ python3 bench_report/scripts/p3_multisession_glow_gif.py join_nc03_nc04_nc01/joi
   with `rko_lio_nclt.yaml` and `lidarslam_mid360_rko_graph_walking.yaml`
   (`bench_report/data/long_term_2026-11/lifelong/lifelong_chain.sh`).
 - Every session relocalized without an initial pose (`chain.jsonl`: 3.4–159.6 s of data). 2012-05-11 took 92.8 s against the first map alone and 4.5 s against the store after eight sessions.
-- A twentieth session (2013-02-23) was committed but the store's merged export ran out of memory (about 14 GB) and was not rewritten, so the GIF stops at 2012-12-01.
+- A twentieth session (2013-02-23) ran out of memory while committing; the GIF stops at 2012-12-01. `live` has since released the session's copy of the store before the export, and that session now commits (see the long-term plan, "Memory of a long-lived store").
 
 **Render:** `render_lifelong_gif.py ROOT OUT.gif --wide --dpi 70 --frames-per-session 8 --fps 10`.
 
