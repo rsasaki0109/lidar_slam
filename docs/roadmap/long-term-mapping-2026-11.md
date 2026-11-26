@@ -1774,3 +1774,29 @@ stays about 0.7 m below the earlier sessions' submaps until about 320 s, then cl
 over the last 100 s, where only three or four earlier submap positions lie within 1.5 m; the
 committed submaps follow it (first and last heights −1.05 and 7.55 m against −1.05 and 7.53 m
 in the odometry). Store factors along the path have little to hold on to there.
+
+#### Keeping a drifting session out of the store (development, 2026-11-26)
+
+Until the drift itself is corrected, `live` now checks an anchored session before it joins the
+store (`lidarslam.height_check`, `--max-height-drift M`, default 1.5 m, 0 turns it off). Its
+written submaps, placed as the export would place them, are compared with the stored sessions'
+submap positions: for each submap with at least three stored positions within 1.5 m (XY), the
+height difference to their median. When at least 20 submaps overlap and the 95th percentile of
+|difference| exceeds the limit, the session is not committed (`Store.add_session(...,
+before_commit=...)` raising `SessionRefused`): its directory stays uncommitted, its outputs stay
+in `--out`, the export is unchanged and the summary gives `store_refused` and
+`store_height_check`.
+
+The limit was set on the lifelong chain itself, by the 95th percentile of each session against
+the sessions before it (development):
+
+| Sessions | 95th percentile of \|dz\| |
+| --- | --- |
+| 2012-01-22 … 02-18, 06-15 … 08-20, 10-28, 11-04, 12-01, 2013-02-23 | 0.04–0.66 m |
+| 2012-03-17, 03-25, 05-26, 09-28, 11-17 | 0.82–1.18 m |
+| 2012-05-11 | 1.44 m |
+| 2012-11-16 | 1.62 m (refused) |
+| 2012-03-31 | 3.44 m (refused) |
+
+The check takes 1–2.5 s on this store. It keeps a drifted session from spoiling the map; it does
+not repair the session.

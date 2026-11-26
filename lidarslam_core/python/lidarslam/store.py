@@ -39,6 +39,10 @@ import numpy as np
 
 from lidarslam import _core
 
+class SessionRefused(Exception):
+    """A written session that a check kept out of the map (it stays uncommitted)."""
+
+
 FORMAT = 'lidarslam-map-store'
 VERSION = 1
 _INDEX = 'store.json'
@@ -308,15 +312,20 @@ class Store:
     def add_session(self, write: Callable[[str], int], odometry_params: dict[str, Any],
                     backend_params: dict[str, Any], info: dict[str, Any] | None = None,
                     export: bool = True,
-                    log: Callable[[str, str], None] | None = None) -> dict[str, Any]:
+                    log: Callable[[str, str], None] | None = None,
+                    before_commit: Callable[[str], None] | None = None) -> dict[str, Any]:
         """Writes a session with ``write(directory)`` (returns its submap count), commits it and,
-        when ``export`` is true and the sessions share a frame, exports the bundle. Returns its entry."""
+        when ``export`` is true and the sessions share a frame, exports the bundle. Returns its entry.
+        ``before_commit(directory)`` runs on the written session and may raise
+        :class:`SessionRefused`: the session is then left uncommitted, as after a crash."""
         session_id, directory = self.new_session()
         submaps = write(str(directory))
         _write_json(directory / 'odometry_params.json', _jsonable(odometry_params))
         _write_json(directory / 'backend_params.json', _jsonable(backend_params))
         entry_info = {'submaps': submaps, **(info or {})}
         _write_json(directory / 'session.json', {'id': session_id, **entry_info})
+        if before_commit is not None:
+            before_commit(str(directory))
         entry = self.commit(session_id, entry_info)
         if export:
             self.export_if_aligned(log=log)

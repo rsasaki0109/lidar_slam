@@ -28,7 +28,11 @@ from lidarslam import _core
 from lidarslam.io import IMU, NAV_SAT_FIX, POINT_CLOUD2, SensorLog
 from lidarslam.mapping import deskewed_cloud, odometry_message
 from lidarslam.odometry import make_driver
-from lidarslam.store import Store
+from lidarslam.store import SessionRefused, Store
+
+# An update whose submaps stand more than this far above or below the stored sessions' (95th
+# percentile where the paths overlap) is not added to the store (lidarslam.height_check).
+MAX_HEIGHT_DRIFT_M = 1.5
 
 LivePose = dict[str, Any]
 
@@ -51,6 +55,9 @@ class Session:
     ``detect_changes`` accumulates removal evidence from anchored keyframe scans.
     ``filter_new_points`` also masks new voxels without repeated scan support in exports.
     ``refine_visibility`` also counts free space before the first hit for new submaps.
+    ``max_height_drift`` (metres; None or 0 turns it off) keeps an anchored session out of the
+    store when its submaps disagree in height with the stored sessions where the paths overlap
+    (:mod:`lidarslam.height_check`); its outputs stay in ``out_dir`` and the summary says why.
     ``start_near_first_submap`` searches for a verified startup pose within 5 m of the first
     stored submap, when the operator knows that the recording starts in that area.
     ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
@@ -70,7 +77,8 @@ class Session:
                  track_store: bool = False, track_shared_surfaces: bool = False,
                  detect_changes: bool = False, filter_new_points: bool = False,
                  start_near_first_submap: bool = False, refine_visibility: bool = False,
-                 relocalize_anywhere: bool = False, background_search: bool = False):
+                 relocalize_anywhere: bool = False, background_search: bool = False,
+                 max_height_drift: float | None = MAX_HEIGHT_DRIFT_M):
         filter_new_points = filter_new_points or refine_visibility
         detect_changes = detect_changes or filter_new_points
         if sum([initial_pose is not None, start_near_first_submap, relocalize_anywhere]) > 1:
@@ -119,6 +127,7 @@ class Session:
                                            self._windows.extrinsic, filter_new_points,
                                            refine_visibility)
         self._track_shared_surfaces = track_shared_surfaces
+        self._max_height_drift = max_height_drift
         backend_params.setdefault('offline_map_bundle', True)
         backend_params.setdefault('bag_path', str(self.out / 'live'))
         backend_params['output_dir'] = str(self.out)
@@ -275,10 +284,31 @@ class Session:
                         if self._changes.refined_visibility:
                             info['map_change_refined_visibility'] = True
                         summary['store_removed_voxels'] = int((self._change_rows[:, 8] == 2).sum())
-            entry = self._store.add_session(self._write_store_session,
-                                            self._odometry_params, self._backend_params, info,
-                                            export=False, log=self._log)
+            before_commit = None
+            if self._max_height_drift and info.get('store_from_session') is not None:
+                aligned = self._store._aligned_sessions()
+
+                def before_commit(directory: str) -> None:
+                    from lidarslam.height_check import check
+                    result = check(aligned, directory, info['store_from_session'],
+                                   self._max_height_drift)
+                    summary['store_height_check'] = result
+                    if result['refused']:
+                        raise SessionRefused(
+                            f"{result['p95_abs_dz_m']} m height difference (95th percentile over "
+                            f"{result['compared_submaps']} submaps) to the stored sessions, above "
+                            f"{self._max_height_drift} m")
             summary['store'] = str(self._store.path)
+            try:
+                entry = self._store.add_session(self._write_store_session,
+                                                self._odometry_params, self._backend_params, info,
+                                                export=False, log=self._log,
+                                                before_commit=before_commit)
+            except SessionRefused as refused:
+                summary['store_refused'] = str(refused)
+                if self._log is not None:
+                    self._log('WARN', f'store: session not added: {refused}')
+                return summary
             summary['store_session'] = entry['id']
             if self._changes is not None and self._changes.suppressed_new_voxels is not None:
                 summary['store_suppressed_new_voxels'] = self._changes.suppressed_new_voxels
@@ -301,7 +331,8 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
            track_store: bool = False, track_shared_surfaces: bool = False,
            detect_changes: bool = False, filter_new_points: bool = False,
            start_near_first_submap: bool = False, refine_visibility: bool = False,
-           relocalize_anywhere: bool = False) -> dict[str, Any]:
+           relocalize_anywhere: bool = False,
+           max_height_drift: float | None = MAX_HEIGHT_DRIFT_M) -> dict[str, Any]:
     """Plays a sensor log into a :class:`Session` and writes its live trajectory and timing.
 
     With ``realtime`` each message is handed over no earlier than its log time after the first
@@ -332,7 +363,8 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
                       start_near_first_submap=start_near_first_submap,
                       relocalize_anywhere=relocalize_anywhere,
                       background_search=realtime,
-                      refine_visibility=refine_visibility)
+                      refine_visibility=refine_visibility,
+                      max_height_drift=max_height_drift)
     topics = [session.lidar_topic, session.imu_topic]
     with SensorLog(log_path) as sensor_log:
         types = {t.name: t.msgtype for t in sensor_log.topics()}

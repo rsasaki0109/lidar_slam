@@ -134,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
                       help='trace anchored keyframe scans and remove stale voxels from store exports')
     live.add_argument('--filter-new-points', action='store_true',
                       help='detect changes and filter new points without repeated scan support')
+    live.add_argument('--max-height-drift', type=float, default=1.5, metavar='M',
+                      help='do not add an anchored session whose submaps differ in height from '
+                           'the stored sessions by more than M m (95th percentile where the '
+                           'paths overlap; 0 turns the check off)')
     live.add_argument('--refine-visibility', action='store_true',
                       help='detect changes and filter new points with complete ray evidence '
                            '(recommended change mode; experimental)')
@@ -231,7 +235,8 @@ def main(argv: list[str] | None = None) -> int:
                                      detect_changes=args.detect_changes,
                                      filter_new_points=args.filter_new_points,
                                      start_near_first_submap=args.start_near_first_submap,
-                                     refine_visibility=args.refine_visibility)
+                                     refine_visibility=args.refine_visibility,
+                                     max_height_drift=args.max_height_drift)
         print(json.dumps(summary, indent=2))
     elif args.command == 'mcp':
         from lidarslam.mcp_server import build_server
