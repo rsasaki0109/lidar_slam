@@ -173,6 +173,10 @@ class Session:
         """
         return self._pipeline.decide_exploration(x, y)
 
+    def reject_exploration_goal(self, x: float, y: float) -> None:
+        """Tell the explorer that the robot could not reach this goal (odometry frame)."""
+        self._pipeline.reject_exploration_goal(x, y)
+
     def exploration_grid(self) -> dict[str, Any]:
         """Return the explorer's coverage grid (see ``decide_exploration``).
 

@@ -83,7 +83,46 @@ def world_ring() -> dict[str, Any]:
             'free_region': {'outer': [0, 0, 40, 24], 'holes': [[5, 5, 35, 19]]}}
 
 
-WORLDS = {'ring': world_ring}
+def world_grid() -> dict[str, Any]:
+    """Return 3 m corridors around a 3 x 2 grid of blocks (several loops), 57 m x 35 m."""
+    corridor, block_x, block_y = 3.0, 15.0, 13.0
+    width = 3 * block_x + 4 * corridor
+    height = 2 * block_y + 3 * corridor
+    boxes = [{'min': [-1.0, -1.0, -0.1], 'max': [width + 1.0, height + 1.0, 0.0]}]
+    t = 0.2
+    boxes += [_wall(-t, -t, width + t, 0), _wall(-t, height, width + t, height + t),
+              _wall(-t, 0, 0, height), _wall(width, 0, width + t, height)]
+    holes = []
+    for i in range(3):
+        for j in range(2):
+            x0 = corridor + i * (block_x + corridor)
+            y0 = corridor + j * (block_y + corridor)
+            boxes.append({'min': [x0, y0, 0.0], 'max': [x0 + block_x, y0 + block_y, 2.5]})
+            holes.append([x0, y0, x0 + block_x, y0 + block_y])
+            # Pilasters every 3 m on the block's faces, as door frames.
+            for k in range(1, int(block_x // 3)):
+                x = x0 + 3.0 * k
+                boxes.append({'min': [x - 0.15, y0 - 0.2, 0.0], 'max': [x + 0.15, y0, 2.5]})
+                boxes.append({'min': [x - 0.15, y0 + block_y, 0.0],
+                              'max': [x + 0.15, y0 + block_y + 0.2, 2.5]})
+            for k in range(1, int(block_y // 3)):
+                y = y0 + 3.0 * k
+                boxes.append({'min': [x0 - 0.2, y - 0.15, 0.0], 'max': [x0, y + 0.15, 2.5]})
+                boxes.append({'min': [x0 + block_x, y - 0.15, 0.0],
+                              'max': [x0 + block_x + 0.2, y + 0.15, 2.5]})
+    for k in range(1, int(width // 3)):  # outer walls
+        x = 3.0 * k
+        boxes.append({'min': [x - 0.15, 0.0, 0.0], 'max': [x + 0.15, 0.2, 2.5]})
+        boxes.append({'min': [x - 0.15, height - 0.2, 0.0], 'max': [x + 0.15, height, 2.5]})
+    for k in range(1, int(height // 3)):
+        y = 3.0 * k
+        boxes.append({'min': [0.0, y - 0.15, 0.0], 'max': [0.2, y + 0.15, 2.5]})
+        boxes.append({'min': [width - 0.2, y - 0.15, 0.0], 'max': [width, y + 0.15, 2.5]})
+    return {'boxes': boxes, 'start': [1.5, 1.5, 0.0], 'seed': 2,
+            'free_region': {'outer': [0, 0, width, height], 'holes': holes}}
+
+
+WORLDS = {'ring': world_ring, 'grid': world_grid}
 
 # ------------------------------------------------------------------------------------- env
 
@@ -224,7 +263,10 @@ def policy_parameters(policy: str, trigger: float, release: float) -> dict[str, 
         return {'exploration_info_weight': 0.0, 'exploration_distance_weight': 1.0,
                 'exploration_revisit_trigger_sigma': 0.0}
     if policy == 'active':
+        # A revisit's gain is the predicted fraction of the newest sigma it removes: removing
+        # 90 % is worth 36 m of driving at these weights.
         return {'exploration_info_weight': 1.0, 'exploration_distance_weight': 0.5,
+                'exploration_uncertainty_weight': 20.0,
                 'exploration_revisit_trigger_sigma': trigger,
                 'exploration_revisit_release_sigma': release}
     raise ValueError(policy)
@@ -239,13 +281,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--revisit-trigger-sigma', type=float, default=0.0,
                         help='active: revisit above this newest-submap sigma (0: never)')
     parser.add_argument('--revisit-release-sigma', type=float, default=0.0)
+    parser.add_argument('--inflation-radius', type=float, default=0.8,
+                        help='obstacle inflation [m]: robot radius 0.25 m plus the SLAM error')
     parser.add_argument('--rko-param', type=Path,
                         default=ROOT / 'lidarslam' / 'param' / 'rko_lio_mid360_walking.yaml',
                         help='RKO-LIO parameters (the indoor preset; on the simulated scans the '
                         'car and handheld-outdoor presets slide 1-2 m along a corridor when '
                         'the robot stops and turns in place)')
     parser.add_argument('--lidarslam-param', type=Path,
-                        default=ROOT / 'lidarslam' / 'param' / 'lidarslam_mid360_rko_graph.yaml')
+                        default=ROOT / 'lidarslam' / 'param' /
+                        'lidarslam_mid360_rko_graph_walking.yaml',
+                        help='graph_based_slam parameters (the indoor preset, as the odometry; '
+                        'the car preset only searches loops 100 m of travel apart)')
     args = parser.parse_args(argv)
 
     from lidarslam import _core, backend
@@ -265,7 +312,8 @@ def main(argv: list[str] | None = None) -> int:
     # unit (the walking preset does already; the others were tuned on m/s^2 data).
     odometry['imu_acceleration_unit'] = 'auto'
     graph = backend.load_parameters(args.lidarslam_param.resolve())
-    graph.update({'pose_uncertainty_timeline': True, 'active_exploration_timeline': True})
+    graph.update({'pose_uncertainty_timeline': True, 'active_exploration_timeline': True,
+                  'exploration_inflation_radius': args.inflation_radius})
     graph.update(policy_parameters(args.policy, args.revisit_trigger_sigma,
                                    args.revisit_release_sigma))
     (out / 'params.json').write_text(json.dumps(
@@ -273,8 +321,9 @@ def main(argv: list[str] | None = None) -> int:
         indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
 
     latest: dict[str, Any] = {}
+    backend_log = open(out / 'backend.log', 'w', encoding='utf-8')
     session = Session(odometry, graph, out / 'slam', on_pose=lambda p: latest.update(p),
-                      log=lambda level, msg: None)
+                      log=lambda level, msg: backend_log.write(f'[{level}] {msg}\n'))
     env = Env(world_file)
     start = world['start']
     c0, s0 = math.cos(start[2]), math.sin(start[2])
@@ -286,6 +335,8 @@ def main(argv: list[str] | None = None) -> int:
 
     v = w = 0.0
     backing_off = 0  # frames left of backing away after a collision
+    goal_collisions = 0  # collisions while heading for the current goal
+    rejected = 0
     path: list[tuple[float, float]] = []
     decision: dict[str, Any] = {}
     frames_since_decision = 10**9
@@ -327,13 +378,24 @@ def main(argv: list[str] | None = None) -> int:
         if header['collided']:
             backing_off = 8  # back away 0.8 s, then plan again
             path = []
+            goal_collisions += 1
+            if goal_collisions >= 3 and decision.get('status') == 'goal':
+                # As a navigation stack aborts a goal it cannot reach: the explorer drops it.
+                session.reject_exploration_goal(*decision['goal'])
+                rejected += 1
+                goal_collisions = 0
         if backing_off > 0:
             backing_off -= 1
             v = -0.3
         elif frame >= settle_frames and 'odometry' in latest:
             reached = bool(path) and math.hypot(path[-1][0] - est[0], path[-1][1] - est[1]) < 0.6
             if not path or reached or frames_since_decision >= 10 or header['collided']:
+                previous_goal = decision.get('goal')
                 decision = session.decide_exploration(est[0], est[1])
+                if previous_goal is None or math.hypot(
+                        decision['goal'][0] - previous_goal[0],
+                        decision['goal'][1] - previous_goal[1]) > 0.5:
+                    goal_collisions = 0
                 frames_since_decision = 0
                 path = ([tuple(p) for p in decision['path']]
                         if decision['status'] == 'goal' and len(decision['path']) > 1 else [])
@@ -358,10 +420,12 @@ def main(argv: list[str] | None = None) -> int:
     frames.close()
     decisions.close()
     summary = session.finish()
+    backend_log.close()
     metrics = {
         'world': args.world, 'policy': args.policy, 'frames': frame + 1,
         'seconds': round((frame + 1) * FRAME_S, 1), 'distance_m': round(distance, 2),
         'coverage': round(coverage.fraction(), 4), 'collisions': collisions,
+        'rejected_goals': rejected,
         'exploration_done': done_count >= 3,
         'live_position_error_rmse_m': round(float(np.sqrt(np.mean(np.square(errors)))), 4)
         if errors else None,

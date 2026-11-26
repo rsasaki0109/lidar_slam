@@ -238,4 +238,43 @@ TEST(PoseGraphOptimizationMarginals, IncludeGravityPriorsTheSavedGraphLacks)
   EXPECT_LT(last_with.covariance(2, 2), 0.5 * last_without.covariance(2, 2));
 }
 
+TEST(PoseGraphOptimizationMarginals, PredictedLoopEffectMatchesAddingTheLoop)
+{
+  // The newest submap's covariance predicted from the joint covariance before a loop edge must
+  // equal the one computed after adding that edge (zero error, so the poses do not move).
+  const BackendGraph graph = backendGraph(0.0);
+  graphslam::pose_graph::LoopEdgeConfig loop_cfg;
+  const auto before = optimize(graph, true);
+  ASSERT_TRUE(before.marginals_valid);
+  ASSERT_EQ(before.newest_cross_covariances.size(), before.poses.size());
+  const std::size_t n = before.poses.size() - 1;
+  for (const std::size_t k : {std::size_t{0}, std::size_t{5}, std::size_t{30}, std::size_t{45}}) {
+    BackendGraph with_loop = graph;
+    // The loop edges of the base graph, and a new one k -> n measured as the current estimate.
+    for (std::size_t i = 0; i < with_loop.nodes.size(); ++i) {
+      with_loop.nodes[i].pose = before.poses[i];
+    }
+    for (auto & loop : with_loop.loops) {
+      loop.relative_pose = before.poses[static_cast<std::size_t>(loop.from)].inverse() *
+        before.poses[static_cast<std::size_t>(loop.to)];
+    }
+    graphslam::pose_graph::LoopConstraint added;
+    added.from = static_cast<int>(k);
+    added.to = static_cast<int>(n);
+    added.relative_pose = before.poses[k].inverse() * before.poses[n];
+    added.fitness_score = 0.2;
+    with_loop.loops.push_back(added);
+    const auto after = optimize(with_loop, true);
+    ASSERT_TRUE(after.marginals_valid);
+    const pgu::Matrix6d predicted = pgu::predictedCovarianceAfterLoop(
+      before.poses[k], before.poses[n], before.marginal_covariances[k],
+      before.marginal_covariances[n], before.newest_cross_covariances[k],
+      graphslam::pose_graph::loopEdgeInformation(loop_cfg, 0.2));
+    const pgu::Matrix6d & actual = after.marginal_covariances[n];
+    EXPECT_LT((predicted - actual).norm() / actual.norm(), 2e-3) << "k = " << k;
+    EXPECT_LT(pgu::sigmaTranslationMax(predicted),
+      pgu::sigmaTranslationMax(before.marginal_covariances[n])) << "k = " << k;
+  }
+}
+
 }  // namespace

@@ -520,6 +520,9 @@ struct RunnerConfig
   graphslam::active_exploration::SelectionConfig exploration_selection;
   // At most this many points of a submap's scan go into the coverage grid (every n-th).
   int exploration_max_points_per_scan = 8000;
+  // The loop-edge fitness assumed when predicting a revisit's effect (its information is the
+  // loop edges' loop_edge_info_weight / fitness, or the constant loop information).
+  double exploration_predicted_loop_fitness = 0.2;
 };
 
 // Reads the bag and output locations and the registration and submap
@@ -1364,6 +1367,18 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or(
     "exploration_visited_radius", selection.visited_radius, selection.visited_radius);
   node.get_parameter_or(
+    "exploration_min_predicted_drop", selection.min_predicted_drop,
+    selection.min_predicted_drop);
+  node.get_parameter_or(
+    "exploration_revisit_reached_radius", selection.revisit_reached_radius,
+    selection.revisit_reached_radius);
+  node.get_parameter_or(
+    "exploration_revisit_tried_radius", selection.revisit_tried_radius,
+    selection.revisit_tried_radius);
+  node.get_parameter_or(
+    "exploration_predicted_loop_fitness", config.exploration_predicted_loop_fitness,
+    config.exploration_predicted_loop_fitness);
+  node.get_parameter_or(
     "exploration_max_points_per_scan", config.exploration_max_points_per_scan,
     config.exploration_max_points_per_scan);
 }
@@ -2141,6 +2156,15 @@ struct BagPass
     ++uncertainty_timeline_steps;
   }
 
+  // The selection settings, with revisit targets limited to what the loop search can pair.
+  graphslam::active_exploration::SelectionConfig explorationSelection() const
+  {
+    graphslam::active_exploration::SelectionConfig selection = config.exploration_selection;
+    selection.min_travel_gap = std::max(
+      selection.min_travel_gap, config.search_config.aggregator.distance_loop_closure);
+    return selection;
+  }
+
   // OfflinePipeline::decideExploration.
   graphslam::offline::ExplorationDecision decideExploration(const Eigen::Vector2d & robot_xy)
   {
@@ -2156,16 +2180,21 @@ struct BagPass
     // Submaps created since the latest uncertainty state take the newest sigma known.
     ae::GraphUncertainty graph = exploration_graph;
     const double newest = graph.sigma.empty() ? 0.0 : graph.sigma.back();
+    const bool predicted = graph.predicted_sigma.size() == graph.sigma.size();
     for (std::size_t i = graph.positions.size(); i < bag.records.size(); ++i) {
       graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
       graph.sigma.push_back(newest);
+      graph.travel.push_back(bag.records[i].meta.travel_distance);
+      if (predicted) {
+        graph.predicted_sigma.push_back(std::numeric_limits<double>::quiet_NaN());
+      }
     }
     const ae::PathField paths(
       exploration_grid, config.exploration_grid, config.exploration_planner, robot_xy);
     const std::vector<ae::Frontier> frontiers = ae::findFrontiers(
       exploration_grid, config.exploration_grid, paths, config.exploration_frontier);
     const ae::Decision decision = ae::selectGoal(
-      paths, frontiers, graph, config.exploration_selection, explorer_state);
+      paths, frontiers, graph, explorationSelection(), explorer_state);
     out.status = decision.status == ae::Decision::Status::GOAL ? "goal" :
       decision.status == ae::Decision::Status::EXPLORATION_DONE ? "exploration_done" :
       "no_reachable_goal";
@@ -2210,6 +2239,12 @@ struct BagPass
     return out;
   }
 
+  void rejectExplorationGoal(const Eigen::Vector2d & goal)
+  {
+    explorer_state.visited_frontiers.push_back(goal);
+    explorer_state.tried_revisits.push_back(goal);
+  }
+
   // active_exploration_timeline: a new submap's scan into the coverage grid.
   void addToExplorationGrid(
     const Eigen::Affine3d & pose, const pcl::PointCloud<pcl::PointXYZI> & cloud)
@@ -2237,6 +2272,21 @@ struct BagPass
     for (std::size_t i = 0; i < bag.records.size(); ++i) {
       graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
       graph.sigma.push_back(report.per_vertex[i].sigma_translation_max);
+      graph.travel.push_back(bag.records[i].meta.travel_distance);
+    }
+    // The newest sigma after a loop edge from each submap (exact for the linearized graph).
+    if (result.newest_cross_covariances.size() == result.poses.size() && !result.poses.empty()) {
+      const std::size_t n = result.poses.size() - 1U;
+      const Eigen::Matrix<double, 6, 6> information = graphslam::pose_graph::loopEdgeInformation(
+        config.loop_config, config.exploration_predicted_loop_fitness);
+      graph.predicted_sigma.resize(result.poses.size());
+      for (std::size_t k = 0; k < result.poses.size(); ++k) {
+        graph.predicted_sigma[k] = k == n ? graph.sigma[n] :
+          graphslam::pose_graph_uncertainty::sigmaTranslationMax(
+          graphslam::pose_graph_uncertainty::predictedCovarianceAfterLoop(
+            result.poses[k], result.poses[n], result.marginal_covariances[k],
+            result.marginal_covariances[n], result.newest_cross_covariances[k], information));
+      }
     }
     exploration_graph = graph;
     const ae::PathField paths(
@@ -2245,7 +2295,7 @@ struct BagPass
     const std::vector<ae::Frontier> frontiers = ae::findFrontiers(
       exploration_grid, config.exploration_grid, paths, config.exploration_frontier);
     const ae::Decision decision = ae::selectGoal(
-      paths, frontiers, graph, config.exploration_selection, explorer_state);
+      paths, frontiers, graph, explorationSelection(), explorer_state);
     std::size_t reachable = 0U;
     std::size_t revisits = 0U;
     for (const ae::GoalCandidate & c : decision.candidates) {
@@ -3779,6 +3829,13 @@ void OfflinePipeline::setLivePoseListener(LivePoseListener listener)
 }
 
 void OfflinePipeline::keepSessionMap(bool keep) {impl_->keep_session_map = keep;}
+
+void OfflinePipeline::rejectExplorationGoal(const Eigen::Vector2d & goal)
+{
+  if (impl_->bag_pass) {
+    impl_->bag_pass->rejectExplorationGoal(goal);
+  }
+}
 
 OfflinePipeline::ExplorationGrid OfflinePipeline::explorationGrid() const
 {

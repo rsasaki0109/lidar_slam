@@ -41,6 +41,13 @@
   them (`exploration_clear_radius`, `exploration_min_goal_distance`,
   `exploration_visited_radius`). First comparison in docs/roadmap/active-slam-2026-11.md (one
   world, one seed).
+- Predicted revisit gain: `optimizePoseGraph` returns each submap's covariance with the newest
+  (`newest_cross_covariances`); `pose_graph_uncertainty::predictedCovarianceAfterLoop` gives the
+  newest submap's covariance after a loop edge, and a revisit's gain is the predicted fraction of
+  the newest sigma removed. Revisit targets must be farther back in travel than the loop search's
+  `distance_loop_closure`, targets reached without a loop are dropped, frontiers and revisits
+  compete by utility, and `Session.reject_exploration_goal` drops a goal the robot cannot reach.
+  The closed-loop harness gains a `grid` world, the indoor graph preset and an inflation option.
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists

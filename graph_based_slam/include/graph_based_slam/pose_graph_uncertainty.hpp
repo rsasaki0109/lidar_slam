@@ -456,6 +456,42 @@ inline UncertaintyReport computeUncertainty(const ParsedGraph & graph)
   return report;
 }
 
+// The covariance of the newest vertex n after adding a loop edge k -> n whose measurement is the
+// current relative pose (zero error) with information `loop_information` (g2o EdgeSE3
+// coordinates), from the joint covariance of k and n before it: covariance_k = Cov(x_k),
+// covariance_n = Cov(x_n), cross_kn = Cov(x_k, x_n). Exact for the linearized graph (the update
+// of a Gaussian by one more linear measurement); a fixed k has zero covariance and cross terms.
+inline Matrix6d predictedCovarianceAfterLoop(
+  const Eigen::Isometry3d & pose_k, const Eigen::Isometry3d & pose_n,
+  const Matrix6d & covariance_k, const Matrix6d & covariance_n, const Matrix6d & cross_kn,
+  const Matrix6d & loop_information)
+{
+  Edge edge;
+  edge.measurement = pose_k.inverse() * pose_n;
+  edge.information = loop_information;
+  Matrix6d jacobian_k, jacobian_n;
+  detail::edgeJacobians(edge, pose_k, pose_n, jacobian_k, jacobian_n);
+  Eigen::Matrix<double, 12, 12> joint;
+  joint << covariance_k, cross_kn, cross_kn.transpose(), covariance_n;
+  Eigen::Matrix<double, 6, 12> jacobian;
+  jacobian << jacobian_k, jacobian_n;
+  const Matrix6d innovation =
+    loop_information.inverse() + jacobian * joint * jacobian.transpose();
+  const Eigen::Matrix<double, 12, 6> gain_term = joint * jacobian.transpose();
+  const Eigen::Matrix<double, 12, 12> updated =
+    joint - gain_term * innovation.ldlt().solve(gain_term.transpose());
+  const Matrix6d newest = updated.bottomRightCorner<6, 6>();
+  return 0.5 * (newest + newest.transpose());
+}
+
+// sigma_translation_max of a covariance (see VertexUncertainty).
+inline double sigmaTranslationMax(const Matrix6d & covariance)
+{
+  const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> translation(
+    covariance.topLeftCorner<3, 3>());
+  return std::sqrt(std::max(0.0, translation.eigenvalues()(2)));
+}
+
 // The per-vertex report of marginal covariances computed elsewhere (e.g. by
 // g2o in pose_graph::optimizePoseGraph with compute_marginals): vertex i has
 // id i, the position of poses[i], and is fixed when its covariance is zero.

@@ -620,22 +620,37 @@ enum class GoalKind
 struct SelectionConfig
 {
   double info_weight {1.0};  // per m^2 of unknown area
-  double uncertainty_weight {1.0};  // per unit of sigma the revisit could remove
+  // Per unit of the revisit's gain: the fraction of the newest sigma a loop edge to the target
+  // is predicted to remove (GraphUncertainty::predicted_sigma), or without predictions the
+  // sigma difference to the target.
+  double uncertainty_weight {1.0};
   double distance_weight {0.5};  // per m of path
   // Revisit mode starts when the newest submap's sigma exceeds revisit_trigger_sigma and ends
   // when it falls below revisit_release_sigma (hysteresis).
   double revisit_trigger_sigma {std::numeric_limits<double>::infinity()};
   double revisit_release_sigma {0.0};
-  // Revisit targets: submaps at least min_index_gap older than the newest whose sigma is at
-  // most anchor_sigma_ratio times the newest's.
+  // Revisit targets: submaps at least min_index_gap older than the newest. With predictions, a
+  // loop edge to the target must be predicted to remove at least min_predicted_drop of the
+  // newest sigma; without, the target's sigma must be at most anchor_sigma_ratio times the
+  // newest's.
   int min_index_gap {20};
   double anchor_sigma_ratio {0.5};
+  double min_predicted_drop {0.2};
+  // [m] with GraphUncertainty::travel: targets the robot drove past less than this travel ago
+  // are not revisit targets (the loop search only pairs submaps farther apart in travel, its
+  // distance_loop_closure; a revisit there cannot close a loop).
+  double min_travel_gap {0.0};
   // [m] a revisit goal this close to the robot is pointless (the loop search has seen it).
   double min_revisit_distance {3.0};
   // [m] a frontier goal the robot has come this close to (path length) and that is still a
   // frontier cannot be seen from there (a shadow the sensor does not reach): it is marked
   // visited, and frontier goals within this distance of a visited one are not chosen again.
   double visited_radius {1.5};
+  // [m] a revisit target the robot has come this close to (path length) while still in revisit
+  // mode gave no loop edge: it is marked tried, and targets within revisit_tried_radius of a
+  // tried one are not chosen again until revisit mode ends.
+  double revisit_reached_radius {2.0};
+  double revisit_tried_radius {3.0};
 };
 
 struct GoalCandidate
@@ -645,7 +660,9 @@ struct GoalCandidate
   int source {-1};  // frontier index, or the submap index of a revisit target
   double path_length {0.0};
   double unknown_area {0.0};
-  double uncertainty_drop {0.0};  // newest sigma minus the target's sigma (revisits)
+  // Revisits: the predicted fraction of the newest sigma removed (or, without predictions, the
+  // newest sigma minus the target's).
+  double uncertainty_drop {0.0};
   double utility {0.0};
 };
 
@@ -668,6 +685,7 @@ struct ExplorerState
 {
   bool revisit_mode {false};
   std::vector<Eigen::Vector2d> visited_frontiers;  // see SelectionConfig::visited_radius
+  std::vector<Eigen::Vector2d> tried_revisits;  // see SelectionConfig::revisit_tried_radius
 };
 
 // Submap positions and sigmas of the graph so far (index = submap index, last = newest).
@@ -675,6 +693,11 @@ struct GraphUncertainty
 {
   std::vector<Eigen::Vector2d> positions;
   std::vector<double> sigma;  // pose_graph_uncertainty sigma_translation_max (0: fixed)
+  // Optional, per submap k: the newest submap's sigma predicted after a loop edge k -> newest
+  // (pose_graph_uncertainty::predictedCovarianceAfterLoop); NaN where unknown. Empty: none.
+  std::vector<double> predicted_sigma;
+  // Optional, per submap: the distance travelled when it was created [m]. Empty: none.
+  std::vector<double> travel;
 };
 
 inline Decision selectGoal(
@@ -687,6 +710,9 @@ inline Decision selectGoal(
     state.revisit_mode = newest_sigma > config.revisit_release_sigma;
   } else {
     state.revisit_mode = newest_sigma > config.revisit_trigger_sigma;
+  }
+  if (!state.revisit_mode) {
+    state.tried_revisits.clear();
   }
   decision.revisit_mode = state.revisit_mode;
 
@@ -728,13 +754,55 @@ inline Decision selectGoal(
     const int newest = static_cast<int>(graph.sigma.size()) - 1;
     const Eigen::Vector2d here = graph.positions.empty() ? Eigen::Vector2d::Zero() :
       graph.positions.back();
+    const bool predicted = graph.predicted_sigma.size() == graph.sigma.size();
+    const bool has_travel = graph.travel.size() == graph.sigma.size();
+    auto too_recent = [&](int k) {
+        return has_travel && graph.travel[static_cast<std::size_t>(newest)] -
+               graph.travel[static_cast<std::size_t>(k)] <= config.min_travel_gap;
+      };
+    // Targets the robot has reached without a loop edge.
     for (int k = 0; k + config.min_index_gap <= newest; ++k) {
-      const double s = graph.sigma[static_cast<std::size_t>(k)];
-      if (s > config.anchor_sigma_ratio * newest_sigma) {
+      const Eigen::Vector2d & target = graph.positions[static_cast<std::size_t>(k)];
+      if (paths.distanceTo(target) < config.revisit_reached_radius) {
+        bool known = false;
+        for (const Eigen::Vector2d & t : state.tried_revisits) {
+          known = known || (t - target).norm() < 1e-9;
+        }
+        if (!known) {
+          state.tried_revisits.push_back(target);
+        }
+      }
+    }
+    for (int k = 0; k + config.min_index_gap <= newest; ++k) {
+      if (too_recent(k)) {
         continue;
+      }
+      const double s = graph.sigma[static_cast<std::size_t>(k)];
+      double gain = 0.0;
+      if (predicted) {
+        const double after = graph.predicted_sigma[static_cast<std::size_t>(k)];
+        if (!std::isfinite(after) || newest_sigma <= 0.0) {
+          continue;
+        }
+        gain = (newest_sigma - after) / newest_sigma;
+        if (gain < config.min_predicted_drop) {
+          continue;
+        }
+      } else {
+        if (s > config.anchor_sigma_ratio * newest_sigma) {
+          continue;
+        }
+        gain = newest_sigma - s;
       }
       const Eigen::Vector2d & target = graph.positions[static_cast<std::size_t>(k)];
       if ((target - here).norm() < config.min_revisit_distance) {
+        continue;
+      }
+      bool tried = false;
+      for (const Eigen::Vector2d & t : state.tried_revisits) {
+        tried = tried || (t - target).norm() < config.revisit_tried_radius;
+      }
+      if (tried) {
         continue;
       }
       const double path = paths.distanceTo(target);
@@ -746,14 +814,14 @@ inline Decision selectGoal(
       c.goal = target;
       c.source = k;
       c.path_length = path;
-      c.uncertainty_drop = newest_sigma - s;
-      c.utility = config.uncertainty_weight * c.uncertainty_drop -
-        config.distance_weight * c.path_length;
+      c.uncertainty_drop = gain;
+      c.utility = config.uncertainty_weight * gain - config.distance_weight * c.path_length;
       decision.candidates.push_back(c);
     }
   }
 
-  // In revisit mode the best revisit wins if there is one; otherwise the best frontier.
+  // Outside revisit mode only frontiers are candidates; in it, frontiers and revisits compete
+  // by utility.
   auto best_in = [&](std::size_t from, std::size_t to) {
       int best = -1;
       for (std::size_t i = from; i < to; ++i) {
@@ -768,10 +836,13 @@ inline Decision selectGoal(
     };
   const int best_revisit = best_in(frontier_count, decision.candidates.size());
   const int best_frontier = best_in(0, frontier_count);
-  if (state.revisit_mode && best_revisit >= 0) {
+  const bool revisit_wins = best_revisit >= 0 &&
+    (best_frontier < 0 || decision.candidates[static_cast<std::size_t>(best_revisit)].utility >
+    decision.candidates[static_cast<std::size_t>(best_frontier)].utility);
+  if (state.revisit_mode && revisit_wins) {
     decision.status = Decision::Status::GOAL;
     decision.chosen = best_revisit;
-    decision.reason = "revisit: newest sigma above the trigger";
+    decision.reason = "revisit: newest sigma above the trigger, best utility";
   } else if (best_frontier >= 0) {
     decision.status = Decision::Status::GOAL;
     decision.chosen = best_frontier;

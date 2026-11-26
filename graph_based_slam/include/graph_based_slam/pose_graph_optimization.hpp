@@ -203,6 +203,11 @@ struct OptimizationResult
   bool marginals_valid {false};
   std::vector<Eigen::Matrix<double, 6, 6>,
     Eigen::aligned_allocator<Eigen::Matrix<double, 6, 6>>> marginal_covariances;
+  // With the marginals: Cov(x_i, x_newest) for every submap i (newest = the last), zero for a
+  // fixed vertex; what predicting the effect of a loop edge to the newest needs
+  // (pose_graph_uncertainty::predictedCovarianceAfterLoop).
+  std::vector<Eigen::Matrix<double, 6, 6>,
+    Eigen::aligned_allocator<Eigen::Matrix<double, 6, 6>>> newest_cross_covariances;
 };
 
 // What to collect for the caller's NIS auto-scale update; NONE skips the
@@ -444,10 +449,15 @@ inline OptimizationResult optimizePoseGraph(
     auto * with_hessian =
       dynamic_cast<g2o::OptimizationAlgorithmWithHessian *>(optimizer.solver());
     std::vector<std::pair<int, int>> blocks;
+    const int newest_h =
+      submaps_size > 0 ? optimizer.vertex(submaps_size - 1)->hessianIndex() : -1;
     for (int i = 0; i < submaps_size; i++) {
       const int h = optimizer.vertex(i)->hessianIndex();
       if (h >= 0) {
         blocks.emplace_back(h, h);
+        if (newest_h >= 0 && h != newest_h) {
+          blocks.emplace_back(std::min(h, newest_h), std::max(h, newest_h));
+        }
       }
     }
     result.marginal_covariances.assign(
@@ -474,10 +484,36 @@ inline OptimizationResult optimizePoseGraph(
           result.marginal_covariances[static_cast<std::size_t>(i)] =
             0.5 * (covariance + covariance.transpose());
         }
+        if (result.marginals_valid && newest_h >= 0) {
+          result.newest_cross_covariances.assign(
+            static_cast<std::size_t>(submaps_size), Eigen::Matrix<double, 6, 6>::Zero());
+          for (int i = 0; i < submaps_size; i++) {
+            const int h = optimizer.vertex(i)->hessianIndex();
+            if (h < 0) {
+              continue;
+            }
+            if (h == newest_h) {
+              result.newest_cross_covariances[static_cast<std::size_t>(i)] =
+                result.marginal_covariances[static_cast<std::size_t>(i)];
+              continue;
+            }
+            const Eigen::MatrixXd * block = marginals.block(std::min(h, newest_h),
+                std::max(h, newest_h));
+            if (block == nullptr || block->rows() != 6 || block->cols() != 6) {
+              result.newest_cross_covariances.clear();
+              break;
+            }
+            // The block is Cov(x_min, x_max); Cov(x_i, x_newest) is it or its transpose.
+            result.newest_cross_covariances[static_cast<std::size_t>(i)] =
+              h < newest_h ? Eigen::Matrix<double, 6, 6>(*block) :
+              Eigen::Matrix<double, 6, 6>(block->transpose());
+          }
+        }
       }
     }
     if (!result.marginals_valid) {
       result.marginal_covariances.clear();
+      result.newest_cross_covariances.clear();
     }
   }
 

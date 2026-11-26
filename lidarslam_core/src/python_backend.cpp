@@ -299,6 +299,11 @@ public:
     return out;
   }
 
+  void rejectExplorationGoal(double x, double y)
+  {
+    pipeline_->rejectExplorationGoal(Eigen::Vector2d(x, y));
+  }
+
   // The explorer's coverage grid (OfflinePipeline::explorationGrid) as a dict: x0, y0, width,
   // height, resolution, cells (bytes, 0 unknown / 1 free / 2 occupied, row by row).
   py::dict explorationGrid()
@@ -876,6 +881,10 @@ void bind_backend(py::module_ & m)
   .def("add_cloud", &BackendPipeline::addCloud, py::arg("cloud"))
   .def("add_gnss_fix", &BackendPipeline::addGnssFix, py::arg("fix"),
     "With use_gnss: a NavSatFix of gnss_topic, in recorded order with the odometry and clouds.")
+  .def("reject_exploration_goal", [](BackendPipeline & self, double x, double y) {
+      self.rejectExplorationGoal(x, y);
+    }, py::arg("x"), py::arg("y"),
+    "The robot could not reach this goal (odometry frame): it is not chosen again.")
   .def("exploration_grid", &BackendPipeline::explorationGrid,
     "With active_exploration_timeline: the explorer's coverage grid (0 unknown, 1 free, "
     "2 occupied).")

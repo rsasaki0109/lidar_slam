@@ -308,6 +308,101 @@ TEST(ActiveExploration, UnknownBeyondAWallIsNoGainAndAReachedFrontierIsDropped)
   EXPECT_EQ(decision.status, ae::Decision::Status::EXPLORATION_DONE);
 }
 
+TEST(ActiveExploration, PredictedLoopGainPicksTheTargetThatHelpsAndTriedTargetsAreDropped)
+{
+  const auto walls = room(false);
+  const ae::CoverageGridConfig config = gridConfig();
+  const ae::CoverageGrid grid = ae::buildCoverageGrid(
+    {scanFrom({1.5, 1.5}, walls), scanFrom({5.0, 3.0}, walls), scanFrom({8.5, 4.5}, walls)},
+    config);
+  ae::SelectionConfig selection;
+  selection.revisit_trigger_sigma = 1.0;
+  selection.revisit_release_sigma = 0.5;
+  selection.min_index_gap = 20;
+  selection.uncertainty_weight = 20.0;
+  selection.distance_weight = 0.5;
+  ae::GraphUncertainty graph;
+  for (int k = 0; k < 30; ++k) {
+    graph.positions.emplace_back(1.5 + 7.0 * k / 29.0, 1.5 + 3.0 * k / 29.0);
+    graph.sigma.push_back(0.05 * k);  // newest: 1.45
+  }
+  // A loop edge to the start (k <= 2) would remove 90 % of the newest sigma, to k = 9 only 10 %
+  // (below min_predicted_drop), to the others 40 %.
+  graph.predicted_sigma.assign(30, 0.6 * 1.45);
+  for (int k = 0; k <= 2; ++k) {
+    graph.predicted_sigma[static_cast<std::size_t>(k)] = 0.1 * 1.45;
+  }
+  graph.predicted_sigma[9] = 0.9 * 1.45;
+
+  ae::ExplorerState state;
+  const ae::PathField far(grid, config, ae::PlannerConfig(), {8.5, 4.5});
+  ae::Decision decision = ae::selectGoal(far, {}, graph, selection, state);
+  ASSERT_EQ(decision.status, ae::Decision::Status::GOAL) << decision.reason;
+  const ae::GoalCandidate & best = decision.candidates[static_cast<std::size_t>(decision.chosen)];
+  EXPECT_EQ(best.kind, ae::GoalKind::REVISIT);
+  EXPECT_LE(best.source, 2);
+  EXPECT_NEAR(best.uncertainty_drop, 0.9, 1e-9);
+  for (const auto & c : decision.candidates) {
+    EXPECT_NE(c.source, 9);  // predicted drop below min_predicted_drop
+  }
+
+  // The robot reached the start area and no loop edge came: those targets are tried, and the
+  // next choice is elsewhere.
+  const ae::PathField at_start(grid, config, ae::PlannerConfig(), {1.6, 1.6});
+  decision = ae::selectGoal(at_start, {}, graph, selection, state);
+  EXPECT_FALSE(state.tried_revisits.empty());
+  for (const auto & c : decision.candidates) {
+    EXPECT_GT(c.source, 2) << "a tried target was offered again";
+  }
+  // Leaving revisit mode forgets them.
+  graph.sigma.back() = 0.2;
+  decision = ae::selectGoal(at_start, {}, graph, selection, state);
+  EXPECT_FALSE(decision.revisit_mode);
+  EXPECT_TRUE(state.tried_revisits.empty());
+}
+
+TEST(ActiveExploration, RevisitsRespectTheLoopSearchTravelGapAndCompeteWithFrontiers)
+{
+  const auto walls = room(true);
+  const ae::CoverageGridConfig config = gridConfig();
+  const ae::CoverageGrid grid = ae::buildCoverageGrid(
+    {scanFrom({1.5, 1.5}, walls), scanFrom({5.0, 3.0}, walls), scanFrom({8.5, 4.5}, walls)},
+    config);
+  const ae::PathField paths(grid, config, ae::PlannerConfig(), {8.5, 4.5});
+  const auto frontiers = ae::findFrontiers(grid, config, paths, ae::FrontierConfig());
+  ASSERT_FALSE(frontiers.empty());
+  ae::GraphUncertainty graph;
+  for (int k = 0; k < 30; ++k) {
+    graph.positions.emplace_back(1.5 + 7.0 * k / 29.0, 1.5 + 3.0 * k / 29.0);
+    graph.sigma.push_back(0.05 * k);
+    graph.travel.push_back(2.0 * k);  // newest: 58 m
+  }
+  graph.predicted_sigma.assign(30, 0.1 * 1.45);  // any loop edge would remove 90 %
+  ae::SelectionConfig selection;
+  selection.revisit_trigger_sigma = 1.0;
+  selection.revisit_release_sigma = 0.5;
+  selection.min_index_gap = 1;
+  selection.min_travel_gap = 40.0;  // only submaps 0..8 (travel <= 16 m) are far enough back
+  selection.uncertainty_weight = 1000.0;
+  ae::ExplorerState state;
+  ae::Decision decision = ae::selectGoal(paths, frontiers, graph, selection, state);
+  ASSERT_EQ(decision.status, ae::Decision::Status::GOAL);
+  for (const auto & c : decision.candidates) {
+    if (c.kind == ae::GoalKind::REVISIT) {
+      EXPECT_LE(c.source, 8);
+    }
+  }
+  EXPECT_EQ(decision.candidates[static_cast<std::size_t>(decision.chosen)].kind,
+    ae::GoalKind::REVISIT);
+  // With a small revisit weight the doorway's frontier has the better utility, also in revisit
+  // mode.
+  selection.uncertainty_weight = 1.0;
+  decision = ae::selectGoal(paths, frontiers, graph, selection, state);
+  EXPECT_TRUE(decision.revisit_mode);
+  EXPECT_EQ(decision.candidates[static_cast<std::size_t>(decision.chosen)].kind,
+    ae::GoalKind::FRONTIER);
+}
+
 TEST(ActiveExploration, DecisionIsDeterministic)
 {
   const auto walls = room(true);

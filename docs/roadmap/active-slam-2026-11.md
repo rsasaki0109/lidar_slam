@@ -172,7 +172,11 @@ Done (2026-11-26), first version of P2 and P3: `active_exploration.hpp` (ROS-fre
   then asks to revisit (362 states); 40 m before the recorded car reaches its start it asks to
   go back to submaps 12-13 at the start, and when the recorded loop closes (sigma 74 -> 1.4) it
   returns to exploring. Two replays give the same bytes, and with the parameter off the
-run's other outputs are byte-identical. The recorded car did not follow the
+run's other outputs are byte-identical. (These are the first version's decisions. With the second round below,
+revisits compete by utility and, at the default revisit weight 1, the same replay chooses a
+frontier in all 636 states, 362 of them in revisit mode with 87-334 revisit candidates; it takes
+501 s instead of 126 s, as each state now computes the cross covariances with the newest, O(N^2)
+over a run.) The recorded car did not follow the
   goals, so the revisit paths grow to 500 m: the replay checks the decisions on real scans, it
   does not evaluate exploration (P5 does).
 
@@ -251,6 +255,46 @@ repository while it settles; RNE write access was not available to this work).
   the well-known start. Next: the predicted-loop-edge gain, revisit targets the robot reached
   without a loop marked visited (as frontiers), then the preregistered evaluation (several worlds
   and seeds).
+
+Done (2026-11-26), second round: the predicted revisit gain, and what the loop showed next.
+
+- Predicted gain: `optimizePoseGraph` also returns Cov(x_i, x_newest) for every submap; from the
+  joint covariance of k and the newest, `pose_graph_uncertainty::predictedCovarianceAfterLoop`
+  gives the newest submap's covariance after a loop edge k -> newest (one Gaussian update,
+  Woodbury). Test: equal to re-solving the graph with that edge within 2e-3 relative. A revisit's
+  gain is now the predicted fraction of the newest sigma removed (unitless; the weight carries
+  over between parameter sets), with `exploration_min_predicted_drop` (0.2) and
+  `exploration_predicted_loop_fitness` (0.2, the information of the predicted edge).
+- Revisit targets the robot reached in revisit mode without a loop edge are tried and dropped
+  until the mode ends (`exploration_revisit_reached_radius` 2 m, `_tried_radius` 3 m).
+- Revisit targets must be farther back in travel than the loop search's `distance_loop_closure`
+  (set from it): the car preset searches loops 100 m of travel apart, the walking preset 60 m;
+  a revisit 30 m back cannot close a loop, and the first runs chased exactly those.
+- In revisit mode frontiers and revisits compete by utility (before, any revisit won).
+- The simulation now uses the indoor graph preset too (`lidarslam_mid360_rko_graph_walking`),
+  with `exploration_inflation_radius` 0.8 m (0.6 m let the SLAM's 0.5 m side error put the robot
+  into a block corner, repeatedly) and a goal rejection after 3 collisions on one goal
+  (`Session.reject_exploration_goal`, as a navigation stack aborts a goal). Sigma on this preset
+  is ~25 times smaller than on the car preset (0.09 after 80 m vs 2.3): the triggers are 0.05 /
+  0.02 here.
+- Runs (one seed each, 400 s; `grid`: 3 m corridors around a 3 x 2 grid of blocks, 57 x 35 m):
+
+  | world | policy | coverage | distance | live error RMSE / max | loop edges |
+  | --- | --- | --- | --- | --- | --- |
+  | ring | active | 99.3 % | 175 m | 0.16 / 0.34 m | 2 |
+  | ring | nearest frontier | 99.95 % (done at 377 s) | 201 m | 0.25 / 0.44 m | 2 |
+  | grid | active | 84.7 % | 246 m | 0.22 / 0.54 m | 1 |
+  | grid | nearest frontier | 74.3 % | 225 m | 0.12 / 0.33 m | 1 |
+
+  **The active runs never chose a revisit** (0 frames in revisit goals): at these weights a
+  frontier ahead always had the higher utility. The differences above come from the frontier
+  choice alone (the active policy counts the unknown area, the baseline only the distance), not
+  from uncertainty-driven revisits, and one seed per cell does not separate them from chance.
+- Next: (1) preregister the evaluation (P0): worlds, seeds (start pose and noise), budget,
+  metrics and the success rule, fixed before the runs; (2) an ablation that isolates the
+  revisits (frontier utility with and without revisits), and worlds where exploring forward does
+  not close loops by itself (long out-and-back branches, a large loop with drift); (3) calibrate
+  the revisit weight against the frontier utility on development seeds only.
 
 ## Demo GIF (the deliverable that shows the result)
 

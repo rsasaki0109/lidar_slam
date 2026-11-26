@@ -138,6 +138,11 @@ public:
   // any output file.
   ExplorationDecision decideExploration(const Eigen::Vector2d & robot_xy);
 
+  // The robot could not reach a goal decideExploration gave (blocked, collided, timed out): it
+  // is not chosen again (frontier goals within exploration_visited_radius of it, revisit targets
+  // within exploration_revisit_tried_radius until revisit mode ends).
+  void rejectExplorationGoal(const Eigen::Vector2d & goal);
+
   // The explorer's coverage grid now: cell states (0 unknown, 1 free, 2 occupied) row by row
   // (y outer), cell (x0, y0) first, cells of `resolution` metres with integer coordinates
   // floor(world / resolution). Empty without active_exploration_timeline.
