@@ -27,6 +27,23 @@ the package too: `python -m lidarslam backend` replays each run's recorded backe
 `python -m lidarslam join` takes the parameters of the ROS 2 `graph_slam_multisession_join`
 (`--params FILE -p name:=value`) and writes the same files.
 
+A log with a camera becomes a scene for 3D Gaussian Splatting, posed by LiDAR SLAM instead of
+structure from motion (`pip install "./lidarslam_core[gsplat]"` for Pillow):
+
+```bash
+python -m lidarslam map LOG --odometry-params P --backend-params P --out RUN
+python -m lidarslam colmap LOG --run RUN --image-topic /camera/image_raw/compressed --out SCENE \
+    [--base-frame base_link] [--every 2] [--scale 0.5]
+```
+
+`SCENE` is COLMAP's text model (`images/`, `sparse/0/cameras.txt images.txt points3D.txt`), as
+3DGS trainers read it. Each image is posed at its header stamp: the run's optimised keyframes,
+odometry carried in between, and the camera's optical frame on `--base-frame` from the log's
+`/tf_static` (or `--extrinsic x y z qx qy qz qw`). Intrinsics come from the CameraInfo next to
+the image topic; a distorted camera is written as `OPENCV`, `FULL_OPENCV` or `OPENCV_FISHEYE`.
+The initial points are the run's `map.pcd` within `--max-depth` of a camera, coloured from the
+images.
+
 `lidarslam-map` is the product command of the ROS 2 install: the package carries its scripts,
 schemas and parameter files under `lidarslam/share/lidarslam`, in the tree the ROS 2 package
 installs, from the same file lists (`lidarslam/product-runtime-files.txt`,

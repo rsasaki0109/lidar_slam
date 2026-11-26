@@ -15,6 +15,11 @@
                                         a long-term map store (lidarslam.store): list its
                                         sessions, export its Autoware bundle, take the latest
                                         session off the map
+  colmap <log> --run DIR --image-topic T --out OUT
+                                        a COLMAP scene for 3D Gaussian Splatting: the log's
+                                        camera posed by a lidar_slam run, its map as the
+                                        initial points (lidarslam.gsplat_export; needs
+                                        pip install "lidarslam[gsplat]")
   mcp STORE [--propose-only] [--author agent:NAME]
                                         an MCP server (stdio) for an agent to review the
                                         store's changes (lidarslam.mcp_server; needs
@@ -172,6 +177,30 @@ def main(argv: list[str] | None = None) -> int:
     store.add_argument('--file', help='apply-edit: the edit file (JSON)')
     store.add_argument('--force', action='store_true',
                        help='apply-edit: apply an edit made on an older state of the store')
+    colmap = sub.add_parser(
+        'colmap', help='COLMAP scene for 3D Gaussian Splatting from a camera log and a run')
+    colmap.add_argument('log', help='rosbag2 directory or ROS 1 .bag file with the camera')
+    colmap.add_argument('--run', required=True,
+                        help='output of map/live on the same log (trajectory_optimized.tum, '
+                             'odometry_tum.txt, map.pcd)')
+    colmap.add_argument('--image-topic', required=True,
+                        help='sensor_msgs/msg/Image or CompressedImage topic')
+    colmap.add_argument('--out', required=True, help='output directory')
+    colmap.add_argument('--camera-info-topic',
+                        help='CameraInfo topic (default: the image topic\'s camera_info)')
+    colmap.add_argument('--base-frame', default='base_link',
+                        help='frame the run tracks (the odometry base_frame)')
+    colmap.add_argument('--camera-frame',
+                        help='camera optical frame in /tf_static (default: CameraInfo frame_id)')
+    colmap.add_argument('--extrinsic', type=float, nargs=7,
+                        metavar=('X', 'Y', 'Z', 'QX', 'QY', 'QZ', 'QW'),
+                        help='camera optical frame in the base frame, instead of /tf_static')
+    colmap.add_argument('--every', type=int, default=1, help='keep every N-th image')
+    colmap.add_argument('--scale', type=float, default=1.0, help='resize images by this factor')
+    colmap.add_argument('--points', type=int, default=400000,
+                        help='at most this many initial points')
+    colmap.add_argument('--max-depth', type=float, default=40.0,
+                        help='initial points within this range of a camera')
     join = sub.add_parser(
         'join', help='multi-session join of backend inputs and their offline runs (no ROS 2)')
     join.add_argument('--params', action='append', default=[],
@@ -233,6 +262,15 @@ def main(argv: list[str] | None = None) -> int:
                                      start_near_first_submap=args.start_near_first_submap,
                                      refine_visibility=args.refine_visibility)
         print(json.dumps(summary, indent=2))
+    elif args.command == 'colmap':
+        from lidarslam.gsplat_export import export
+        summary = export(args.log, args.run, args.out, args.image_topic,
+                         camera_info_topic=args.camera_info_topic, base_frame=args.base_frame,
+                         camera_frame=args.camera_frame, extrinsic=args.extrinsic,
+                         every=args.every, scale=args.scale, points=args.points,
+                         max_depth=args.max_depth)
+        print(json.dumps({'images': summary.images, 'points': summary.points,
+                          'camera': summary.camera.line(), 'out': str(summary.out)}, indent=2))
     elif args.command == 'mcp':
         from lidarslam.mcp_server import build_server
         build_server(args.store, args.author, args.propose_only, args.min_voxels).run('stdio')

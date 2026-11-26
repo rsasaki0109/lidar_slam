@@ -4,6 +4,14 @@
 
 ### Added
 
+- `python -m lidarslam colmap` (`lidarslam.gsplat_export`): a COLMAP scene for
+  3D Gaussian Splatting from any log with a camera (`Image` or
+  `CompressedImage` with its `CameraInfo`), posed by a lidar_slam run instead of
+  structure from motion: keyframe poses with odometry in between at each image
+  stamp, the camera on the base frame from `/tf_static` or `--extrinsic`, and
+  the run's map near the cameras as coloured initial points. On a KITTI raw
+  drive it gives the poses of `scripts/export_kitti_colmap.py` to within 4 µm.
+  Pillow comes with the `gsplat` extra.
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
   the changes as object-sized clusters (old points removed, new points held
