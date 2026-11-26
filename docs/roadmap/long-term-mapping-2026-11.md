@@ -1819,3 +1819,16 @@ submaps within 1.5 m (every 5th pose; no ground truth):
 Every setting drifts by metres in the same stretch, with signs and sizes that change with the
 setting: height is barely observed there, so no single setting fixes it. One session only; no
 setting was changed.
+
+What the stretch looks like (every 10th scan in the base frame): until 200 s the scans reach
+15–22 m and 14–43% of their points lie within 0.3 m of the ground; from 200 to 320 s the median
+range drops to 3.3 m, with 6% near the ground and 2% above 3 m (a confined passage); after
+320 s the view opens again. The odometry pitch changes by about 16 degrees across the passage
+(median −1.0 degree before 320 s, −17.1 degrees from 320 to 370 s) and the path climbs from
+there: an attitude error picked up in the passage, not a slow drift in height.
+
+The bag starts while moving (RKO-LIO: "Moving start ... IMU biases left at zero"), and its
+world frame comes from 5 IMU samples. Re-estimating gravity from the first seconds of motion
+(`moving_start_gravity_window_sec`, used on GrandTour) finds it 15.3–15.4 degrees from that
+initial world z. With the window set to 5 s the drift is unchanged (95th percentile 3.40 m); with
+10 s it falls to 2.20 m (last part +1.40 m against +1.98 m). One session; no setting was changed.
