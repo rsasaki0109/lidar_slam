@@ -351,8 +351,11 @@ public:
   StoreRelocalizer(
     const std::vector<std::string> & directories,
     const std::vector<Eigen::Matrix4d> & transforms, const std::vector<Windows> & windows,
-    const std::vector<std::vector<Eigen::Matrix4d>> & optimized_poses)
-  : matcher_(load(directories, transforms, windows, optimized_poses, session_poses_)) {}
+    const std::vector<std::vector<Eigen::Matrix4d>> & optimized_poses,
+    const std::vector<std::vector<std::size_t>> & on_demand = {},
+    py::object loader = py::none())
+  : loader_(std::move(loader)),
+    matcher_(build(directories, transforms, windows, optimized_poses, on_demand)) {}
 
   const std::vector<std::vector<Eigen::Matrix4d>> & sessionPoses() const {return session_poses_;}
 
@@ -503,12 +506,56 @@ private:
     return query;
   }
 
+  // The matcher, with the keyframes of on_demand (per session, the submaps whose windows
+  // loader(session, submap) returns) read only when needed.
+  graphslam::multisession::StartupRelocalizer build(
+    const std::vector<std::string> & directories,
+    const std::vector<Eigen::Matrix4d> & transforms,
+    const std::vector<Windows> & windows,
+    const std::vector<std::vector<Eigen::Matrix4d>> & optimized_poses,
+    const std::vector<std::vector<std::size_t>> & on_demand)
+  {
+    if (!on_demand.empty() && (on_demand.size() != directories.size() || loader_.is_none())) {
+      throw std::invalid_argument("on_demand needs a loader and one submap list per session");
+    }
+    std::vector<bool> lazy;
+    auto frames = load(directories, transforms, windows, optimized_poses, session_poses_,
+        on_demand, &lazy, &keys_, &locals_);
+    if (on_demand.empty()) {
+      return graphslam::multisession::StartupRelocalizer(std::move(frames));
+    }
+    return graphslam::multisession::StartupRelocalizer(
+      std::move(frames), [this](std::size_t i) {return fetch(i);}, std::move(lazy));
+  }
+
+  std::vector<Eigen::Vector3f> fetch(std::size_t i) const
+  {
+    Scan scan;
+    {
+      py::gil_scoped_acquire gil;
+      scan = loader_(keys_.at(i).first, keys_.at(i).second).cast<Scan>();
+    }
+    std::vector<Eigen::Vector3f> points;
+    points.reserve(scan.rows());
+    for (Eigen::Index row = 0; row < scan.rows(); ++row) {
+      const Eigen::Vector3d xyz = locals_[i] * scan.row(row).transpose().cast<double>();
+      if (xyz.squaredNorm() < 1600.) {
+        points.push_back(xyz.cast<float>());
+      }
+    }
+    return points;
+  }
+
   static std::vector<graphslam::multisession::Keyframe> load(
     const std::vector<std::string> & directories,
     const std::vector<Eigen::Matrix4d> & transforms,
     const std::vector<Windows> & windows,
     const std::vector<std::vector<Eigen::Matrix4d>> & optimized_poses,
-    std::vector<std::vector<Eigen::Matrix4d>> & session_poses)
+    std::vector<std::vector<Eigen::Matrix4d>> & session_poses,
+    const std::vector<std::vector<std::size_t>> & on_demand = {},
+    std::vector<bool> * lazy = nullptr,
+    std::vector<std::pair<std::size_t, std::size_t>> * keys = nullptr,
+    std::vector<Eigen::Isometry3d> * locals = nullptr)
   {
     if (directories.size() != transforms.size() || directories.size() != windows.size() ||
       (!optimized_poses.empty() && directories.size() != optimized_poses.size()))
@@ -543,6 +590,20 @@ private:
             frame.points.push_back(xyz.cast<float>());
           }
         };
+        if (keys != nullptr) {
+          keys->emplace_back(i, j);
+          locals->push_back(local);
+        }
+        if (!on_demand.empty() &&
+          std::find(on_demand[i].begin(), on_demand[i].end(), j) != on_demand[i].end())
+        {
+          lazy->push_back(true);
+          frames.push_back(std::move(frame));
+          continue;
+        }
+        if (lazy != nullptr) {
+          lazy->push_back(false);
+        }
         if (const auto window = windows[i].find(j); window != windows[i].end()) {
           frame.points.reserve(window->second.rows());
           for (Eigen::Index row = 0; row < window->second.rows(); ++row) {
@@ -562,6 +623,9 @@ private:
   }
 
   std::vector<std::vector<Eigen::Matrix4d>> session_poses_;
+  std::vector<std::pair<std::size_t, std::size_t>> keys_;
+  std::vector<Eigen::Isometry3d> locals_;
+  py::object loader_;
   graphslam::multisession::StartupRelocalizer matcher_;
 };
 
@@ -720,9 +784,12 @@ void bind_backend(py::module_ & m)
   py::class_<StoreRelocalizer>(m, "StoreRelocalizer")
   .def(py::init<const std::vector<std::string> &, const std::vector<Eigen::Matrix4d> &,
     const std::vector<StoreRelocalizer::Windows> &,
-    const std::vector<std::vector<Eigen::Matrix4d>> &>(), py::arg("directories"),
+    const std::vector<std::vector<Eigen::Matrix4d>> &,
+    const std::vector<std::vector<std::size_t>> &, py::object>(), py::arg("directories"),
     py::arg("transforms"), py::arg("windows"),
-    py::arg("optimized_poses") = std::vector<std::vector<Eigen::Matrix4d>>{})
+    py::arg("optimized_poses") = std::vector<std::vector<Eigen::Matrix4d>>{},
+    py::arg("on_demand") = std::vector<std::vector<std::size_t>>{},
+    py::arg("loader") = py::none())
   .def("match", &StoreRelocalizer::match, py::arg("points"), py::arg("prior"))
   .def("match_with_reference", &StoreRelocalizer::matchWithReference)
   .def("match_near_launch", &StoreRelocalizer::matchNearLaunch)

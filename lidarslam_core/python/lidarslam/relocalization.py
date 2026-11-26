@@ -122,16 +122,31 @@ class StartupRelocalization:
         self._executor = ThreadPoolExecutor(max_workers=1) if anywhere and background else None
         self._pending = None
         directories, transforms = zip(*aligned_sessions)
-        windows = []
-        for directory in directories:
-            path = Path(directory) / 'keyframe_windows.npz'
-            if path.is_file():
-                with np.load(path, allow_pickle=False) as data:
-                    windows.append({int(index): data[index] for index in data.files})
-            else:
-                windows.append({})
-        self.matcher = _core.StoreRelocalizer(directories, transforms, windows,
-                                              [tracked_poses(path) for path in directories])
+        poses = [tracked_poses(path) for path in directories]
+        archives = [Path(directory) / 'keyframe_windows.npz' for directory in directories]
+        if shared_surfaces:
+            windows = []
+            for path in archives:
+                if path.is_file():
+                    with np.load(path, allow_pickle=False) as data:
+                        windows.append({int(index): data[index] for index in data.files})
+                else:
+                    windows.append({})
+            self.matcher = _core.StoreRelocalizer(directories, transforms, windows, poses)
+        else:
+            # The stored keyframe windows are read when a keyframe is described or registered,
+            # not held: a store of many sessions would otherwise need them all in memory.
+            opened = [np.load(path, allow_pickle=False) if path.is_file() else None
+                      for path in archives]
+            on_demand = [sorted(int(index) for index in data.files) if data is not None else []
+                         for data in opened]
+
+            def loader(session, submap):
+                return opened[session][str(submap)]
+
+            self.matcher = _core.StoreRelocalizer(directories, transforms, [{}] * len(opened),
+                                                  poses, on_demand, loader)
+            windows = []
         self._surfaces = None
         if shared_surfaces and sum(bool(window) for window in windows) >= 2:
             from lidarslam.shared_surfaces import SharedSurfaces
