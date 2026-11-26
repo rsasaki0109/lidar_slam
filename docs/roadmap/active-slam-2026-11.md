@@ -1,12 +1,16 @@
 # Active SLAM: choose where to go next from the SLAM's own uncertainty (2026-11)
 
+Purpose (maintainer, 2026-11-26): explore an unknown place autonomously and build an accurate
+map of it. Success is, for the same distance (or time) budget, more of the place covered and an
+accurate map (ATE, map quality) at once, against exploring by the nearest frontier alone.
+
 Goal: a robot that maps a place decides where to drive next from what the SLAM knows about
 itself: where the map is still unobserved, where the trajectory is weakly constrained, and where a
 revisit would close a loop. The SLAM proposes goals and scores them; driving there is left to an
 existing navigation stack (Nav2). This repository gains no motion planner or controller.
 
-Status: P1 in progress. Done: the offline pose-graph uncertainty report, and the backend's
-own uncertainty outputs (final graph and timeline) in the offline pipeline (below, P1 "Done").
+Status: P1 done except the live topic; P2/P3 first version done (`active_exploration.hpp`,
+below, P3 "Done"); P4/P5 not started.
 
 Decisions (maintainer, 2026-11-26):
 
@@ -143,6 +147,45 @@ coverage/frontiers from the surfel evidence.
 - Mode switch explore -> relocalize when the uncertainty exceeds a threshold, back with
   hysteresis.
 - Pure functions, unit-tested with synthetic graphs (`synthetic_degeneracy_fixtures.hpp`).
+
+Done (2026-11-26), first version of P2 and P3: `active_exploration.hpp` (ROS-free, Eigen only).
+
+- Coverage grid: each submap scan's points cast as rays from the sensor onto the ground plane
+  (ground points free the whole ray; points in an obstacle height band mark a hit; higher
+  points are ignored), hit / pass counts per cell, growing as scans arrive.
+- Path lengths: Dijkstra on free cells, obstacles inflated (not around the robot itself).
+- Frontiers: free cells next to unknown ones, 8-connected clusters; goal = the reachable
+  frontier cell nearest the centroid; gain = unknown area within `gain_radius`.
+- Revisit targets (in revisit mode only): submaps at least `min_index_gap` older than the newest,
+  with sigma at most `anchor_sigma_ratio` x the newest's, at least `min_revisit_distance` away
+  and reachable; gain = newest sigma minus theirs.
+- Selection: `info_weight * unknown area + uncertainty_weight * sigma drop - distance_weight *
+  path length`; revisit mode from `revisit_trigger_sigma`, back below `revisit_release_sigma`.
+- Tests (`test_active_exploration.cpp`, synthetic 2D LiDAR rooms): walls / free / unknown, a
+  closed room is explored, a doorway is the frontier, paths go around walls, the closer of two
+  equal frontiers wins, revisit with hysteresis, the grid grows without losing cells,
+  deterministic decisions.
+- Replay on recorded runs: `active_exploration_timeline` (with `pose_uncertainty_timeline`)
+  writes `active_exploration_timeline.csv`, the goal it would choose at every graph state
+  (`exploration_*` parameters). On the 1.1 km MID-360 drive (trigger 30, release 10, the other
+  settings default): it explores by frontiers about 20 m away while sigma < 30 (274 states),
+  then asks to revisit (362 states); 40 m before the recorded car reaches its start it asks to
+  go back to submaps 12-13 at the start, and when the recorded loop closes (sigma 74 -> 1.4) it
+  returns to exploring. Two replays give the same bytes, and with the parameter off the
+run's other outputs are byte-identical. The recorded car did not follow the
+  goals, so the revisit paths grow to 500 m: the replay checks the decisions on real scans, it
+  does not evaluate exploration (P5 does).
+
+Known limits of this version, next in P3:
+
+- The revisit gain is the sigma difference to the target, a stand-in. It prefers recent targets
+  with half the newest sigma over the well-known start far away. Replace it by the plan's
+  measure: add the predicted loop edge to the graph and compute the newest sigma (or log det)
+  it would give.
+- The sigma thresholds are in the units of the edge information weights, so they are set per
+  parameter set (30 / 10 on the MID-360 preset; 0.15 / 0.05 on the synthetic room).
+- The grid uses each submap's odometry pose as created; after a loop closure it is not moved
+  to the optimized poses.
 
 ### P4. `lidarslam_active` node
 

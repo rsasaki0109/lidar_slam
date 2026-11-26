@@ -55,6 +55,7 @@
 #include <vector>
 
 
+#include "graph_based_slam/active_exploration.hpp"
 #include "graph_based_slam/backend_core.hpp"
 #include "graph_based_slam/backend_registration_preflight.hpp"
 #include "graph_based_slam/cloud_compression_core.hpp"
@@ -506,6 +507,19 @@ struct RunnerConfig
   // the in-line loop search (not background_loop_search), so it is deterministic.
   bool pose_uncertainty_timeline = false;
   int pose_uncertainty_timeline_every_n_submaps = 1;
+
+  // active_exploration_timeline (with pose_uncertainty_timeline): active_exploration_timeline.csv,
+  // at every timeline state the goal the explorer (active_exploration.hpp) would choose next.
+  // Report-only and a replay: the recorded robot did not go there. The coverage grid holds
+  // each submap's scan at its odometry pose as the submap is created; the revisit targets are
+  // the submaps' odometry positions with the state's sigmas.
+  bool active_exploration_timeline = false;
+  graphslam::active_exploration::CoverageGridConfig exploration_grid;
+  graphslam::active_exploration::PlannerConfig exploration_planner;
+  graphslam::active_exploration::FrontierConfig exploration_frontier;
+  graphslam::active_exploration::SelectionConfig exploration_selection;
+  // At most this many points of a submap's scan go into the coverage grid (every n-th).
+  int exploration_max_points_per_scan = 8000;
 };
 
 // Reads the bag and output locations and the registration and submap
@@ -1302,6 +1316,50 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or(
     "pose_uncertainty_timeline_every_n_submaps",
     config.pose_uncertainty_timeline_every_n_submaps, 1);
+  // See RunnerConfig::active_exploration_timeline; the exploration_* parameters are the fields
+  // of active_exploration.hpp's configs. A revisit trigger <= 0 means never revisit.
+  node.get_parameter_or(
+    "active_exploration_timeline", config.active_exploration_timeline, false);
+  auto & grid = config.exploration_grid;
+  node.get_parameter_or("exploration_grid_resolution", grid.resolution, grid.resolution);
+  node.get_parameter_or("exploration_ground_max_z", grid.ground_max_z, grid.ground_max_z);
+  node.get_parameter_or("exploration_obstacle_min_z", grid.obstacle_min_z, grid.obstacle_min_z);
+  node.get_parameter_or("exploration_obstacle_max_z", grid.obstacle_max_z, grid.obstacle_max_z);
+  node.get_parameter_or("exploration_max_range", grid.max_range, grid.max_range);
+  node.get_parameter_or(
+    "exploration_inflation_radius", config.exploration_planner.inflation_radius,
+    config.exploration_planner.inflation_radius);
+  node.get_parameter_or(
+    "exploration_frontier_min_cells", config.exploration_frontier.min_cells,
+    config.exploration_frontier.min_cells);
+  node.get_parameter_or(
+    "exploration_gain_radius", config.exploration_frontier.gain_radius,
+    config.exploration_frontier.gain_radius);
+  auto & selection = config.exploration_selection;
+  node.get_parameter_or("exploration_info_weight", selection.info_weight, selection.info_weight);
+  node.get_parameter_or(
+    "exploration_uncertainty_weight", selection.uncertainty_weight,
+    selection.uncertainty_weight);
+  node.get_parameter_or(
+    "exploration_distance_weight", selection.distance_weight, selection.distance_weight);
+  double revisit_trigger = 0.0;
+  node.get_parameter_or("exploration_revisit_trigger_sigma", revisit_trigger, 0.0);
+  selection.revisit_trigger_sigma =
+    revisit_trigger > 0.0 ? revisit_trigger : std::numeric_limits<double>::infinity();
+  node.get_parameter_or(
+    "exploration_revisit_release_sigma", selection.revisit_release_sigma,
+    selection.revisit_release_sigma);
+  node.get_parameter_or(
+    "exploration_min_index_gap", selection.min_index_gap, selection.min_index_gap);
+  node.get_parameter_or(
+    "exploration_anchor_sigma_ratio", selection.anchor_sigma_ratio,
+    selection.anchor_sigma_ratio);
+  node.get_parameter_or(
+    "exploration_min_revisit_distance", selection.min_revisit_distance,
+    selection.min_revisit_distance);
+  node.get_parameter_or(
+    "exploration_max_points_per_scan", config.exploration_max_points_per_scan,
+    config.exploration_max_points_per_scan);
 }
 
 // The resolver and session are shell-owned.  Declaration order is
@@ -1637,6 +1695,11 @@ struct BagPass
   // since the last one, and whether a loop search changed the loop edges since then.
   std::ofstream uncertainty_timeline;
   std::ofstream uncertainty_timeline_loops;
+
+  // active_exploration_timeline state.
+  graphslam::active_exploration::CoverageGrid exploration_grid;
+  graphslam::active_exploration::ExplorerState explorer_state;
+  std::ofstream exploration_timeline;
   std::size_t uncertainty_timeline_steps = 0U;
   int submaps_since_uncertainty = 0;
   bool loop_edges_changed_since_uncertainty = false;
@@ -1684,6 +1747,15 @@ struct BagPass
         uncertainty_timeline_loops.open(
           config.output_dir + "/pose_uncertainty_timeline_loops.csv");
         uncertainty_timeline_loops << "step,from,to\n";
+        if (config.active_exploration_timeline) {
+          exploration_grid =
+            graphslam::active_exploration::CoverageGrid(config.exploration_grid.resolution);
+          exploration_timeline.open(config.output_dir + "/active_exploration_timeline.csv");
+          exploration_timeline <<
+            "step,stamp_sec,submaps,newest_sigma,revisit_mode,status,kind,source,goal_x,goal_y,"
+            "path_length,unknown_area,uncertainty_drop,utility,frontiers,reachable_frontiers,"
+            "revisit_candidates\n";
+        }
       }
     }
   }
@@ -1798,6 +1870,7 @@ struct BagPass
     if (uncertainty_timeline.is_open()) {
       uncertainty_timeline.close();
       uncertainty_timeline_loops.close();
+      exploration_timeline.close();
       GRAPHSLAM_LOG_INFO(
         logger, "Pose uncertainty timeline: %zu graph states", uncertainty_timeline_steps);
     }
@@ -1879,6 +1952,9 @@ struct BagPass
         cloud_msg, config.submap_cloud_max_error_m, bag.cloud_stats);
       bag.cloud_stats.pcl_bytes += scan_cloud->size() * sizeof(pcl::PointXYZI);
       bag.records.push_back(record);
+      if (exploration_timeline.is_open()) {
+        addToExplorationGrid(record.meta.pose, *scan_cloud);
+      }
       // Only the latest search_submap_num submaps keep their PCL cloud.
       const std::size_t kept = static_cast<std::size_t>(
         std::max(1, config.search_config.search_submap_num));
@@ -2051,7 +2127,71 @@ struct BagPass
       uncertainty_timeline_loops << uncertainty_timeline_steps << ',' << constraint.from << ',' <<
         constraint.to << '\n';
     }
+    if (exploration_timeline.is_open()) {
+      writeExplorationDecision(stamp_sec, result);
+    }
     ++uncertainty_timeline_steps;
+  }
+
+  // active_exploration_timeline: a new submap's scan into the coverage grid.
+  void addToExplorationGrid(
+    const Eigen::Affine3d & pose, const pcl::PointCloud<pcl::PointXYZI> & cloud)
+  {
+    graphslam::active_exploration::SubmapScan scan;
+    scan.pose = Eigen::Isometry3d(pose.matrix());
+    const std::size_t limit = static_cast<std::size_t>(
+      std::max(1, config.exploration_max_points_per_scan));
+    const std::size_t stride = (cloud.size() + limit - 1U) / limit;
+    scan.points.reserve(cloud.size() / std::max<std::size_t>(1U, stride) + 1U);
+    for (std::size_t i = 0; i < cloud.size(); i += std::max<std::size_t>(1U, stride)) {
+      scan.points.emplace_back(cloud.points[i].x, cloud.points[i].y, cloud.points[i].z);
+    }
+    exploration_grid.addScan(scan, config.exploration_grid);
+  }
+
+  // active_exploration_timeline: the goal the explorer would choose for this graph state.
+  void writeExplorationDecision(
+    double stamp_sec, const graphslam::pose_graph::OptimizationResult & result)
+  {
+    namespace ae = graphslam::active_exploration;
+    const auto report = graphslam::pose_graph_uncertainty::reportFromMarginals(
+      result.poses, result.marginal_covariances);
+    ae::GraphUncertainty graph;
+    for (std::size_t i = 0; i < bag.records.size(); ++i) {
+      graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
+      graph.sigma.push_back(report.per_vertex[i].sigma_translation_max);
+    }
+    const ae::PathField paths(
+      exploration_grid, config.exploration_grid, config.exploration_planner,
+      graph.positions.back());
+    const std::vector<ae::Frontier> frontiers = ae::findFrontiers(
+      exploration_grid, config.exploration_grid, paths, config.exploration_frontier);
+    const ae::Decision decision = ae::selectGoal(
+      paths, frontiers, graph, config.exploration_selection, explorer_state);
+    std::size_t reachable = 0U;
+    std::size_t revisits = 0U;
+    for (const ae::GoalCandidate & c : decision.candidates) {
+      reachable += c.kind == ae::GoalKind::FRONTIER ? 1U : 0U;
+      revisits += c.kind == ae::GoalKind::REVISIT ? 1U : 0U;
+    }
+    const char * status = decision.status == ae::Decision::Status::GOAL ? "goal" :
+      decision.status == ae::Decision::Status::EXPLORATION_DONE ? "exploration_done" :
+      "no_reachable_goal";
+    std::ostringstream row;
+    row.setf(std::ios::fixed);
+    row.precision(6);
+    row << uncertainty_timeline_steps << ',' << stamp_sec << ',' << bag.records.size() << ',' <<
+      graph.sigma.back() << ',' << (decision.revisit_mode ? 1 : 0) << ',' << status << ',';
+    if (decision.chosen >= 0) {
+      const ae::GoalCandidate & c = decision.candidates[static_cast<std::size_t>(decision.chosen)];
+      row << (c.kind == ae::GoalKind::FRONTIER ? "frontier" : "revisit") << ',' << c.source <<
+        ',' << c.goal.x() << ',' << c.goal.y() << ',' << c.path_length << ',' <<
+        c.unknown_area << ',' << c.uncertainty_drop << ',' << c.utility;
+    } else {
+      row << ",,,,,,,";
+    }
+    row << ',' << frontiers.size() << ',' << reachable << ',' << revisits << '\n';
+    exploration_timeline << row.str();
   }
 
   bool backgroundLoopSearch() const

@@ -27,6 +27,12 @@
   `lidarslam/images/pose_uncertainty_mid360_drive.gif` is the 1.1 km public MID-360 drive,
   where the newest submap's sigma drops from 74 to 1.4 at the loop closure
   (`docs/readme-media.md`).
+- Active exploration decisions (active SLAM P2/P3, first version): `active_exploration.hpp`
+  builds a 2D coverage grid from the submap scans, finds frontiers and revisit targets, plans
+  path lengths, and picks the next goal by utility (unknown area, uncertainty drop, path
+  length) with a revisit mode while the newest submap's sigma is high. The offline parameter
+  `active_exploration_timeline` replays its decisions on a recorded run
+  (`active_exploration_timeline.csv`, `exploration_*` parameters). Report-only, off by default.
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists

@@ -653,6 +653,13 @@ if(BUILD_TESTING)
     )
   endif()
   ament_add_gtest(
+    test_active_exploration
+    test/test_active_exploration.cpp
+  )
+  if(TARGET test_active_exploration)
+    target_include_directories(test_active_exploration PRIVATE include ${EIGEN3_INCLUDE_DIR})
+  endif()
+  ament_add_gtest(
     test_pose_graph_uncertainty
     test/test_pose_graph_uncertainty.cpp
   )

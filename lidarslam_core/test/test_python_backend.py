@@ -167,7 +167,8 @@ def test_pose_uncertainty_outputs(tmp_path: Path) -> None:
         encoding='utf-8')
     base = load_parameters(params_file)
     on = apply_overrides(  # apply_overrides changes the dict it is given
-        dict(base), ['pose_uncertainty_output:=true', 'pose_uncertainty_timeline:=true'])
+        dict(base), ['pose_uncertainty_output:=true', 'pose_uncertainty_timeline:=true',
+                     'active_exploration_timeline:=true'])
     run(log, base, tmp_path / 'off', log=lambda level, msg: None)
     run(log, on, tmp_path / 'on1', log=lambda level, msg: None)
     run(log, on, tmp_path / 'on2', log=lambda level, msg: None)
@@ -175,7 +176,8 @@ def test_pose_uncertainty_outputs(tmp_path: Path) -> None:
     off, on1, on2 = (_digests(tmp_path / d) for d in ('off', 'on1', 'on2'))
     assert on1 == on2
     added = {'pose_uncertainty.csv', 'pose_uncertainty_summary.yaml',
-             'pose_uncertainty_timeline.csv', 'pose_uncertainty_timeline_loops.csv'}
+             'pose_uncertainty_timeline.csv', 'pose_uncertainty_timeline_loops.csv',
+             'active_exploration_timeline.csv'}
     assert set(on1) - set(off) == added
     assert {name: on1[name] for name in off} == off  # every other output unchanged
 
@@ -195,6 +197,12 @@ def test_pose_uncertainty_outputs(tmp_path: Path) -> None:
     assert closing, 'the second lap closes a loop'
     first = closing[0]
     assert newest[first][1] < 0.5 * newest[first - 1][1]
+
+    # The room is in view from the start: no frontier is left, so the explorer is done; it
+    # never revisits (no trigger set).
+    decisions = (tmp_path / 'on1' / 'active_exploration_timeline.csv').read_text().splitlines()
+    assert len(decisions) == 1 + len(steps)
+    assert all(',exploration_done,' in row for row in decisions[1:])
 
 
 def test_parameter_types_follow_rclcpp(tmp_path: Path) -> None:
