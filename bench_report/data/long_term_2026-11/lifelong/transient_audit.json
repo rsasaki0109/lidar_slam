@@ -1,0 +1,194 @@
+{
+ "voxel_m": 0.75,
+ "radius_m": 15.0,
+ "min_chances": 5,
+ "sessions": 20,
+ "points": 32729112,
+ "cells": 448644,
+ "eligible_points": 28228193,
+ "single_session_points": 1157436,
+ "single_session_points_pct_of_eligible": 4.1,
+ "single_session_cells_pct_of_eligible": 30.89,
+ "support_histogram_eligible_cells": [
+  0,
+  83321,
+  28511,
+  21213,
+  16063,
+  14181,
+  13998,
+  13432,
+  12542,
+  10800,
+  9611,
+  7965,
+  7661,
+  7178,
+  5787,
+  4240,
+  3437,
+  3153,
+  2822,
+  2295,
+  1506
+ ],
+ "by_height": [
+  {
+   "band": "ground (< 0.3 m)",
+   "eligible_points": 1064944,
+   "single_session_pct": 38.51
+  },
+  {
+   "band": "people and cars (0.3-2.2 m)",
+   "eligible_points": 8503389,
+   "single_session_pct": 2.12
+  },
+  {
+   "band": "high (> 2.2 m)",
+   "eligible_points": 18659860,
+   "single_session_pct": 3.04
+  }
+ ],
+ "by_session": [
+  {
+   "session": 0,
+   "day": "2012-01-15",
+   "points": 1075818,
+   "single_session_points": 1453,
+   "single_session_pct_of_own_eligible": 0.15
+  },
+  {
+   "session": 1,
+   "day": "2012-01-22",
+   "points": 1375781,
+   "single_session_points": 3407,
+   "single_session_pct_of_own_eligible": 0.31
+  },
+  {
+   "session": 2,
+   "day": "2012-02-02",
+   "points": 1969713,
+   "single_session_points": 6601,
+   "single_session_pct_of_own_eligible": 0.38
+  },
+  {
+   "session": 3,
+   "day": "2012-02-05",
+   "points": 2094995,
+   "single_session_points": 10529,
+   "single_session_pct_of_own_eligible": 0.62
+  },
+  {
+   "session": 4,
+   "day": "2012-02-18",
+   "points": 1873122,
+   "single_session_points": 6025,
+   "single_session_pct_of_own_eligible": 0.45
+  },
+  {
+   "session": 5,
+   "day": "2012-03-17",
+   "points": 1228812,
+   "single_session_points": 1248,
+   "single_session_pct_of_own_eligible": 0.12
+  },
+  {
+   "session": 6,
+   "day": "2012-03-25",
+   "points": 1347155,
+   "single_session_points": 60866,
+   "single_session_pct_of_own_eligible": 5.19
+  },
+  {
+   "session": 7,
+   "day": "2012-03-31",
+   "points": 1148347,
+   "single_session_points": 249534,
+   "single_session_pct_of_own_eligible": 25.59
+  },
+  {
+   "session": 8,
+   "day": "2012-05-11",
+   "points": 1595028,
+   "single_session_points": 108640,
+   "single_session_pct_of_own_eligible": 8.02
+  },
+  {
+   "session": 9,
+   "day": "2012-05-26",
+   "points": 1322322,
+   "single_session_points": 11986,
+   "single_session_pct_of_own_eligible": 1.05
+  },
+  {
+   "session": 10,
+   "day": "2012-06-15",
+   "points": 1636136,
+   "single_session_points": 2503,
+   "single_session_pct_of_own_eligible": 0.18
+  },
+  {
+   "session": 11,
+   "day": "2012-08-04",
+   "points": 1198780,
+   "single_session_points": 3120,
+   "single_session_pct_of_own_eligible": 0.3
+  },
+  {
+   "session": 12,
+   "day": "2012-08-20",
+   "points": 1601446,
+   "single_session_points": 2995,
+   "single_session_pct_of_own_eligible": 0.21
+  },
+  {
+   "session": 13,
+   "day": "2012-09-28",
+   "points": 1926734,
+   "single_session_points": 78034,
+   "single_session_pct_of_own_eligible": 4.62
+  },
+  {
+   "session": 14,
+   "day": "2012-10-28",
+   "points": 1820145,
+   "single_session_points": 3520,
+   "single_session_pct_of_own_eligible": 0.22
+  },
+  {
+   "session": 15,
+   "day": "2012-11-04",
+   "points": 1752531,
+   "single_session_points": 3450,
+   "single_session_pct_of_own_eligible": 0.22
+  },
+  {
+   "session": 16,
+   "day": "2012-11-16",
+   "points": 2124672,
+   "single_session_points": 355413,
+   "single_session_pct_of_own_eligible": 18.71
+  },
+  {
+   "session": 17,
+   "day": "2012-11-17",
+   "points": 1628516,
+   "single_session_points": 129647,
+   "single_session_pct_of_own_eligible": 9.16
+  },
+  {
+   "session": 18,
+   "day": "2012-12-01",
+   "points": 1837034,
+   "single_session_points": 62792,
+   "single_session_pct_of_own_eligible": 3.8
+  },
+  {
+   "session": 19,
+   "day": "2013-02-23",
+   "points": 2172025,
+   "single_session_points": 55673,
+   "single_session_pct_of_own_eligible": 2.88
+  }
+ ]
+}

@@ -337,3 +337,49 @@ def test_refined_visibility_counts_free_space_before_first_hit(tmp_path: Path) -
 
     assert store.rollback()['id'] == '0001'
     assert _bundle_files(path / 'export') == original
+
+
+def test_height_differences_compare_overlapping_paths() -> None:
+    from lidarslam.height_check import height_differences
+    reference = np.array([[x, 0., 0.] for x in np.arange(0., 10., .5)])
+    # The update follows the same line, 2 m higher after x = 5, and leaves it at x = 20.
+    update = np.array([[x, .1, 2. if x >= 5. else 0.] for x in np.arange(0., 25., 1.)])
+    differences = height_differences(reference, update)
+    assert len(differences) == 10  # x = 0..9; the reference ends at 9.5
+    assert np.allclose(differences, [0.] * 5 + [2.] * 5)
+
+
+def test_height_check_keeps_a_drifting_session_out(tmp_path: Path, monkeypatch) -> None:
+    from lidarslam import height_check
+    log = tmp_path / 'log'
+    _write_log(log)
+    store_path = tmp_path / 'store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=store_path)
+    export = _bundle_files(store_path / 'export')
+
+    checked = []
+
+    def drifting(aligned, directory, transform, limit):
+        checked.append((len(aligned), Path(directory).name, limit))
+        return {'compared_submaps': 30, 'limit_m': limit, 'refused': True,
+                'median_dz_m': 1.0, 'p95_abs_dz_m': 3.0}
+
+    monkeypatch.setattr(height_check, 'check', drifting)
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          detect_changes=True)
+    assert checked == [(1, '0001', live.MAX_HEIGHT_DRIFT_M)]
+    assert '3.0 m height difference' in summary['store_refused']
+    assert 'store_session' not in summary
+    store = Store.open(store_path)
+    assert len(store.sessions) == 1
+    assert (store.session_dir('0001') / 'submaps.bin').is_file()  # written, not committed
+    assert (tmp_path / 'update' / 'odometry_tum.txt').stat().st_size > 0
+    assert _bundle_files(store_path / 'export') == export
+
+    # Turned off, the same update joins the store.
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          detect_changes=True, max_height_drift=0)
+    assert len(checked) == 1 and 'store_refused' not in summary
+    assert len(Store.open(store_path).sessions) == 2
