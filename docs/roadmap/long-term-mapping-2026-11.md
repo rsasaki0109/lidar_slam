@@ -1800,3 +1800,22 @@ the sessions before it (development):
 
 The check takes 1–2.5 s on this store. It keeps a drifted session from spoiling the map; it does
 not repair the session.
+
+#### Odometry settings against the 2012-03-31 climb (exploratory, development, 2026-11-26)
+
+`python -m lidarslam odometry` on `bags/2012-03-31_live2in` with one RKO-LIO setting changed at a
+time, placed by the lifelong store transform of session 0007, against the first seven sessions'
+submaps within 1.5 m (every 5th pose; no ground truth):
+
+| Setting | 95th pct. \|dz\| | Median dz after 320 s | End minus start height |
+| --- | ---: | ---: | ---: |
+| `rko_lio_nclt.yaml` | 3.44 m | +1.98 m | +8.58 m |
+| `inertial_window: true` | 5.91 m | −4.19 m | −6.88 m |
+| `degeneracy_aware_solve: true` | 2.77 m | +1.38 m | +5.31 m |
+| `icp_levenberg_marquardt: true` | 3.06 m | +2.42 m | +5.81 m |
+| `voxel_size: 0.3` | 5.07 m | +3.57 m | +9.93 m |
+| `max_range: 120` | 2.19 m | +1.24 m | +6.96 m |
+
+Every setting drifts by metres in the same stretch, with signs and sizes that change with the
+setting: height is barely observed there, so no single setting fixes it. One session only; no
+setting was changed.
