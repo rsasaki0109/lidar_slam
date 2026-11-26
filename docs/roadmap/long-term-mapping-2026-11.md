@@ -1847,3 +1847,33 @@ initial world z. With the window set to 5 s the drift is unchanged (95th percent
   95th percentile falls by at least 20% from A, no more sessions are above 1.5 m than with A, and no
   session rises by more than 0.5 m. Then `rko_lio_nclt.yaml` takes the window; otherwise it stays.
   The result is reported whatever it is.
+
+#### Results of the moving-start gravity check (2026-11-26)
+
+All 19 updates start while moving; with the 10 s window RKO-LIO re-estimated gravity 1.1–15.3
+degrees from the initial world z (median 4.8). Per-session 95th percentile of |dz| (m):
+
+| Update | A | G | | Update | A | G |
+| --- | ---: | ---: | --- | --- | ---: | ---: |
+| 2012-01-22 | 1.10 | 1.38 | | 2012-08-04 | 0.60 | 0.61 |
+| 2012-02-02 | 0.76 | 0.79 | | 2012-08-20 | 2.34 | 1.25 |
+| 2012-02-05 | 2.79 | 1.63 | | 2012-09-28 | 0.96 | 0.94 |
+| 2012-02-18 | 0.78 | 1.09 | | 2012-10-28 | 0.45 | 0.46 |
+| 2012-03-17 | 0.91 | 1.11 | | 2012-11-04 | 0.80 | 0.86 |
+| 2012-03-25 | 1.66 | 1.61 | | 2012-11-16 | 1.65 | 0.48 |
+| 2012-03-31 | 4.24 | 2.72 | | 2012-11-17 | 3.29 | 3.52 |
+| 2012-05-11 | 3.18 | 2.55 | | 2012-12-01 | 2.16 | 1.03 |
+| 2012-05-26 | 0.64 | 0.68 | | 2013-02-23 | 0.66 | 0.63 |
+| 2012-06-15 | 3.08 | 0.78 | | | | |
+
+| Over 19 updates | A | G | Rule |
+| --- | ---: | ---: | --- |
+| median of the 95th percentiles | 1.10 m | 1.03 m (−6.6%) | needs −20%: **fails** |
+| sessions above 1.5 m | 9 | 5 | met |
+| largest rise | — | +0.31 m | met (≤ 0.5 m) |
+
+Under the preregistered rule G does **not** reduce the height drift, and `rko_lio_nclt.yaml`
+stays as it is. What the rule did not capture: the window mostly acts on the worst sessions
+(2012-06-15 3.08 → 0.78 m, 2012-11-16 1.65 → 0.48 m, 2012-02-05, 08-20 and 12-01 by about 1.1 m
+each) while the well-behaved ones move by a few tenths either way, so the median barely changes.
+A rule on the tail would have to be set before another run on other sessions.
