@@ -1877,3 +1877,17 @@ stays as it is. What the rule did not capture: the window mostly acts on the wor
 (2012-06-15 3.08 → 0.78 m, 2012-11-16 1.65 → 0.48 m, 2012-02-05, 08-20 and 12-01 by about 1.1 m
 each) while the well-behaved ones move by a few tenths either way, so the median barely changes.
 A rule on the tail would have to be set before another run on other sessions.
+
+#### Second check of moving-start gravity, on the gate area (preregistered 2026-11-26, before the runs)
+
+The first check's rule looked at the median and missed the tail. Sessions not used there: the
+gate area of the Scan Context check (base `bags/gate_base`, store `stores/gate_store`) and its
+four updates that anchored (`2012-02-04_gatein`, `2012-02-19_gatein`, `2013-01-10_gatein`,
+`2013-04-05_gatein`, each with the store transform it committed in `stores/any_gate_DAY_in`).
+
+- **Arms:** as before, A (`rko_lio_nclt.yaml`) and G (`moving_start_gravity_window_sec: 10.0`).
+- **Measure:** as before (`odometry_height.py`), against the base session's submaps only.
+- **Rule:** G **reduces the height drift** when its 95th percentile of |dz| is lower than A's in at
+  least three of the four updates and no update rises by more than 0.5 m. Then
+  `rko_lio_nclt.yaml` takes the window. Four sessions against one reference make this a small
+  check; the result is reported whatever it is.
