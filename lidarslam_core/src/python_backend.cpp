@@ -770,7 +770,21 @@ void bind_backend(py::module_ & m)
   py::class_<Evidence>(m, "MapChangeEvidence")
   .def(py::init<const std::vector<std::string> &, const Evidence::Poses &>())
   .def("observe", &Evidence::observe)
-  .def("snapshot", &Evidence::snapshot);
+  .def("snapshot", &Evidence::snapshot)
+  .def(
+    "rows", [](const Evidence & evidence) {
+      static_assert(sizeof(Evidence::EvidenceRow) == 9 * sizeof(std::int64_t),
+      "evidence rows must be packed");
+      const auto n = static_cast<py::ssize_t>(evidence.marked());
+      py::array_t<std::int64_t> rows({n, static_cast<py::ssize_t>(9)});
+      auto * out = reinterpret_cast<Evidence::EvidenceRow *>(rows.mutable_data());
+      {
+        py::gil_scoped_release release;
+        evidence.sortedRows(out);
+      }
+      return rows;
+    },
+    "The evidence rows, sorted, as an int64 N x 9 array (snapshot() without the lists).");
   using Refined = lidarslam_core::RefinedNewPointEvidence;
   py::class_<Refined>(m, "RefinedNewPointEvidence")
   .def(py::init<>())

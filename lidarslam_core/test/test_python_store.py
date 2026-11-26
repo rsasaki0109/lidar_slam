@@ -214,6 +214,10 @@ def test_change_evidence_removal_and_rollback(tmp_path: Path) -> None:
     rows = np.asarray(evidence.snapshot(), dtype=np.int64)
     assert np.any(rows[:, 8] == 2)
     assert np.all(rows[:, 6] <= 10)
+    # rows() is the sorted snapshot as one array, as MapChanges.rows() used to build it.
+    sorted_rows = evidence.rows()
+    assert sorted_rows.dtype == np.int64 and sorted_rows.shape == rows.shape
+    assert sorted_rows.tolist() == sorted(rows.tolist())
 
     update = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
                          store=store_path, initial_pose=prior, detect_changes=True)

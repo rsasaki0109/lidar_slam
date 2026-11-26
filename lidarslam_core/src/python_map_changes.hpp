@@ -116,7 +116,22 @@ public:
 
   std::vector<EvidenceRow> snapshot() const
   {
-    std::vector<EvidenceRow> rows;
+    std::vector<EvidenceRow> rows(marked());
+    sortedRows(rows.data());
+    return rows;
+  }
+
+  // Number of rows: the stored voxels a scan has hit or seen through.
+  std::size_t marked() const
+  {
+    return static_cast<std::size_t>(std::count_if(states_.begin(), states_.end(),
+      [](const State & state) {return state.marked;}));
+  }
+
+  // Writes the marked() rows to out, sorted (as Python sorts lists of their values).
+  void sortedRows(EvidenceRow * out) const
+  {
+    std::size_t n = 0;
     for (const auto & state : states_) {
       if (!state.marked) {
         continue;
@@ -124,10 +139,10 @@ public:
       const bool remove = state.separated &&
         state.misses >= 8 * std::max(std::int32_t{1}, state.hits);
       const bool keep = state.hits >= 2 && state.hits >= state.misses;
-      rows.push_back({state.session, state.submap, state.local[0], state.local[1],
-        state.local[2], state.hits, state.misses, state.separated, remove ? 2 : (keep ? 1 : 0)});
+      out[n++] = {state.session, state.submap, state.local[0], state.local[1],
+        state.local[2], state.hits, state.misses, state.separated, remove ? 2 : (keep ? 1 : 0)};
     }
-    return rows;
+    std::sort(out, out + n);
   }
 
 private:
