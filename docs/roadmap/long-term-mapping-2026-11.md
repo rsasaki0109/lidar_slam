@@ -1891,3 +1891,18 @@ four updates that anchored (`2012-02-04_gatein`, `2012-02-19_gatein`, `2013-01-1
   least three of the four updates and no update rises by more than 0.5 m. Then
   `rko_lio_nclt.yaml` takes the window. Four sessions against one reference make this a small
   check; the result is reported whatever it is.
+
+#### Results of the second check (2026-11-26)
+
+| Update | Gravity re-estimated | Compared poses (A / G) | A | G |
+| --- | ---: | ---: | ---: | ---: |
+| 2012-02-04 | 1.4 deg | 41 / 38 | 0.28 m | 0.96 m |
+| 2012-02-19 | 6.0 deg | 26 / 27 | 0.37 m | 0.42 m |
+| 2013-01-10 | 5.4 deg | 0 / 0 | — | — |
+| 2013-04-05 | 5.3 deg | 0 / 0 | — | — |
+
+The two 2013 updates place no odometry pose within 1.5 m of three base submaps, so only two
+updates are measured; G is higher on both, by 0.68 m on 2012-02-04. G **fails** the rule, and
+`rko_lio_nclt.yaml` keeps no gravity window. Together with the first check: the window helps
+sessions that start far from level but can cost several tenths of a metre on sessions that start
+near it, so it is not a setting to turn on for every session.
