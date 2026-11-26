@@ -318,6 +318,13 @@ class Store:
         entry_info = {'submaps': submaps, **(info or {})}
         _write_json(directory / 'session.json', {'id': session_id, **entry_info})
         entry = self.commit(session_id, entry_info)
-        if export and len(self._aligned_sessions()) == len(self._index['sessions']):
-            self.export(log=log)
+        if export:
+            self.export_if_aligned(log=log)
         return entry
+
+    def export_if_aligned(self, log: Callable[[str, str], None] | None = None) -> Path | None:
+        """Rebuilds ``export/`` when every committed session is in the store frame."""
+        if self._index['sessions'] and (
+                len(self._aligned_sessions()) == len(self._index['sessions'])):
+            return self.export(log=log)
+        return None

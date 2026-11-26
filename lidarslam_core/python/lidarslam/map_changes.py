@@ -18,7 +18,10 @@ class MapChanges:
     def __init__(self, directories, poses, extrinsic, filter_new_points=False,
                  refine_visibility=False):
         self.references = [Path(directory).name for directory in directories]
-        self.evidence = _core.MapChangeEvidence(directories, poses)
+        # The stored sessions are loaded once the session is anchored (the first scan traced),
+        # after the relocalizer has let go of its own copy of the store.
+        self._sources = (list(directories), poses)
+        self._evidence = None
         self.refined_visibility = refine_visibility
         self.extrinsic = extrinsic
         # Scans wait here until the session is anchored. A search that keeps running
@@ -49,6 +52,8 @@ class MapChanges:
             if not startup.active:
                 self.pending.clear()
             return
+        if self.pending:
+            startup.release_unless_tracking()
         for local_from_base, submap, sample, endpoints in self.pending:
             world_from_base = startup.transform @ local_from_base
             if submap is not None and self.new_evidence is not None:
@@ -61,6 +66,13 @@ class MapChanges:
             if sample and self.new_evidence is not None:
                 self.new_evidence.observe(transform[:3, 3], world)
         self.pending.clear()
+
+    @property
+    def evidence(self):
+        if self._evidence is None:
+            self._evidence = _core.MapChangeEvidence(*self._sources)
+            self._sources = None
+        return self._evidence
 
     def rows(self):
         """Return evidence rows in deterministic session, submap and local voxel order."""

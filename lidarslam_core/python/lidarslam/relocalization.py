@@ -252,6 +252,20 @@ class StartupRelocalization:
             self._executor = None
             self._pending = None
 
+    def release_unless_tracking(self):
+        """Release the stored keyframes once anchored when nothing will register against them
+        again (no tracking and no shared-surface alignment)."""
+        if (self.transform is not None and not self.track and self._surfaces is None and
+                self.matcher is not None):
+            self.release()
+
+    def release(self):
+        """Drop the stored keyframes (the matcher and shared surfaces) once the session is over;
+        the anchor, its transform and the tracking observations stay."""
+        self.close()
+        self.matcher = None
+        self._surfaces = None
+
     def _accept(self, stamp, index, odometry, local_map, reference, observed, shared, prior):
         if self.transform is None and self.anywhere:
             candidate = observed @ np.linalg.inv(local_map)

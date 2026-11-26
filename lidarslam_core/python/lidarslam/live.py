@@ -17,6 +17,7 @@ This is the "live" mode of docs/roadmap/long-term-mapping-2026-11.md (milestone 
 
 from __future__ import annotations
 
+import gc
 import json
 from pathlib import Path
 import sys
@@ -276,11 +277,18 @@ class Session:
                         summary['store_removed_voxels'] = int((self._change_rows[:, 8] == 2).sum())
             entry = self._store.add_session(self._write_store_session,
                                             self._odometry_params, self._backend_params, info,
-                                            log=self._log)
+                                            export=False, log=self._log)
             summary['store'] = str(self._store.path)
             summary['store_session'] = entry['id']
             if self._changes is not None and self._changes.suppressed_new_voxels is not None:
                 summary['store_suppressed_new_voxels'] = self._changes.suppressed_new_voxels
+            # The export reads every stored session again: release what this session holds of
+            # the store first (the relocalizer's keyframes, the change evidence, the backend).
+            if self._startup is not None:
+                self._startup.release()
+            self._changes = self._change_rows = self._windows = self._pipeline = None
+            gc.collect()
+            self._store.export_if_aligned(log=self._log)
         return summary
 
 
