@@ -76,7 +76,7 @@ class MapChanges:
 
     def rows(self):
         """Return evidence rows in deterministic session, submap and local voxel order."""
-        return np.asarray(sorted(self.evidence.snapshot()), dtype=np.int64).reshape(-1, 9)
+        return self.evidence.rows()
 
     def write(self, directory, rows):
         """Save the scan evidence and decisions in the updating session's directory."""
