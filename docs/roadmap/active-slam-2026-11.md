@@ -390,6 +390,27 @@ On development seeds and worlds only: the revisit weight `w_u`, the revisit trig
 radius. Frozen in `tools/rne_active_slam_env/eval_config.yaml` and its commit recorded here
 before the first holdout run; the holdout worlds are run once at that commit.
 
+### Development and freeze (2026-11-26)
+
+Development set (ring, grid; seeds 1-3), `active` vs `frontier_info`, by revisit weight
+`w_u` (trigger 0.05, release 0.02, `min_predicted_drop` 0.2, inflation 0.8 m):
+
+| `w_u` | ring: median ATE reduction, wins | grid: median ATE reduction, wins, coverage |
+| --- | --- | --- |
+| 20 | -2 %, 0/3 (revisits chosen in 2 runs; one run diverged, below) | 0 %, 0/3 (no revisit chosen) |
+| 40 | -2 %, 0/3 | 0 %, 0/3 |
+| 80 | +1.4 %, 2/3 | +16 %, 2/3, -1.3 points |
+
+Development findings and changes before the freeze: (1) a revisit's utility at weight 20 never
+beat a frontier's (unknown area ~20-25 m^2); (2) in revisit mode with no reachable target the
+robot stood still until the budget ran out, and on ring seed 3 its odometry drifted 2.2 m while
+standing: `no_reachable_goal` now ends the mission like `exploration_done`; (3) the
+development maps are already accurate (final-map ATE 2-8 cm on ring), so they say little about
+the revisits' benefit.
+
+**Frozen:** `w_u` = 80, the rest as above; `eval_config.yaml` at commit `1127155`
+(SHA-256 prefix `8c1ee164b521f6c8`). The holdout set is run once at that configuration.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
