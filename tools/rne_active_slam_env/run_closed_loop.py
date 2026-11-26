@@ -44,85 +44,7 @@ ACCEL_SCALE = 1.0  # the env sends g, as the Mid-360 driver does
 # ------------------------------------------------------------------------------------- worlds
 
 
-def _wall(x0: float, y0: float, x1: float, y1: float, height: float = 2.5) -> dict[str, Any]:
-    return {'min': [min(x0, x1), min(y0, y1), 0.0], 'max': [max(x0, x1), max(y0, y1), height]}
-
-
-def world_ring() -> dict[str, Any]:
-    """Return a 5 m wide corridor around a 30 m x 14 m block (a ~100 m loop)."""
-    boxes = [{'min': [-1.0, -1.0, -0.1], 'max': [41.0, 25.0, 0.0]}]  # floor
-    t = 0.2
-    boxes += [_wall(-t, -t, 40 + t, 0), _wall(-t, 24, 40 + t, 24 + t),
-              _wall(-t, 0, 0, 24), _wall(40, 0, 40 + t, 24)]
-    boxes.append({'min': [5.0, 5.0, 0.0], 'max': [35.0, 19.0, 2.5]})  # the block
-    # Crates along the corridor (deterministic), alternating sides.
-    crates = [(1.0, 6.0), (4.0, 11.0), (1.0, 17.0), (9.0, 23.0), (16.0, 20.0), (24.0, 23.0),
-              (31.0, 20.0), (39.0, 15.0), (36.0, 8.0), (39.0, 3.0), (27.0, 1.0), (20.0, 4.0),
-              (12.0, 1.0)]
-    for i, (cx, cy) in enumerate(crates):
-        size = 0.6 + 0.1 * (i % 3)
-        boxes.append({'min': [cx - size / 2, cy - size / 2, 0.0],
-                      'max': [cx + size / 2, cy + size / 2, 0.8 + 0.2 * (i % 4)]})
-    # Pilasters every 3 m along every wall (0.3 m wide, 0.2 m deep), as door frames and columns
-    # of a real corridor: flat walls alone leave the corridor axis unobservable to the LiDAR.
-    for k in range(1, 14):
-        x = 3.0 * k
-        boxes.append({'min': [x - 0.15, 0.0, 0.0], 'max': [x + 0.15, 0.2, 2.5]})
-        boxes.append({'min': [x - 0.15, 23.8, 0.0], 'max': [x + 0.15, 24.0, 2.5]})
-        if 5.0 < x < 35.0:
-            boxes.append({'min': [x - 0.15, 4.8, 0.0], 'max': [x + 0.15, 5.0, 2.5]})
-            boxes.append({'min': [x - 0.15, 19.0, 0.0], 'max': [x + 0.15, 19.2, 2.5]})
-    for k in range(1, 8):
-        y = 3.0 * k
-        boxes.append({'min': [0.0, y - 0.15, 0.0], 'max': [0.2, y + 0.15, 2.5]})
-        boxes.append({'min': [39.8, y - 0.15, 0.0], 'max': [40.0, y + 0.15, 2.5]})
-        if 5.0 < y < 19.0:
-            boxes.append({'min': [4.8, y - 0.15, 0.0], 'max': [5.0, y + 0.15, 2.5]})
-            boxes.append({'min': [35.0, y - 0.15, 0.0], 'max': [35.2, y + 0.15, 2.5]})
-    return {'boxes': boxes, 'start': [2.5, 12.0, math.pi / 2], 'seed': 1,
-            'free_region': {'outer': [0, 0, 40, 24], 'holes': [[5, 5, 35, 19]]}}
-
-
-def world_grid() -> dict[str, Any]:
-    """Return 3 m corridors around a 3 x 2 grid of blocks (several loops), 57 m x 35 m."""
-    corridor, block_x, block_y = 3.0, 15.0, 13.0
-    width = 3 * block_x + 4 * corridor
-    height = 2 * block_y + 3 * corridor
-    boxes = [{'min': [-1.0, -1.0, -0.1], 'max': [width + 1.0, height + 1.0, 0.0]}]
-    t = 0.2
-    boxes += [_wall(-t, -t, width + t, 0), _wall(-t, height, width + t, height + t),
-              _wall(-t, 0, 0, height), _wall(width, 0, width + t, height)]
-    holes = []
-    for i in range(3):
-        for j in range(2):
-            x0 = corridor + i * (block_x + corridor)
-            y0 = corridor + j * (block_y + corridor)
-            boxes.append({'min': [x0, y0, 0.0], 'max': [x0 + block_x, y0 + block_y, 2.5]})
-            holes.append([x0, y0, x0 + block_x, y0 + block_y])
-            # Pilasters every 3 m on the block's faces, as door frames.
-            for k in range(1, int(block_x // 3)):
-                x = x0 + 3.0 * k
-                boxes.append({'min': [x - 0.15, y0 - 0.2, 0.0], 'max': [x + 0.15, y0, 2.5]})
-                boxes.append({'min': [x - 0.15, y0 + block_y, 0.0],
-                              'max': [x + 0.15, y0 + block_y + 0.2, 2.5]})
-            for k in range(1, int(block_y // 3)):
-                y = y0 + 3.0 * k
-                boxes.append({'min': [x0 - 0.2, y - 0.15, 0.0], 'max': [x0, y + 0.15, 2.5]})
-                boxes.append({'min': [x0 + block_x, y - 0.15, 0.0],
-                              'max': [x0 + block_x + 0.2, y + 0.15, 2.5]})
-    for k in range(1, int(width // 3)):  # outer walls
-        x = 3.0 * k
-        boxes.append({'min': [x - 0.15, 0.0, 0.0], 'max': [x + 0.15, 0.2, 2.5]})
-        boxes.append({'min': [x - 0.15, height - 0.2, 0.0], 'max': [x + 0.15, height, 2.5]})
-    for k in range(1, int(height // 3)):
-        y = 3.0 * k
-        boxes.append({'min': [0.0, y - 0.15, 0.0], 'max': [0.2, y + 0.15, 2.5]})
-        boxes.append({'min': [width - 0.2, y - 0.15, 0.0], 'max': [width, y + 0.15, 2.5]})
-    return {'boxes': boxes, 'start': [1.5, 1.5, 0.0], 'seed': 2,
-            'free_region': {'outer': [0, 0, width, height], 'holes': holes}}
-
-
-WORLDS = {'ring': world_ring, 'grid': world_grid}
+from worlds import world_for, WORLDS  # noqa: E402  (this directory)
 
 # ------------------------------------------------------------------------------------- env
 
@@ -226,16 +148,26 @@ class Coverage:
     """Floor cells seen (a floor return landed in them) over the world's free floor."""
 
     def __init__(self, region: dict[str, Any], resolution: float = 0.5):
-        x0, y0, x1, y1 = region['outer']
+        if 'free_rects' in region:
+            rects = region['free_rects']
+            x0, y0 = min(r[0] for r in rects), min(r[1] for r in rects)
+            x1, y1 = max(r[2] for r in rects), max(r[3] for r in rects)
+        else:
+            x0, y0, x1, y1 = region['outer']
         self.origin = np.array([x0, y0], dtype=float)
         self.res = resolution
         nx, ny = int(math.ceil((x1 - x0) / resolution)), int(math.ceil((y1 - y0) / resolution))
         cx = self.origin[0] + (np.arange(nx) + 0.5) * resolution
         cy = self.origin[1] + (np.arange(ny) + 0.5) * resolution
         gx, gy = np.meshgrid(cx, cy, indexing='ij')
-        free = np.ones((nx, ny), dtype=bool)
-        for hx0, hy0, hx1, hy1 in region['holes']:
-            free &= ~((gx > hx0) & (gx < hx1) & (gy > hy0) & (gy < hy1))
+        if 'free_rects' in region:
+            free = np.zeros((nx, ny), dtype=bool)
+            for fx0, fy0, fx1, fy1 in region['free_rects']:
+                free |= (gx > fx0) & (gx < fx1) & (gy > fy0) & (gy < fy1)
+        else:
+            free = np.ones((nx, ny), dtype=bool)
+            for hx0, hy0, hx1, hy1 in region['holes']:
+                free &= ~((gx > hx0) & (gx < hx1) & (gy > hy0) & (gy < hy1))
         self.free = free
         self.seen = np.zeros_like(free)
 
@@ -258,26 +190,70 @@ class Coverage:
 # ------------------------------------------------------------------------------------- main
 
 
-def policy_parameters(policy: str, trigger: float, release: float) -> dict[str, Any]:
+POLICIES = ('nearest_frontier', 'frontier_info', 'active')
+
+
+def policy_parameters(policy: str, trigger: float, release: float, uncertainty_weight: float,
+                      min_predicted_drop: float) -> dict[str, Any]:
+    """Return the backend's exploration parameters of a policy (see the roadmap's P0)."""
     if policy == 'nearest_frontier':
         return {'exploration_info_weight': 0.0, 'exploration_distance_weight': 1.0,
                 'exploration_revisit_trigger_sigma': 0.0}
+    frontier_info = {'exploration_info_weight': 1.0, 'exploration_distance_weight': 0.5,
+                     'exploration_revisit_trigger_sigma': 0.0}
+    if policy == 'frontier_info':
+        return frontier_info
     if policy == 'active':
-        # A revisit's gain is the predicted fraction of the newest sigma it removes: removing
-        # 90 % is worth 36 m of driving at these weights.
-        return {'exploration_info_weight': 1.0, 'exploration_distance_weight': 0.5,
-                'exploration_uncertainty_weight': 20.0,
+        # A revisit's gain is the predicted fraction of the newest sigma it removes.
+        return {**frontier_info, 'exploration_uncertainty_weight': uncertainty_weight,
                 'exploration_revisit_trigger_sigma': trigger,
-                'exploration_revisit_release_sigma': release}
+                'exploration_revisit_release_sigma': release,
+                'exploration_min_predicted_drop': min_predicted_drop}
     raise ValueError(policy)
+
+
+def final_map_ate(tum_path: Path, truth_stamps: list[float],
+                  truth_xy: list[tuple[float, float]]) -> dict[str, Any]:
+    """Return the optimized submap positions' RMSE against the truth at their stamps.
+
+    ``rmse_m`` after an SE(2) alignment (rotation and translation, least squares), ``raw_rmse_m``
+    without. The truth is interpolated linearly between frame ends.
+    """
+    if not tum_path.is_file():
+        return {'rmse_m': None, 'raw_rmse_m': None, 'poses': 0}
+    data = np.loadtxt(tum_path, ndmin=2)
+    if len(data) == 0:
+        return {'rmse_m': None, 'raw_rmse_m': None, 'poses': 0}
+    stamps = np.asarray(truth_stamps)
+    txy = np.asarray(truth_xy)
+    keep = (data[:, 0] >= stamps[0]) & (data[:, 0] <= stamps[-1])
+    est = data[keep, 1:3]
+    ref = np.stack([np.interp(data[keep, 0], stamps, txy[:, 0]),
+                    np.interp(data[keep, 0], stamps, txy[:, 1])], axis=1)
+    raw = float(np.sqrt(np.mean(np.sum((est - ref) ** 2, axis=1))))
+    mu_e, mu_r = est.mean(axis=0), ref.mean(axis=0)
+    cov = (ref - mu_r).T @ (est - mu_e)
+    u, _, vt = np.linalg.svd(cov)
+    d = np.diag([1.0, np.sign(np.linalg.det(u @ vt))])
+    rot = u @ d @ vt
+    aligned = (est - mu_e) @ rot.T + mu_r
+    rmse = float(np.sqrt(np.mean(np.sum((aligned - ref) ** 2, axis=1))))
+    return {'rmse_m': round(rmse, 4), 'raw_rmse_m': round(raw, 4), 'poses': int(keep.sum())}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('--world', default='ring', choices=sorted(WORLDS))
-    parser.add_argument('--policy', default='active', choices=['active', 'nearest_frontier'])
+    parser.add_argument('--policy', default='active', choices=POLICIES)
+    parser.add_argument('--seed', type=int, default=1,
+                        help="start pose (seed %% 10 of the world's starts) and noise seeds")
     parser.add_argument('--out', type=Path, required=True)
-    parser.add_argument('--max-seconds', type=float, default=400.0, help='time budget')
+    parser.add_argument('--max-seconds', type=float, default=600.0, help='time budget')
+    parser.add_argument('--divergence-m', type=float, default=2.0,
+                        help='stop as failed when the live position error exceeds this')
+    parser.add_argument('--uncertainty-weight', type=float, default=20.0,
+                        help="active: weight of a revisit's predicted sigma fraction removed")
+    parser.add_argument('--min-predicted-drop', type=float, default=0.2)
     parser.add_argument('--revisit-trigger-sigma', type=float, default=0.0,
                         help='active: revisit above this newest-submap sigma (0: never)')
     parser.add_argument('--revisit-release-sigma', type=float, default=0.0)
@@ -302,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    world = WORLDS[args.world]()
+    world = world_for(args.world, args.seed)
     world_file = out / 'world.json'
     world_file.write_text(json.dumps(world, indent=1) + '\n', encoding='utf-8')
 
@@ -315,9 +291,11 @@ def main(argv: list[str] | None = None) -> int:
     graph.update({'pose_uncertainty_timeline': True, 'active_exploration_timeline': True,
                   'exploration_inflation_radius': args.inflation_radius})
     graph.update(policy_parameters(args.policy, args.revisit_trigger_sigma,
-                                   args.revisit_release_sigma))
+                                   args.revisit_release_sigma, args.uncertainty_weight,
+                                   args.min_predicted_drop))
     (out / 'params.json').write_text(json.dumps(
-        {'odometry': odometry, 'backend': graph, 'policy': args.policy, 'world': args.world},
+        {'odometry': odometry, 'backend': graph, 'policy': args.policy, 'world': args.world,
+         'seed': args.seed},
         indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
 
     latest: dict[str, Any] = {}
@@ -346,6 +324,11 @@ def main(argv: list[str] | None = None) -> int:
     prev_truth = None
     collisions = 0
     status = 'init'
+    truth_stamps: list[float] = []
+    truth_xy: list[tuple[float, float]] = []
+    diverged = False
+    coverage_90 = None  # (seconds, metres) when 90 % of the floor was first seen
+    revisit_frames = 0
     max_frames = int(args.max_seconds / FRAME_S)
     settle_frames = 30  # stand still while RKO-LIO initializes
     for frame in range(max_frames):
@@ -360,6 +343,9 @@ def main(argv: list[str] | None = None) -> int:
         dx, dy = tx - start[0], ty - start[1]
         truth = (c0 * dx + s0 * dy, -s0 * dx + c0 * dy, wrap(tyaw - start[2]))
         coverage.add((tx, ty, tyaw), points)
+        # The truth returned is the pose at the frame's end.
+        truth_stamps.append((header['stamp_ns'] + int(FRAME_S * 1e9)) * 1e-9)
+        truth_xy.append((truth[0], truth[1]))
         if prev_truth is not None:
             distance += math.hypot(tx - prev_truth[0], ty - prev_truth[1])
         prev_truth = (tx, ty)
@@ -373,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
         if 'map' in latest:
             m = latest['map']
             errors.append(math.hypot(m[0] - truth[0], m[1] - truth[1]))
+            if errors[-1] > args.divergence_m:
+                diverged = True
 
         v = w = 0.0
         if header['collided']:
@@ -414,23 +402,35 @@ def main(argv: list[str] | None = None) -> int:
                      f'{truth[2]:.5f},{est[0]:.4f},{est[1]:.4f},{est[2]:.5f},{v:.3f},{w:.3f},'
                      f'{status},{decision.get("kind", "")},{coverage.fraction():.4f},'
                      f'{int(header["collided"])}\n')
-        if done_count >= 3:
+        revisit_frames += int(path != [] and decision.get('kind') == 'revisit')
+        if coverage_90 is None and coverage.fraction() >= 0.9:
+            coverage_90 = ((frame + 1) * FRAME_S, distance)
+        if done_count >= 3 or diverged:
             break
     env.close()
     frames.close()
     decisions.close()
-    summary = session.finish()
+    session.finish()
     backend_log.close()
+    ate = final_map_ate(out / 'slam' / 'trajectory_optimized.tum', truth_stamps, truth_xy)
+    loop_file = out / 'slam' / 'loop_edges.csv'
+    loop_edges = (len(loop_file.read_text().splitlines()) - 1) if loop_file.is_file() else None
+    cov = coverage.fraction()
     metrics = {
-        'world': args.world, 'policy': args.policy, 'frames': frame + 1,
+        'world': args.world, 'policy': args.policy, 'seed': args.seed, 'frames': frame + 1,
         'seconds': round((frame + 1) * FRAME_S, 1), 'distance_m': round(distance, 2),
-        'coverage': round(coverage.fraction(), 4), 'collisions': collisions,
-        'rejected_goals': rejected,
-        'exploration_done': done_count >= 3,
+        'coverage': round(cov, 4),
+        'final_map_ate_rmse_m': ate['rmse_m'], 'final_map_ate_raw_rmse_m': ate['raw_rmse_m'],
+        'final_map_poses': ate['poses'],
         'live_position_error_rmse_m': round(float(np.sqrt(np.mean(np.square(errors)))), 4)
         if errors else None,
         'live_position_error_max_m': round(float(np.max(errors)), 4) if errors else None,
-        'submaps': summary.get('submaps') if isinstance(summary, dict) else None,
+        'coverage_90_seconds': coverage_90[0] if coverage_90 else None,
+        'coverage_90_distance_m': round(coverage_90[1], 2) if coverage_90 else None,
+        'loop_edges': loop_edges, 'revisit_goal_frames': revisit_frames,
+        'collisions': collisions, 'rejected_goals': rejected,
+        'exploration_done': done_count >= 3, 'diverged': diverged,
+        'failed': diverged or cov < 0.5,
     }
     (out / 'metrics.json').write_text(json.dumps(metrics, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(metrics))

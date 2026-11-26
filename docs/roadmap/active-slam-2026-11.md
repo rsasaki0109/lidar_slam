@@ -315,7 +315,7 @@ commands, commit, metrics, render command).
   per-optimization uncertainty output (P1 next step); the current report reads only the final
   graph, so it cannot animate.
 
-## Evaluation (P0 draft, 2026-11-26; not yet approved by the maintainer)
+## Evaluation (P0, approved by the maintainer 2026-11-26)
 
 Fixed before any holdout run; changed only by a dated note in this file, before those runs.
 
