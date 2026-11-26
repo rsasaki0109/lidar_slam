@@ -18,7 +18,8 @@
   colmap <log> --run DIR --image-topic T --out OUT
                                         a COLMAP scene for 3D Gaussian Splatting: the log's
                                         camera posed by a lidar_slam run, its map as the
-                                        initial points (lidarslam.gsplat_export; needs
+                                        initial points, --depth-lidar-topic for a LiDAR
+                                        depth per image (lidarslam.gsplat_export; needs
                                         pip install "lidarslam[gsplat]")
   mcp STORE [--propose-only] [--author agent:NAME]
                                         an MCP server (stdio) for an agent to review the
@@ -205,6 +206,16 @@ def main(argv: list[str] | None = None) -> int:
                         help='at most this many initial points')
     colmap.add_argument('--max-depth', type=float, default=40.0,
                         help='initial points within this range of a camera')
+    colmap.add_argument('--depth-lidar-topic',
+                        help='PointCloud2 topic: also write OUT/depth_priors/<image>.bin, the '
+                             'nearest scan projected into each image (depth-supervised 3DGS)')
+    colmap.add_argument('--lidar-frame',
+                        help='LiDAR frame in /tf_static (default: the scans\' frame_id)')
+    colmap.add_argument('--lidar-extrinsic', type=float, nargs=7,
+                        metavar=('X', 'Y', 'Z', 'QX', 'QY', 'QZ', 'QW'),
+                        help='LiDAR frame in the base frame, instead of /tf_static')
+    colmap.add_argument('--depth-max', type=float, default=80.0,
+                        help='LiDAR depths beyond this are dropped (m)')
     join = sub.add_parser(
         'join', help='multi-session join of backend inputs and their offline runs (no ROS 2)')
     join.add_argument('--params', action='append', default=[],
@@ -273,9 +284,15 @@ def main(argv: list[str] | None = None) -> int:
                          camera_info_topic=args.camera_info_topic, base_frame=args.base_frame,
                          camera_frame=args.camera_frame, extrinsic=args.extrinsic,
                          every=args.every, scale=args.scale, points=args.points,
-                         max_depth=args.max_depth)
-        print(json.dumps({'images': summary.images, 'points': summary.points,
-                          'camera': summary.camera.line(), 'out': str(summary.out)}, indent=2))
+                         max_depth=args.max_depth, depth_lidar_topic=args.depth_lidar_topic,
+                         lidar_frame=args.lidar_frame, lidar_extrinsic=args.lidar_extrinsic,
+                         depth_max=args.depth_max)
+        report = {'images': summary.images, 'points': summary.points,
+                  'camera': summary.camera.line(), 'out': str(summary.out)}
+        if args.depth_lidar_topic:
+            report['depth_priors'] = summary.depth_priors
+            report['depth_coverage'] = round(summary.depth_coverage, 4)
+        print(json.dumps(report, indent=2))
     elif args.command == 'mcp':
         from lidarslam.mcp_server import build_server
         build_server(args.store, args.author, args.propose_only, args.min_voxels).run('stdio')

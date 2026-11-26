@@ -44,6 +44,14 @@ the image topic; a distorted camera is written as `OPENCV`, `FULL_OPENCV` or `OP
 The initial points are the run's `map.pcd` within `--max-depth` of a camera, coloured from the
 images.
 
+`--depth-lidar-topic /points` also writes `SCENE/depth_priors/<image name>.bin`: the LiDAR scan
+nearest each image stamp projected into it (nearest point per pixel; `u32` width and height,
+then `f32` camera-z depths in metres, 0 where no point falls), for depth-supervised training
+such as visloc-rs `gsplat_train --depth-prior SCENE/depth_priors`. The scan is placed by the
+run's poses at its own stamp, so a LiDAR and a camera that are not triggered together still
+line up. The LiDAR mount comes from `/tf_static` (`--lidar-frame` when the scans' `frame_id`
+is not in it) or `--lidar-extrinsic x y z qx qy qz qw`.
+
 `lidarslam-map` is the product command of the ROS 2 install: the package carries its scripts,
 schemas and parameter files under `lidarslam/share/lidarslam`, in the tree the ROS 2 package
 installs, from the same file lists (`lidarslam/product-runtime-files.txt`,

@@ -12,6 +12,14 @@
   the run's map near the cameras as coloured initial points. On a KITTI raw
   drive it gives the poses of `scripts/export_kitti_colmap.py` to within 4 µm.
   Pillow comes with the `gsplat` extra.
+- `python -m lidarslam colmap --depth-lidar-topic T` also writes a LiDAR depth
+  per image (`OUT/depth_priors/<image name>.bin`) for depth-supervised 3DGS
+  (visloc-rs `gsplat_train --depth-prior`): the scan nearest each image stamp,
+  placed by the run's poses at its own stamp and seen from the camera at the
+  image's, nearest point per pixel, through the camera's distortion. The LiDAR
+  mount comes from `/tf_static` (`--lidar-frame`) or `--lidar-extrinsic`. On a
+  KITTI raw drive the depths match a projection through KITTI's own calibration
+  (median relative difference 0.07 %, the same 10 % pixel coverage).
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
   the changes as object-sized clusters (old points removed, new points held
