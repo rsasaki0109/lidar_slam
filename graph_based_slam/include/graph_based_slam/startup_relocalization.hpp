@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <tuple>
@@ -57,9 +58,20 @@ public:
     Eigen::Isometry3d pose;
   };
 
-  explicit StartupRelocalizer(std::vector<Keyframe> reference)
-  : reference_(std::move(reference)), prepared_(reference_.size())
+  // The points of a reference keyframe that are not held in memory (its index -> points in its
+  // gravity-aligned frame). Such keyframes are read when they are described or registered and
+  // not kept, so a large store costs little memory between searches.
+  using PointSource = std::function<std::vector<Eigen::Vector3f>(std::size_t)>;
+
+  explicit StartupRelocalizer(
+    std::vector<Keyframe> reference, PointSource source = {}, std::vector<bool> on_demand = {})
+  : reference_(std::move(reference)), prepared_(reference_.size()), source_(std::move(source)),
+    on_demand_(std::move(on_demand))
   {
+    on_demand_.resize(reference_.size(), false);
+    if (!source_) {
+      std::fill(on_demand_.begin(), on_demand_.end(), false);
+    }
     // Ten iterations per stage instead of thirty: on NCLT (five stores, 1416 registrations from
     // Scan Context candidates, 374 verified) the verdicts and poses (within 0.1 m) were the same
     // and registration 2.5 times faster, mostly because candidates from wrong places stop sooner.
@@ -97,6 +109,16 @@ public:
     return matchSeeds(
       query, *launch_descriptors_, origin, radius_squared,
       std::numeric_limits<double>::infinity());
+  }
+
+  // Describes every stored keyframe now (otherwise the first search does), so that keyframes
+  // read on demand are read before a session starts rather than during its first search.
+  void describeAll()
+  {
+    if (!all_descriptors_) {
+      all_descriptors_ = descriptors(Eigen::Vector3d::Zero(),
+          std::numeric_limits<double>::infinity());
+    }
   }
 
   // Scan Context distances of the closest stored keyframes (index, distance, sector shift).
@@ -147,9 +169,15 @@ private:
     Descriptors result;
     for (std::size_t i = 0; i < reference_.size(); ++i) {
       const auto & frame = reference_[i];
-      if (!frame.points.empty() &&
-        (frame.frame.translation() - origin).squaredNorm() <= radius_squared)
-      {
+      if (!hasPoints(i) || (frame.frame.translation() - origin).squaredNorm() > radius_squared) {
+        continue;
+      }
+      if (on_demand_[i]) {
+        const Keyframe loaded = keyframeAt(i);
+        if (!loaded.points.empty()) {
+          result.emplace_back(i, detail::scanContext(loaded, config_));
+        }
+      } else {
         result.emplace_back(i, detail::scanContext(frame, config_));
       }
     }
@@ -276,7 +304,7 @@ private:
     std::vector<std::pair<double, std::size_t>> nearby;
     for (std::size_t i = 0; i < reference_.size(); ++i) {
       const double distance = (reference_[i].frame.translation() - position).squaredNorm();
-      if (distance <= 9.0 && !reference_[i].points.empty()) {
+      if (distance <= 9.0 && hasPoints(i)) {
         nearby.emplace_back(distance, i);
       }
     }
@@ -293,7 +321,8 @@ private:
     std::size_t index, const detail::Prepared & source, const Eigen::Isometry3d & guess)
   {
     if (!prepared_[index]) {
-      prepared_[index] = prepare(reference_[index]);
+      prepared_[index] =
+        on_demand_[index] ? prepare(keyframeAt(index)) : prepare(reference_[index]);
     }
     const auto & target = *prepared_[index];
     Eigen::Isometry3d relative = reference_[index].frame.inverse() * guess;
@@ -310,11 +339,27 @@ private:
       detail::overlap(target, source, relative, config_.inlier_distance_m)};
   }
 
+  bool hasPoints(std::size_t i) const
+  {
+    return on_demand_[i] || !reference_[i].points.empty();
+  }
+
+  Keyframe keyframeAt(std::size_t i) const
+  {
+    Keyframe loaded;
+    loaded.id = reference_[i].id;
+    loaded.frame = reference_[i].frame;
+    loaded.points = source_(i);
+    return loaded;
+  }
+
   JoinConfig config_;
   std::vector<Keyframe> reference_;
   std::vector<std::optional<detail::Prepared>> prepared_;
   std::optional<Descriptors> launch_descriptors_;
   std::optional<Descriptors> all_descriptors_;
+  PointSource source_;
+  std::vector<bool> on_demand_;
 };
 
 }  // namespace graphslam::multisession
