@@ -1711,3 +1711,21 @@ peak instead (two copies at once: 7.3 and 7.4 GB).
 
 The outputs are byte-identical again (the rows are sorted when they are written, so the new
 order of the states does not show). The process peak is now the export of the merged map.
+
+#### Evidence rows sorted in C++ (development, 2026-11-26)
+
+The memory figures above sampled the resident size every 0.2 s from a Python thread, which
+misses short peaks while native code holds the interpreter. Read from the kernel's high-water
+mark (`VmHWM`, reset with `/proc/self/clear_refs` between phases) instead, the 2013-02-23 session
+peaked at 7.9 GB, at its end: `MapChanges.rows()` turned each of the 14.7 million evidence rows
+into a Python list of nine ints, sorted the lists, then made an array of them. The rows now come
+sorted from C++ as one int64 array (`MapChangeEvidence.rows()`, the same order as Python sorts
+the lists).
+
+| 2013-02-23 again (high-water mark) | Session | Store entry | Export |
+| --- | ---: | ---: | ---: |
+| Compact change evidence | 7.9 GB | 5.1 GB | 5.1 GB |
+| and rows sorted in C++ | 5.1 GB | 5.1 GB | 5.0 GB |
+
+The outputs are byte-identical again. The peak is now the change evidence held during the session
+(about 4 GB of it) and, about as high, the export.
