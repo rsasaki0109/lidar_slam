@@ -985,6 +985,23 @@ drives through degenerate stretches is the lever left; a policy for it is built 
 own rule, and a sim-only gain from driving faster would need checking on real data before it
 is claimed.
 
+### Driving policy, step 0: is speed a global setting or a decision? Rule (before its runs)
+
+Approved direction (maintainer, 2026-11-27): a policy that changes how the robot drives through
+degenerate stretches. Before building one, check whether a constant higher speed already does
+it everywhere; if so, speed is a setting, not an active decision, and an adaptive policy is only
+worth building where a constant speed has a cost.
+
+- Routes on the true pose, odometry only, seeds 1-3: the four easy development worlds (as built)
+  at 0.7 and 1.0 m/s, and the two tunnels at 1.4 m/s (0.35-1.0 are done).
+- Speed is a global setting if at 1.0 m/s the easy worlds' median SE(2) ATE is at most 10 %
+  above 0.7 m/s's, with no collision and no route lost (largest live error under 1 m). Then
+  every policy is compared at the faster speed, and an adaptive policy is built only for a
+  measured cost of speed (collisions, coverage time, turns).
+- If the tunnels at 1.4 m/s are better again than at 1.0, the gain is treated as a likely
+  simulator artifact (a real scan smears more at speed; this simulator's deskew is exact) and
+  speed is not claimed as a lever without real data.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
