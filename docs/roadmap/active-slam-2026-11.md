@@ -848,7 +848,7 @@ Frozen in `eval_config.yaml` (`world_overrides`, set `holdout`) before any polic
 gate. All 20 move 31-40 m and reach 10-15 % coverage, with no collision, no divergence and no
 rejected goal; the largest live error is 0.52 m (`mine_branches` 101), the others are under
 0.19 m. (`failed` is set in all of them only because coverage is below 50 % after 60 s.) ATE was
-not looked at. The worlds are ready for the maintainer's approval.
+not looked at. Approved by the maintainer (2026-11-27); the holdout set is run once next.
 
 ### To build before the runs
 
