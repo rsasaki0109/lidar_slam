@@ -850,6 +850,29 @@ rejected goal; the largest live error is 0.52 m (`mine_branches` 101), the other
 0.19 m. (`failed` is set in all of them only because coverage is below 50 % after 60 s.) ATE was
 not looked at. Approved by the maintainer (2026-11-27); the holdout set is run once next.
 
+### Third holdout: result (2026-11-27): fail
+
+`run_eval.py --set holdout --frozen`, commit 736f1dd, clean tree, 60 runs, none failed; no loop
+edge of the 499 is off by more than 2 m.
+
+| world | `active` | `frontier_info` | `nearest_frontier` | reduction vs `frontier_info` | `active` lower | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| `dogleg_loop` | 0.193 | 0.169 | 0.106 | 0.2 % | 5 / 10 | fail |
+| `mine_branches` | 0.050 | 0.051 | 0.095 | -4.7 % | 5 / 10 | fail |
+
+(median final-map ATE [m]; median coverage 0.99-1.00 for every policy and world.)
+
+`active` revisits in every run (720-6984 revisit goal frames) and closes more loops than
+`frontier_info` (e.g. 28 vs 11 on `mine_branches` 107), and it travels further (median 612 vs
+504 m, 691 vs 619 m) and hits the 1500 s budget in 4 of 20 runs; but its final map is no more
+accurate. In 6 of the 20 seed pairs the two ATEs are within 0.002 m of each other although
+`active` closed different loops: the error that remains is not one a revisit's loop removes.
+`nearest_frontier`, which never revisits, has the lowest median on `dogleg_loop`. The spread
+between seeds (0.03-0.9 m) is far larger than any difference between the policies.
+
+This holdout is now seen. By the preregistered rule the method has not shown that it makes the
+map more accurate on unseen worlds.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
