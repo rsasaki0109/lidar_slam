@@ -613,6 +613,37 @@ limit (2 m is below what the odometry reaches on the routes). The tunnels are ru
 `tunnels` (development, seeds 1-3); the policy configuration is still the earlier frozen one
 (`w_u` 80, trigger 0.05), tuned with the buggy sensor, so this run is a baseline, not a test.
 
+### Tunnels baseline (2026-11-27, development, not a test)
+
+18 runs (2 worlds x seeds 1-3 x 3 policies), no failure. Final-map ATE [m] per seed:
+
+| world / seed | active | frontier_info | nearest_frontier |
+| --- | --- | --- | --- |
+| tunnel_loop 1 | 0.297 | 0.297 | 0.355 |
+| tunnel_loop 2 | 0.789 | 0.801 | 0.588 |
+| tunnel_loop 3 | 0.070 | 0.585 | 0.179 |
+| long_tunnels 1 | 0.496 | 0.589 | 0.615 |
+| long_tunnels 2 | 0.419 | 0.901 | 1.471 |
+| long_tunnels 3 | 0.724 | 0.724 | 0.953 |
+
+Medians: `tunnel_loop` 0.297 / 0.585 / 0.355, `long_tunnels` 0.496 / 0.724 / 0.953; coverage
+0.99 for all but `nearest_frontier` on `long_tunnels` (0.93). Where drift is real, `active` is
+never worse than `frontier_info` and is better in 3 of 6 seeds, but two pairs are identical
+(`tunnel_loop` 1, `long_tunnels` 3) although revisit mode was on: the decision logs show why.
+
+- Revisit mode starts within the first ~60 m (sigma 0.05) and stays on, but a revisit is
+  rarely chosen: its utility is `w_u x gain - 0.5 x path`, with `gain` a fraction (<= 1), so
+  at most 80 against a path of 100-200 m back along a dead-end tunnel (-50 to -100), while a
+  frontier scores ~+30 (unknown area) minus its path. On `long_tunnels` 3 the newest sigma
+  reached 1.07 m with 75 candidates and no revisit was chosen until the last frontier was gone.
+- On `tunnel_loop` 1 the first revisit (frame 4750) pointed along the same corridor as the
+  only remaining frontier; the loop closed before the paths diverged, so the run is identical.
+
+Reading: the revisit's value does not grow with the error it removes, so in large worlds the
+travel cost always wins. Next development change: score a revisit by the absolute sigma it is
+predicted to remove (metres, `newest_sigma - after`), so that its value grows with the drift,
+and retune `w_u` on these two worlds only (the holdout stays untouched).
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
