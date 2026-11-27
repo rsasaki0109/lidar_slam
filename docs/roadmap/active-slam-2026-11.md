@@ -967,6 +967,24 @@ checked against the release gate) outside the active SLAM work, and the tunnels 
 re-measured before revisiting is evaluated again. If none does, driving (speed, keeping
 pilasters in view) is the lever, and a policy for it is built under its own rule.
 
+### Frontend's part in the shrink: result (2026-11-27): no single setting explains it
+
+Medians over six routes at 0.7 m/s (reference: `|scale - 1|` 0.0070, ATE 0.621 m):
+
+| variant | `\|scale - 1\|` | ATE [m] | ATE lower than reference | note |
+| --- | --- | --- | --- | --- |
+| `vox125` | 0.0056 | 0.470 | 4 / 6 | `tunnel_loop` 0.24-0.68 m (better); `long_tunnels` 2 lost (30 m), 1 worse (3.5 m) |
+| `corr50` | 0.0217 | 1.675 | 0 / 6 | shrink three times larger |
+| `noloc` | 0.0222 | 1.530 | 0 / 6 | shrink three times larger |
+
+None meets the rule. The current settings (one-voxel correspondence distance, localizability
+weighting) already cut the shrink to a third of the upstream defaults'; a finer map helps on one
+tunnel and loses the odometry on the other. The shrink is the frontend's under-registration
+along a degenerate corridor, reduced but not removed by its settings. By the rule, how the robot
+drives through degenerate stretches is the lever left; a policy for it is built only under its
+own rule, and a sim-only gain from driving faster would need checking on real data before it
+is claimed.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
