@@ -842,6 +842,14 @@ and no route reaches 5 m. The drift is not monotonic in the spacing (`dogleg_loo
 36 m): which pilasters remain near the long straights' middles matters more than how many.
 Frozen in `eval_config.yaml` (`world_overrides`, set `holdout`) before any policy runs on them.
 
+### Third holdout: check runs (2026-11-27)
+
+`nearest_frontier`, 60 s, seeds 101-110 (all ten starts) per world, frozen difficulty and loop
+gate. All 20 move 31-40 m and reach 10-15 % coverage, with no collision, no divergence and no
+rejected goal; the largest live error is 0.52 m (`mine_branches` 101), the others are under
+0.19 m. (`failed` is set in all of them only because coverage is below 50 % after 60 s.) ATE was
+not looked at. The worlds are ready for the maintainer's approval.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
