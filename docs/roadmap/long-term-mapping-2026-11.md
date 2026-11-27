@@ -2263,3 +2263,31 @@ Files (`bench_report/data/long_term_2026-11/lifelong/`):
   - no update rises by more than 0.1 m.
   With fewer than four scored updates the check is inconclusive. If P fails, the profile is
   turned back off by default. Reported whatever it is.
+
+#### Results of the height-profile check on sessions the chain has not used (2026-11-27)
+
+**PASS: P adds to the tilt correction.** All six passes were appended (`live` exit 0). As in the
+earlier check, 2012-04-29 has too little overlap with the even sessions to fit, so five updates
+are scored (`lifelong/fresh_profile_score.jsonl`). The 95th percentile of |dz| against the odd
+sessions:
+
+| Update | Compared | A (as committed) | T (tilt) | P (tilt + profile) | Profile knots, largest offset |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 2012-01-08 | 233 | 1.15 m | 0.15 m | 0.11 m | 11; 0.25 m |
+| 2012-02-04 | 285 | 0.47 m | 0.10 m | 0.09 m | 12; 0.12 m |
+| 2012-02-12 | 223 | 2.28 m | 0.36 m | 0.12 m | 9; 0.49 m |
+| 2012-02-19 | 237 | 0.85 m | 0.51 m | 0.13 m | 9; 0.96 m |
+| 2013-04-05 | 206 | 0.53 m | 0.21 m | 0.10 m | 9; 0.35 m |
+
+| Rule | T | P | |
+| --- | ---: | ---: | --- |
+| scored updates above 1.0 m | 0 | 0 | no more: met |
+| median | 0.214 m | 0.111 m | falls: met |
+| largest rise | | −0.009 m (every update fell) | ≤ 0.1 m: met |
+| scored updates | 5 | | ≥ 4: conclusive |
+
+The profile stays the `live` default. The figures are not comparable with the earlier check: the
+store is now D, whose odd sessions were themselves corrected, so A and T are lower here
+(2012-01-08 against the odd sessions of the uncorrected store was 2.51 m as committed). The
+largest gain is on 2012-02-19 (0.51 → 0.13 m), whose drift grows along the pass. No ground truth
+was read to score.
