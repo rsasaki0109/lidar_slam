@@ -717,6 +717,23 @@ trigger and score revisits on the map's uncertainty (e.g. the largest or summed 
 over the graph, and the predicted reduction of it), so that a loop that has corrected a part of
 the map is not paid for again.
 
+### Map objective: tuning rule (written before its runs)
+
+`exploration_revisit_map_objective` (`SelectionConfig::map_objective`): revisit mode follows the
+map's mean sigma (each submap's sigma weighted by the coverage area it first observed;
+`mapSigma`), and a revisit's gain is the predicted drop of that mean [m] (`predictedMapSigmaDrop`:
+the trajectory from the target on is taken as a chain, scaled to the predicted newest drop).
+A smoke run (`tunnel_loop` 2, trigger 0.3, `w_u` 1600) never entered revisit mode: the map's
+mean sigma stayed within 0.07-0.26 m, and the run equals `frontier_info`. The grid is set from
+that range: trigger in {0.1, 0.2} m (release half of it) x `w_u` in {400, 1600}, with the loop
+degeneracy gate at 0.002. Tunnels set, seeds 1-3, `active` only; the comparison is with the
+re-run baseline with the same gate (all three policies). Choice and adoption: as before (no
+failed run, median coverage within 5 points of `frontier_info`'s, lowest median final-map ATE,
+ties within 0.02 m to the smaller `w_u`, then the higher trigger), adopted only if its median ATE
+is below that of the gated baseline's `active` (fraction gain). Whatever the outcome, this is
+the last tuning round on these six runs: the next step freezes a configuration and builds new
+holdout worlds.
+
 ### False loop edges in the tunnels (2026-11-27)
 
 Every loop edge of the tunnel runs was checked against the truth (relative truth pose of the two
