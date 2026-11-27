@@ -1982,3 +1982,18 @@ registered over the first few keyframes, where tilt is weakly constrained, and 1
 amount to 3 m over 100 m. Correcting the store transform's roll, pitch and height from the
 overlap of the whole session before it is committed is the candidate fix; an in-sample fit
 flatters it, so its check has to score the correction on data the fit did not use.
+
+#### Out-of-sample check of a tilt and height correction (preregistered 2026-11-27, before the run)
+
+- **Correction (C):** for update k of the lifelong store with at least 20 committed submaps
+  within reach of sessions 0..k−1 (the `height_check` comparison), a rotation about its first
+  submap position (roll and pitch on a 0.25 degree grid within ±4 degrees, keeping at least 80%
+  of the compared submaps) followed by a height offset, chosen to minimise the 95th percentile of
+  |dz − median dz| against sessions 0..k−1, the offset being that median. Sessions 0..k−1 only.
+- **Score, data the fit did not use:** the update's submap positions, before (A) and after (C) the
+  correction, against the later sessions k+1..19 (`height_differences`, 1.5 m, three neighbours):
+  the 95th percentile of |dz| per update, for updates with at least 20 compared submaps.
+- **Rule:** the correction **reduces the drift** when the median of these per-update values falls
+  by at least 20% from A to C, no more updates are above 1.5 m with C than with A, and no update
+  rises by more than 0.3 m. Then a pre-commit correction is implemented in `live`. Reported
+  whatever it is. The later sessions carry their own drift, which both arms share.
