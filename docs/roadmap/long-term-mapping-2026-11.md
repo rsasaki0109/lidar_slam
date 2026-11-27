@@ -2084,3 +2084,17 @@ after the correction, which moves a session by up to about a metre at its far en
   percentile of |dz| against the sessions before it of at most 1.5 m after the correction. Its
   95th percentile against the later lifelong sessions (k+1..19), anchor transform (A) and
   corrected (C), is reported alongside; C should not be above A there. Reported whatever it is.
+
+#### Results of the re-run of the refused sessions (2026-11-27)
+
+Both runs exit 0, and both anchor where the chain anchored them: before the correction their
+95th percentiles (3.44 and 1.62 m) are the chain's. `lifelong/refused_rerun_score.jsonl`:
+
+| Update | Before the correction | After (height check) | Tilt (roll, pitch), offset | Later sessions, A → C | Committed |
+| --- | ---: | ---: | --- | ---: | --- |
+| 2012-03-31 | 3.44 m | 1.13 m | +0.50, +1.75; −0.28 m | 3.99 → 1.80 m | yes |
+| 2012-11-16 | 1.62 m | 0.57 m | 0, −0.75; −0.87 m | 1.78 → 0.75 m | yes |
+
+The correction **admits** both sessions, and against the later sessions, which the fit did not
+use, C is below A for both. 2012-03-31 remains the worst session in the store (1.80 m against
+the later sessions): its climb is not all tilt.
