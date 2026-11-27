@@ -119,7 +119,7 @@ def test_store_startup_registration_and_island(tmp_path: Path, track_store: bool
 
     aligned = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'aligned',
                           store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
-                          track_store=track_store)
+                          track_store=track_store, height_profile=False)
     assert aligned['store_anchor_stamp_sec'] is not None
     store = Store.open(store_path)
     assert 'store_from_session' in store.sessions[1]
@@ -414,6 +414,13 @@ def test_height_profile_writes_lowered_submap_poses(tmp_path: Path, monkeypatch)
     assert np.allclose(lowered[:, 2, 3], rigid[:, 2, 3] - .2)
     assert np.allclose(lowered[:, :2, 3], rigid[:, :2, 3])
 
+    # Turned off, no submap poses are written.
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          height_profile=False)
+    assert 'store_height_profile' not in summary
+    assert not (store_path / 'sessions' / '0002' / 'store_submap_poses.npy').exists()
+
 
 def test_tilt_correction_replaces_the_committed_transform(tmp_path: Path, monkeypatch) -> None:
     from lidarslam import height_check
@@ -437,7 +444,8 @@ def test_tilt_correction_replaces_the_committed_transform(tmp_path: Path, monkey
     monkeypatch.setattr(height_check, 'correct', corrected)
     monkeypatch.setattr(height_check, 'check', passing)
     summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
-                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1])
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          height_profile=False)
     entry = Store.open(store_path).sessions[1]
     anchor = np.asarray(entry['store_from_session_uncorrected'])
     assert np.allclose(entry['store_from_session'], lowered @ anchor)
@@ -449,7 +457,7 @@ def test_tilt_correction_replaces_the_committed_transform(tmp_path: Path, monkey
 
     # Turned off, the anchor transform is committed.
     live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2', store=store_path,
-                initial_pose=[0.05, 0, 0, 0, 0, 0, 1], correct_tilt=False)
+                initial_pose=[0.05, 0, 0, 0, 0, 0, 1], correct_tilt=False, height_profile=False)
     entry = Store.open(store_path).sessions[2]
     assert 'store_from_session_uncorrected' not in entry
     assert np.allclose(np.asarray(entry['store_from_session'])[:3, 3], anchor[:3, 3])

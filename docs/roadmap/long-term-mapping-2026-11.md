@@ -2147,7 +2147,7 @@ Files (`bench_report/data/long_term_2026-11/lifelong/`):
 
 Day names follow the chain, so the 2012-05-26 update appears as 2012-05-27 (UTC) in the scores.
 
-#### Height profile along the session (`live --height-profile`, experimental)
+#### Height profile along the session (`live`, on by default after the rebuild below)
 
 A rigid correction leaves drift that grows inside a session. In the rebuilt chain, 2012-03-31
 stayed at 2.53 m against the whole store. `lidarslam.height_check.profile` runs after the tilt
@@ -2192,3 +2192,51 @@ above were fixed before it ran:
   A session D refuses is reported and does not count for D. The result is reported whatever it
   is, together with the wall time and whether the store exports.
 - **Default:** `--height-profile` becomes the `live` default only if D passes.
+
+#### Results of the chain rebuilt with the height profile (2026-11-27)
+
+**PASS: D is more consistent than C.** All 19 updates ran (exit 0) and were committed; the height
+check refused none.
+
+- **Profiles:** 18 updates were profiled with 8-15 knots. 2012-01-22 overlapped the base in only
+  4 submaps, so it got neither the tilt correction nor the profile.
+- **Largest offsets:**
+  - 2012-03-31: 2.05 m. Against the store at its commit, it went from 1.23 to 0.37 m.
+  - 2012-05-11: 1.22 m.
+  - Every other session: at most 0.58 m.
+- **Wall time:** 4641 s, against 5618 s for C. No component of the profile is that fast; the
+  difference is in the replay itself, and the machine's load varied between the runs.
+- **Export:** the store exported (`lidarslam store export`, 154 s, 316 MB).
+
+| | C (tilt) | D (tilt + profile) |
+|---|---:|---:|
+| sessions committed | 20 | 20 |
+| sessions above 1.0 m | 1 | 0 |
+| median p95 \|dz\| | 0.219 m | 0.111 m |
+| largest rise per session | | +0.020 m (2012-08-04) |
+
+Largest changes per session (C → D):
+
+- 2012-03-31: 2.53 → 0.39 m
+- 2012-05-11: 0.95 → 0.16 m
+- 2012-11-16: 0.50 → 0.12 m
+- 2013-02-23: 0.40 → 0.07 m
+
+Two sessions rose:
+
+- the base session 2012-01-15: 0.178 → 0.185 m
+- 2012-08-04: 0.141 → 0.161 m
+
+As preregistered, `--height-profile` is now the `live` default. `--no-height-profile` turns it
+off. Tests whose subject is the rigid placement (startup registration, the tilt-correction
+switch, map-edit export) now turn it off explicitly.
+
+The score is partly circular (see the preregistration), so the improvement over C is an upper
+bound on what the profile does for the map. It is not an accuracy result: no ground truth was
+read.
+
+Files (`bench_report/data/long_term_2026-11/lifelong/`):
+
+- `profile_chain.jsonl`: per update, its exit code, wall time, the tilt fit, the profile and the
+  height check.
+- `consistency_D.jsonl`: the scores.

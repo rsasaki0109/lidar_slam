@@ -147,9 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument('--no-tilt-correction', dest='correct_tilt', action='store_false',
                       help='add an anchored session at its anchor transform, without fitting its '
                            'roll, pitch and height to the stored sessions where the paths overlap')
-    live.add_argument('--height-profile', action='store_true',
-                      help='also lower each submap of an anchored session by a height offset '
-                           'fitted along the session to the stored sessions (experimental)')
+    live.add_argument('--no-height-profile', dest='height_profile', action='store_false',
+                      help='do not lower the submaps of an anchored session by a height offset '
+                           'fitted along the session to the stored sessions')
     live.add_argument('--refine-visibility', action='store_true',
                       help='detect changes and filter new points with complete ray evidence '
                            '(recommended change mode; experimental)')

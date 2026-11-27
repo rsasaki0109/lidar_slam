@@ -63,7 +63,7 @@ class Session:
     (:func:`lidarslam.height_check.correct`; not with store tracking, whose submap poses are
     stored as tracked).
     ``height_profile`` then also lowers each submap by a height offset fitted along the session
-    (:func:`lidarslam.height_check.profile`, experimental), for drift that grows inside it.
+    (:func:`lidarslam.height_check.profile`), for drift that grows inside it.
     ``start_near_first_submap`` searches for a verified startup pose within 5 m of the first
     stored submap, when the operator knows that the recording starts in that area.
     ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
@@ -85,7 +85,7 @@ class Session:
                  start_near_first_submap: bool = False, refine_visibility: bool = False,
                  relocalize_anywhere: bool = False, background_search: bool = False,
                  max_height_drift: float | None = MAX_HEIGHT_DRIFT_M,
-                 correct_tilt: bool = True, height_profile: bool = False):
+                 correct_tilt: bool = True, height_profile: bool = True):
         filter_new_points = filter_new_points or refine_visibility
         detect_changes = detect_changes or filter_new_points
         if sum([initial_pose is not None, start_near_first_submap, relocalize_anywhere]) > 1:
@@ -362,7 +362,7 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
            start_near_first_submap: bool = False, refine_visibility: bool = False,
            relocalize_anywhere: bool = False,
            max_height_drift: float | None = MAX_HEIGHT_DRIFT_M,
-           correct_tilt: bool = True, height_profile: bool = False) -> dict[str, Any]:
+           correct_tilt: bool = True, height_profile: bool = True) -> dict[str, Any]:
     """Plays a sensor log into a :class:`Session` and writes its live trajectory and timing.
 
     With ``realtime`` each message is handed over no earlier than its log time after the first
