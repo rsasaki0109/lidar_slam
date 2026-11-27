@@ -1932,3 +1932,24 @@ preferred, above).
   the share the rerun's export keeps.
 - **Rule:** `--refine-visibility` **cleans the lifelong map** when, for both updates, T ≥ 50% and
   S ≥ 95%. Then the lifelong chain takes it. The result is reported whatever it is.
+
+#### Results of the refine-visibility check (2026-11-27)
+
+| Update | Points | Masked new voxels | T (transients removed) | S (structure kept) | Rule |
+| --- | ---: | ---: | ---: | ---: | --- |
+| chain's commit of 2012-12-01 (`--detect-changes`) | 2,077,962 | — | 0.0% | 100.0% | — |
+| 2012-12-01, `--refine-visibility` | 2,077,962 | 606,568 | 47.1% | 64.6% | fails |
+| 2013-02-23, `--refine-visibility` | 2,172,025 | 497,305 | 40.2% | 74.3% | fails |
+
+`--refine-visibility` does **not** clean the lifelong map under the preregistered rule: it removes
+less than half of the single-session points at people and car height, and it drops a quarter to
+a third of the update's points in cells that three or more sessions confirm. The lifelong chain
+keeps `--detect-changes`.
+
+Post hoc (not preregistered): most of what S counts as lost is redundant. Of the 0.75 m cells the
+update has points in, 96.2% and 96.1% still hold a kept point of some session after the rerun
+(98.9% and 100% with the chain's commit), and the store's exported cells fall by 0.2% and 1.2%.
+The filter judges a voxel only by the update's own scans, so it masks structure the store
+already confirms and keeps transients the update saw from several scans (a parked car seen
+while walking past). A filter for a long-term store would have to weigh the stored sessions'
+support as well. Peak memory stayed at 5.5–5.8 GB (high-water mark).
