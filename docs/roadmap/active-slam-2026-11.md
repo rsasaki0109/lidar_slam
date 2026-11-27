@@ -873,6 +873,45 @@ between seeds (0.03-0.9 m) is far larger than any difference between the policie
 This holdout is now seen. By the preregistered rule the method has not shown that it makes the
 map more accurate on unseen worlds.
 
+### Why revisiting does not help: diagnosis (2026-11-27, development runs only)
+
+`diagnose_map_error.py` on the gated tunnels baseline (18 runs) and the easy development set
+(`eval_dev_fixed`, 36 runs); no holdout run is used. Medians (range):
+
+| | easy worlds | tunnels |
+| --- | --- | --- |
+| ATE, odometry only (`trajectory_raw`) [m] | 0.028 | 0.607 (0.08-1.48) |
+| ATE, after the pose graph [m] | 0.027 | 0.590 (0.07-1.46) |
+| ATE after a similarity (scale) alignment [m] | 0.025 | 0.374 (0.05-0.77) |
+| scale that best fits the map to the truth | 1.000 | 1.006 (1.001-1.018) |
+| share of the squared error along the heading | 0.18 | 0.74 |
+| drift a loop edge can see (truth vs odometry, between its two submaps) [m] | 0.036 | 0.057 |
+| loop edge measurement error vs truth [m] | 0.010 | 0.009 |
+| rank correlation of a submap's sigma with its error | -0.05 | 0.07 (-0.75..0.77) |
+
+1. The loop edges are accurate (about 1 cm), but there is almost nothing for them to correct:
+   between the two submaps of a loop the odometry has drifted only 4-6 cm, while the tunnel
+   maps are 0.6 m off. The pose graph changes the map by less than 5 % in 43 of the 54 runs.
+2. The tunnel error is mostly along the direction of travel, and a single scale factor removes
+   a third to a half of it: the odometry under-measures the distance travelled through the
+   feature-poor stretches (the maps are 0.1-1.8 % short). An error that depends on the place
+   rather than on the time (the same stretch comes out short on every pass, in either direction)
+   keeps every loop closed, so no loop and no revisit can see or remove it.
+3. The graph's sigma does not say where the map is wrong (rank correlation about 0, either
+   sign); it models time-accumulated drift, which is not where the error is.
+
+So in these simulated worlds the error that the method targets (drift that a revisit's loop
+removes) is small, and the error that dominates (place-dependent under-registration in
+degenerate stretches) is invisible to loops and to the covariance. That explains the holdout
+better than the policy's tuning does: `active` and `frontier_info` end within 2 mm of each other
+in 7 of 20 holdout pairs despite closing different loops.
+
+Correction: `check_loops.py` (scratch script used for "False loop edges in the tunnels") read
+the truth 0.1 s early (`frames.csv`'s `t` is the frame's start; the truth is the pose at its
+end), which adds up to ~0.14 m to each edge's error. The 2 m threshold for a false loop and the
+15 false loops found are unaffected; the "within 0.52 m" figure is an upper bound. The harness's
+own metrics (`final_map_ate`, `odometry_drift`) use the frame end and are correct.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
