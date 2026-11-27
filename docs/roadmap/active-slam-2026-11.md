@@ -693,6 +693,30 @@ same rule as for the absolute gain (no failed run, median coverage within 5 poin
 adopted only if below the fraction gain's 0.46 m). In parallel, the two diverged `w_u` 400 runs
 are checked for false loop edges against the truth.
 
+### Revisit trigger: result (2026-11-27): not adopted
+
+`active`, absolute gain, `w_u` 400, over the 6 tunnel runs (before the degeneracy gate):
+
+| trigger / release [m] | ATE median [m] | coverage median | failed (diverged) | false loops > 2 m |
+| --- | --- | --- | --- | --- |
+| 0.05 / 0.02 | 0.309 | 0.33 | 5 (2) | 15 |
+| 0.3 / 0.12 | 0.392 | 0.57 | 4 (2) | 4 |
+| 0.5 / 0.2 | 0.486 | 0.88 | 1 (0) | 5 |
+| 0.8 / 0.32 | 0.623 | 0.99 | 1 (1) | 0 |
+
+No setting meets the rule (every one has a failed run). 0.8 is not reached on 4 of 6 runs and
+then equals `frontier_info`. The decision log of `tunnel_loop` 2 at 0.5 shows the failure mode
+of the lower triggers: at the far end of the first tunnel (sigma 0.5) the robot drives 164 m back
+to the start, the loop closes (sigma 0.2), it drives back to the frontier, and by then the
+newest sigma is 0.5 again, so it turns back again: six round trips until the budget ends.
+
+Reading: the newest submap's sigma is the wrong objective for a revisit. It measures the robot's
+current pose, which every metre of travel down an unconstrained tunnel degrades again, while what
+a revisit buys and keeps is the correction of the map already built. The next design step is to
+trigger and score revisits on the map's uncertainty (e.g. the largest or summed submap sigma
+over the graph, and the predicted reduction of it), so that a loop that has corrected a part of
+the map is not paid for again.
+
 ### False loop edges in the tunnels (2026-11-27)
 
 Every loop edge of the tunnel runs was checked against the truth (relative truth pose of the two
