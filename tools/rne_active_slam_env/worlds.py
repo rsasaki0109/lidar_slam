@@ -226,9 +226,41 @@ def world_long_loop2() -> dict[str, Any]:
     return rect_world(74, 44, free, starts, pilaster_spacing=6, seed=6)
 
 
+# ------------------------------------------------------------------- degenerate worlds
+
+
+def world_tunnel_loop() -> dict[str, Any]:
+    """Return a 4 m tunnel around a 156 m x 36 m block (~400 m loop), pilasters every 6 m.
+
+    The long sides are 164 m: midway, both end walls are beyond the Mid-360's 70 m, so along
+    the tunnel only the pilasters constrain the odometry (thin them to set the difficulty).
+    """
+    free = [[0, 0, 164, 4], [0, 40, 164, 44], [0, 4, 4, 40], [160, 4, 164, 40]]
+    starts = [[2.0, 22.0, math.pi / 2], [82.0, 2.0, 0.0], [162.0, 22.0, math.pi / 2],
+              [82.0, 42.0, math.pi], [2.0, 2.0, 0.0], [162.0, 2.0, math.pi / 2],
+              [162.0, 42.0, math.pi], [2.0, 42.0, -math.pi / 2], [40.0, 2.0, math.pi],
+              [120.0, 42.0, 0.0]]
+    return rect_world(164, 44, free, starts, pilaster_spacing=6, seed=7)
+
+
+def world_long_tunnels() -> dict[str, Any]:
+    """Return two parallel 200 m tunnels joined at both ends and in the middle (two loops).
+
+    4 m tunnels, pilasters every 6 m; the loops are ~310 m each, ~510 m around the outside.
+    """
+    free = [[0, 0, 200, 4], [0, 56, 200, 60], [0, 4, 4, 56], [196, 4, 200, 56],
+            [98, 4, 102, 56]]
+    starts = [[2.0, 30.0, math.pi / 2], [50.0, 2.0, 0.0], [100.0, 30.0, -math.pi / 2],
+              [150.0, 58.0, math.pi], [198.0, 30.0, math.pi / 2], [2.0, 2.0, 0.0],
+              [150.0, 2.0, 0.0], [50.0, 58.0, math.pi], [198.0, 58.0, math.pi],
+              [100.0, 2.0, math.pi / 2]]
+    return rect_world(200, 60, free, starts, pilaster_spacing=6, seed=8)
+
+
 # branches2 and long_loop2 were the second holdout (run once on 2026-11-27); seen, so tuned on now.
 DEVELOPMENT = {'ring': world_ring, 'grid': world_grid, 'branches2': world_branches2,
-               'long_loop2': world_long_loop2}
+               'long_loop2': world_long_loop2, 'tunnel_loop': world_tunnel_loop,
+               'long_tunnels': world_long_tunnels}
 # The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
 RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
 # The next holdout: to be built, checked statically and approved before it is run once.
@@ -294,6 +326,8 @@ ROUTES = {
     'branches2': [(6.0, 24.0), (64.0, 24.0), (64.0, 6.0), (6.0, 6.0), (6.0, 24.0), (14.0, 24.0),
                   (14.0, 42.0), (14.0, 24.0), (42.0, 24.0), (42.0, 44.0), (42.0, 26.0)],
     'long_loop2': [(2.0, 2.0), (72.0, 2.0), (72.0, 42.0), (2.0, 42.0), (2.0, 4.0)],
+    'tunnel_loop': [(2.0, 2.0), (162.0, 2.0), (162.0, 42.0), (2.0, 42.0), (2.0, 4.0)],
+    'long_tunnels': [(2.0, 2.0), (198.0, 2.0), (198.0, 58.0), (100.0, 58.0), (100.0, 4.0)],
 }
 
 

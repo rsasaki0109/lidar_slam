@@ -565,6 +565,24 @@ the truth by one frame either way raises the drift (ring: 0.44 / 0.19 / 0.64 % a
 so it is not a timing artifact of the metric. The simulated odometry drifts about as much as
 the repo's real Mid-360 drive with its graph backend (0.19 %).
 
+### Degenerate worlds: calibration rule (written before their results)
+
+Real LIO drifts where the scene does not constrain it, so two development worlds at the scale
+where that happens with a Mid-360 (70 m range): `tunnel_loop` (4 m tunnel, 164 m long sides,
+~400 m loop) and `long_tunnels` (two 200 m tunnels joined at both ends and in the middle). In
+the middle of a long side both end walls are out of range; only pilasters (built every 6 m)
+fix the position along the tunnel.
+
+- Measured as before: fixed routes (~400 m), odometry drift over 50 m, no policy.
+- Knob: pilaster spacing 6 (as built), 12, 24, 48 m, none; IMU noise scale 1 (it did not
+  matter).
+- Rule: per tunnel world, the setting closest to as built whose drift is 0.3-1.0 % and whose
+  route does not lose the odometry (live error under 5 m). If both worlds land in the band at
+  one common spacing, that spacing applies to both; otherwise the per-world settings are
+  recorded and used. The four earlier worlds keep their as-built scene (reported as the easy
+  set).
+- Frozen before any policy runs on the tunnels.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

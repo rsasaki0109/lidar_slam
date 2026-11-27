@@ -56,11 +56,12 @@ def main(argv: list[str] | None = None) -> int:
                         help='pilaster spacings [m] (0: as built, -1: none)')
     parser.add_argument('--imu-noise-scales', type=float, nargs='+', default=[1.0, 5.0])
     parser.add_argument('--seeds', type=int, nargs='+', default=[1])
+    parser.add_argument('--worlds', nargs='+', help='default: the development set')
     parser.add_argument('--jobs', type=int, default=3)
     args = parser.parse_args(argv)
 
     config = yaml.safe_load(args.config.read_text())
-    worlds = config['sets']['development']['worlds']
+    worlds = args.worlds or config['sets']['development']['worlds']
     out = args.out.resolve()
     cells = list(itertools.product(worlds, args.seeds, args.spacings, args.imu_noise_scales))
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
