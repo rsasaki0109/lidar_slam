@@ -2098,3 +2098,17 @@ Both runs exit 0, and both anchor where the chain anchored them: before the corr
 The correction **admits** both sessions, and against the later sessions, which the fit did not
 use, C is below A for both. 2012-03-31 remains the worst session in the store (1.80 m against
 the later sessions): its climb is not all tilt.
+
+#### Rebuilding the lifelong chain with the tilt correction (preregistered 2026-11-27, before the run)
+
+- **Chains:** A is the lifelong store as built (no correction). C is built again from the same
+  base session (`stores/d_store`) with the same 19 updates, bags, order and options
+  (`lifelong_chain.sh`), with the `live` defaults now in place: tilt correction and the 1.5 m
+  height check. No ground truth is read.
+- **Score (map consistency, not an out-of-sample test):** for every session of a store, the 95th
+  percentile of |dz| of its submap positions against those of all the other sessions of the same
+  store (1.5 m, three neighbours), for sessions with at least 20 compared submaps.
+- **Rule:** C makes the store **more consistent** when, over the sessions committed in both
+  stores, fewer are above 1.0 m in C than in A, the median does not rise, and no session rises by
+  more than 0.3 m. A session C refuses is reported and does not count for C. Reported whatever it
+  is.
