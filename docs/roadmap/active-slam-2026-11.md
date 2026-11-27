@@ -950,6 +950,23 @@ of the corridor's geometry alone. Two consequences:
 - "Drive faster through degenerate stretches" would be adopted only under its own rule and only
   after the frontend's part is understood; it may be a parameter artifact rather than physics.
 
+### Frontend's part in the shrink: rule (written before its runs)
+
+Diagnostic only (the frozen evaluation keeps its frontend). The same routes as the speed test,
+at 0.7 m/s, seeds 1-3, `tunnel_loop` (30 m) and `long_tunnels` (48 m), odometry only, one
+RKO-LIO parameter group changed at a time from `rko_lio_mid360_walking.yaml`:
+
+- `vox125`: `voxel_size` and `max_correspondence_distance` 0.125 m (from 0.25 m)
+- `corr50`: `max_correspondence_distance` 0.5 m (the upstream default)
+- `noloc`: `localizability_weighting` off
+
+Reference: the speed test's 0.7 m/s runs (median `|scale - 1|` 0.0070, ATE 0.621 m). A variant
+explains the shrink if its median `|scale - 1|` is at most half the reference's and its ATE is
+lower in at least 5 of 6 runs. If one does, the shrink is a frontend setting, fixed (and
+checked against the release gate) outside the active SLAM work, and the tunnels are
+re-measured before revisiting is evaluated again. If none does, driving (speed, keeping
+pilasters in view) is the lever, and a policy for it is built under its own rule.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
