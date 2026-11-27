@@ -752,6 +752,48 @@ not change): a loop registration whose ratio is below it is rejected. 0.002 is c
 development runs; it changes the backend for every policy, so the tunnels are run again for all
 three policies with it before any policy setting is compared.
 
+### Tunnels baseline with the loop gate (2026-11-27, development)
+
+`eval_config.yaml` plus the gate at 0.002, 18 runs (commit 5f77f54, clean tree). No loop edge
+of any run is off by more than 2 m. Final-map ATE [m], median of the six runs:
+
+| policy | median | runs |
+| --- | --- | --- |
+| `active` (fraction gain) | 0.427 | 0.07, 0.295, 0.414, 0.44, 0.724, 0.768 |
+| `nearest_frontier` | 0.595 | 0.179, 0.355, 0.588, 0.603, 0.952, 1.464 |
+| `frontier_info` | 0.658 | 0.295, 0.52, 0.593, 0.724, 0.801, 0.901 |
+
+Per world: `active` vs `frontier_info` passes on `long_tunnels` (median reduction 30 %, 2 of 3
+seeds lower) and fails on `tunnel_loop` (4 %), with 3 seeds per world.
+
+### Map objective: result (2026-11-27): not adopted
+
+`active` only, the other two policies are the gated baseline's runs. `frontier_info`'s median
+coverage is 0.9917, so the floor is 0.9417.
+
+| trigger / `w_u` | median ATE [m] | median coverage | failed | eligible |
+| --- | --- | --- | --- | --- |
+| 0.1 / 400 | 0.804 | 0.9984 | 0 | yes |
+| 0.2 / 400 | 0.804 | 0.9984 | 0 | yes |
+| 0.1 / 1600 | 0.433 | 0.7123 | 1 | no |
+| 0.2 / 1600 | 0.550 | 0.9303 | 0 | no (coverage) |
+
+The rule picks 0.2 / 400 (tie with 0.1 / 400: same runs, frame for frame); its 0.804 m is above
+the gated baseline's 0.427 m, so it is not adopted. On `tunnel_loop` 1 and 2 the `w_u` 400 runs
+equal the baseline frame for frame: their revisit goals differ, but both lie back down the same
+corridor and the mode ends before either is reached. On `long_tunnels` they are worse (0.84-0.98
+vs 0.41-0.72 m). `w_u` 1600 pulls back so often that coverage falls short. One loop edge of the
+24 runs is off by more than 2 m (`0.1 / 1600`, `long_tunnels` 3).
+
+### Frozen configuration (2026-11-27)
+
+Tuning on the tunnels ends here. `eval_config.yaml` is frozen as the gated baseline: `active` with
+the fraction gain (trigger 0.05, release 0.02, `w_u` 80, minimum predicted drop 0.2) and the loop
+gate at 0.002 for every policy. The map objective and the absolute gain stay in the code, off by
+default. Next: new holdout worlds, built and checked (static checks and a short dry run from
+every start, no policy comparison) before the user approves them, then one run of the holdout
+set with `--frozen` from a clean tree.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
