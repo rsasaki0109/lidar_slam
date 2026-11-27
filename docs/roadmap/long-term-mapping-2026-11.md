@@ -1953,3 +1953,32 @@ The filter judges a voxel only by the update's own scans, so it masks structure 
 already confirms and keeps transients the update saw from several scans (a parked car seen
 while walking past). A filter for a long-term store would have to weigh the stored sessions'
 support as well. Peak memory stayed at 5.5–5.8 GB (high-water mark).
+
+### Most of the height drift is the anchor's tilt (development, 2026-11-27)
+
+Re-read of the 2012-03-31 attitude: the base z axis stays 15.6–17.6 degrees from the odometry
+world z over the whole session (the moving start's world frame is tilted); the "pitch" change
+reported above was the Euler decomposition mixing in the heading, not an attitude jump.
+
+One rigid correction per session, a tilt (roll, pitch, on a 0.25 degree grid within ±4 degrees,
+about its first submap) and a height offset, fitted to minimise the 95th percentile of |dz| of
+its committed submaps against the sessions before it (descriptive, in-sample):
+
+| Update | 95th pct. \|dz\| | after the fit | Tilt (roll, pitch) |
+| --- | ---: | ---: | --- |
+| 2012-02-02 | 0.44 m | 0.15 m | 0, 0 |
+| 2012-03-17 | 1.11 m | 0.25 m | −0.25, +0.50 |
+| 2012-03-25 | 1.18 m | 0.44 m | 0, +0.50 |
+| 2012-03-31 | 3.44 m | 1.13 m | +0.50, +1.75 |
+| 2012-05-11 | 1.44 m | 0.91 m | +0.75, +0.25 |
+| 2012-05-26 | 1.18 m | 0.63 m | +0.25, −0.50 |
+| 2012-09-28 | 0.82 m | 0.36 m | +0.25, +0.25 |
+| 2012-11-16 | 1.62 m | 0.57 m | 0, −0.75 |
+| 2012-11-17 | 1.18 m | 0.48 m | −0.50, −0.25 |
+| the other nine | 0.32–0.66 m | 0.23–0.55 m | within 0.25 |
+
+A tilt of 0.25–1.75 degrees with a height offset accounts for most of the drift: the anchor is
+registered over the first few keyframes, where tilt is weakly constrained, and 1.75 degrees
+amount to 3 m over 100 m. Correcting the store transform's roll, pitch and height from the
+overlap of the whole session before it is committed is the candidate fix; an in-sample fit
+flatters it, so its check has to score the correction on data the fit did not use.
