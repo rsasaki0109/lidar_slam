@@ -2098,3 +2098,51 @@ Both runs exit 0, and both anchor where the chain anchored them: before the corr
 The correction **admits** both sessions, and against the later sessions, which the fit did not
 use, C is below A for both. 2012-03-31 remains the worst session in the store (1.80 m against
 the later sessions): its climb is not all tilt.
+
+#### Rebuilding the lifelong chain with the tilt correction (preregistered 2026-11-27, before the run)
+
+- **Chains:** A is the lifelong store as built (no correction). C is built again from the same
+  base session (`stores/d_store`) with the same 19 updates, bags, order and options
+  (`lifelong_chain.sh`), with the `live` defaults now in place: tilt correction and the 1.5 m
+  height check. No ground truth is read.
+- **Score (map consistency, not an out-of-sample test):** for every session of a store, the 95th
+  percentile of |dz| of its submap positions against those of all the other sessions of the same
+  store (1.5 m, three neighbours), for sessions with at least 20 compared submaps.
+- **Rule:** C makes the store **more consistent** when, over the sessions committed in both
+  stores, fewer are above 1.0 m in C than in A, the median does not rise, and no session rises by
+  more than 0.3 m. A session C refuses is reported and does not count for C. Reported whatever it
+  is.
+
+#### Results of the rebuilt chain (2026-11-27)
+
+**PASS: C is more consistent.** All 19 updates ran (exit 0) and were committed; the height check
+refused none. Total wall time was 5618 s, against 5622 s for A, so the 14-16 s fit per session
+does not show in the total. Eighteen updates were corrected. 2012-01-22 overlapped the base in only
+4 submaps, so it was committed as registered. The fits stayed within ±1° roll and ±1.75° pitch,
+with offsets of -1.14 to +0.95 m.
+
+| | A (as built) | C (corrected) |
+|---|---:|---:|
+| sessions committed | 20 | 20 |
+| sessions above 1.0 m | 4 | 1 |
+| median p95 \|dz\| | 0.657 m | 0.219 m |
+| largest rise per session | | -0.124 m (every session fell) |
+
+Per session (p95 |dz| against all the other sessions of the same store, A → C):
+
+- 2012-03-31 5.23 → 2.53
+- 2012-11-16 1.65 → 0.50
+- 2012-05-11 1.59 → 0.95
+- 2012-11-17 1.15 → 0.23
+- every other session was below 1.0 m in both stores and fell by 0.12-0.72 m
+
+2012-03-31 is the one session still above 1.0 m. Its fit took it from 5.17 to 0.89 m against the
+store at the time of its commit. Against the whole store it is still 2.53 m, because a rigid
+correction cannot remove the climb inside the session (the 5 m in its last 100 s).
+
+Files (`bench_report/data/long_term_2026-11/lifelong/`):
+
+- `tilt_chain.jsonl`: per update, its exit code, wall time, the fit and the height check.
+- `consistency_A.jsonl` and `consistency_C.jsonl`: the scores, from `consistency_score.py`.
+
+Day names follow the chain, so the 2012-05-26 update appears as 2012-05-27 (UTC) in the scores.
