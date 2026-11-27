@@ -2016,3 +2016,60 @@ acts on the worst sessions (2012-03-31 3.99 → 1.80 m, 2012-11-16 1.78 → 0.75
 comparison is bounded by the later sessions' own drift (0.6–0.8 m). Two preregistered rules on
 the median have now failed for corrections that mostly act on the tail; a rule on the tail has to
 be set before a run on sessions this chain has not used.
+
+#### Check of the tilt and height correction on sessions the chain has not used (preregistered 2026-11-27, before any data of these sessions is read)
+
+- **Updates:** the seven NCLT sessions outside the lifelong chain (2012-01-08, 02-04, 02-12, 02-19,
+  04-29, 2013-01-10, 2013-04-05). For each, its 1 Hz ground-truth positions are read only to pick
+  its longest pass through the lifelong square (x −180…−30 m, y −585…−435 m, ±10 s, as for
+  `windows.json`); the pass is converted (`convert_nclt_session.py --point-step 6`) and appended to
+  its own copy of the 20-session lifelong store with `--relocalize-anywhere --detect-changes
+  --max-height-drift 0`. Ground truth is not used to score.
+- **Correction (C):** as in the out-of-sample check above, fitted against the store's even
+  sessions (0, 2, …, 18) only.
+- **Score:** the update's committed submap positions, as committed (A) and corrected (C), against
+  the odd sessions (1, 3, …, 19): the 95th percentile of |dz| (1.5 m, three neighbours), for
+  updates with at least 20 compared submaps.
+- **Rule (on the tail):** C **reduces the drift** when fewer scored updates are above 1.0 m with C
+  than with A and no scored update rises by more than 0.3 m. With fewer than four scored updates
+  the check is inconclusive. If C passes, a pre-commit correction is implemented in `live`.
+  Reported whatever it is.
+
+#### Results of the check on sessions the chain has not used (2026-11-27)
+
+Six of the seven sessions pass through the square (2013-01-10 does not); all six were appended
+(`live` exit 0). 2012-04-29 passes for 23 s and has 14 submaps within reach of the even sessions,
+too few to fit, so five updates are scored (`lifelong/fresh_tilt_score.jsonl`). The 95th
+percentile of |dz| against the odd sessions:
+
+| Update | Compared | A (as committed) | C (corrected) | Tilt (roll, pitch), offset |
+| --- | ---: | ---: | ---: | --- |
+| 2012-01-08 | 246 | 2.51 m | 2.12 m | +0.25, 0; +0.24 m |
+| 2012-02-04 | 283 | 0.59 m | 0.70 m | 0, 0; +0.11 m |
+| 2012-02-12 | 225 | 2.36 m | 0.84 m | +0.25, +0.50; +0.92 m |
+| 2012-02-19 | 238 | 1.43 m | 0.79 m | −0.50, −0.25; −0.37 m |
+| 2013-04-05 | 199 | 0.52 m | 0.56 m | +0.25, 0; +0.19 m |
+
+| Rule | A | C | |
+| --- | ---: | ---: | --- |
+| scored updates above 1.0 m | 3 | 1 | fewer: met |
+| largest rise | — | +0.11 m (2012-02-04) | ≤ 0.3 m: met |
+| scored updates | 5 | | ≥ 4: conclusive |
+
+The correction **reduces the drift** on sessions the chain has not used, and by the preregistered
+rule a pre-commit correction is implemented in `live`. 2012-01-08 stays above 1.0 m: its drift is
+not a rigid tilt of the whole session. The two sessions that were already flat rise by 0.04 and
+0.11 m, the cost of fitting against half the store.
+
+#### Tilt correction before the commit (`live`, on by default)
+
+`live` now fits the correction before an anchored session is committed
+(`lidarslam.height_check.correct`): the same grid fit as in the check, against every stored
+session, applied to `store_from_session` (the anchor transform is kept as
+`store_from_session_uncorrected`, the fit as `store_tilt_correction`). The height check then runs
+on the corrected transform. Sessions with fewer than 20 overlapping submaps, and store tracking
+(whose submap poses are stored as tracked), keep the anchor transform; `--no-tilt-correction`
+turns it off. The fit takes 14–16 s on a 20-session NCLT store. On the fresh stores it brings
+2012-02-12 from 2.48 to 0.58 m and 2012-02-04 from 0.41 to 0.30 m (in-sample, against all twenty
+sessions). The change evidence is still traced with the anchor transform and is not traced again
+after the correction, which moves a session by up to about a metre at its far end (2012-02-12).

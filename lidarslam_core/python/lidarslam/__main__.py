@@ -144,6 +144,9 @@ def main(argv: list[str] | None = None) -> int:
                       help='do not add an anchored session whose submaps differ in height from '
                            'the stored sessions by more than M m (95th percentile where the '
                            'paths overlap; 0 turns the check off)')
+    live.add_argument('--no-tilt-correction', dest='correct_tilt', action='store_false',
+                      help='add an anchored session at its anchor transform, without fitting its '
+                           'roll, pitch and height to the stored sessions where the paths overlap')
     live.add_argument('--refine-visibility', action='store_true',
                       help='detect changes and filter new points with complete ray evidence '
                            '(recommended change mode; experimental)')
@@ -276,7 +279,8 @@ def main(argv: list[str] | None = None) -> int:
                                      filter_new_points=args.filter_new_points,
                                      start_near_first_submap=args.start_near_first_submap,
                                      refine_visibility=args.refine_visibility,
-                                     max_height_drift=args.max_height_drift)
+                                     max_height_drift=args.max_height_drift,
+                                     correct_tilt=args.correct_tilt)
         print(json.dumps(summary, indent=2))
     elif args.command == 'colmap':
         from lidarslam.gsplat_export import export
