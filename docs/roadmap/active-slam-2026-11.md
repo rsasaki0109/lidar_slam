@@ -1002,6 +1002,31 @@ worth building where a constant speed has a cost.
   simulator artifact (a real scan smears more at speed; this simulator's deskew is exact) and
   speed is not claimed as a lever without real data.
 
+### Driving policy, step 0: result (2026-11-27): speed is a global setting
+
+Routes, odometry only, seeds 1-3, no collision anywhere. Median SE(2) ATE [m]:
+
+| | 0.7 m/s | 1.0 m/s | 1.4 m/s |
+| --- | --- | --- | --- |
+| easy worlds (12 routes) | 0.0291 | 0.0301 (+3 %) | - |
+| tunnels (6 routes) | 0.621 | 0.167 | 0.171 |
+
+By the rule speed is a global setting: the easy worlds are unchanged at 1.0 m/s (largest live
+error 0.27 m), and on the tunnels 1.4 m/s is no better than 1.0 m/s (the gain saturates, it does
+not keep growing with speed). So there is no adaptive speed policy to build unless driving at
+1.0 m/s has a cost during exploration.
+
+### Tunnels at 1.0 m/s: rule (written before its runs)
+
+`eval_config.yaml` plus `speed: 1.0` (`run_eval.py` now passes `speed`, default 0.7), the
+tunnels set, all three policies (development, not a test). It answers two questions:
+
+- Cost of speed in exploration: failures, collisions, coverage vs the gated 0.7 m/s baseline.
+  If none is worse (no more failed runs, median coverage within 2 points), 1.0 m/s becomes the
+  setting for every policy; otherwise an adaptive speed policy is built for that cost.
+- With the shrink mostly gone, is there drift left that revisiting removes? Reported per policy
+  (median ATE, `diagnose_map_error.py`'s loop drift); no policy setting is tuned on this run.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

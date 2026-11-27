@@ -51,6 +51,7 @@ def run_one(config: dict[str, Any], world: str, seed: int, policy: str, out: Pat
         '--loop-min-translation-information-ratio',
         str(config.get('loop_min_translation_information_ratio', 0.0)),
         '--pilaster-spacing', str(config.get('pilaster_spacing', 0)),
+        '--speed', str(config.get('speed', 0.7)),
         '--rko-param', str(ROOT / config['rko_param']),
         '--lidarslam-param', str(ROOT / config['lidarslam_param']),
     ]
