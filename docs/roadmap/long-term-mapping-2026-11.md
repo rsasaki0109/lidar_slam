@@ -2240,3 +2240,26 @@ Files (`bench_report/data/long_term_2026-11/lifelong/`):
 - `profile_chain.jsonl`: per update, its exit code, wall time, the tilt fit, the profile and the
   height check.
 - `consistency_D.jsonl`: the scores.
+
+#### Check of the height profile on sessions the chain has not used (preregistered 2026-11-27, before the run)
+
+- **Updates:** the sessions and windows of the earlier check (`nclt/fresh_windows.json`). The
+  windows were chosen with ground truth (only for choosing them). Each pass is converted again
+  and appended to its own copy of the store rebuilt with the profile (D), at its anchor
+  transform: `--no-tilt-correction --no-height-profile --max-height-drift 0`
+  (`lifelong/fresh_profile_run.sh`). Ground truth is not used to score.
+- **Variants (`lifelong/fresh_profile_score.py`):** both fitted with the `live` code against the
+  store's even sessions (0, 2, …, 18) only:
+  - T: the tilt correction alone;
+  - P: the tilt correction, then the profile;
+  - A, the update as committed, is reported as well.
+- **Score:** against the odd sessions (1, 3, …, 19), the 95th percentile of |dz| (1.5 m, three
+  neighbours), for updates with at least 20 compared submaps in every variant. The fit never
+  sees the sessions it is scored against.
+- **Rule:** P **adds to the tilt correction** when, over the scored updates, all of the following
+  hold:
+  - no more of them are above 1.0 m with P than with T;
+  - the median falls;
+  - no update rises by more than 0.1 m.
+  With fewer than four scored updates the check is inconclusive. If P fails, the profile is
+  turned back off by default. Reported whatever it is.
