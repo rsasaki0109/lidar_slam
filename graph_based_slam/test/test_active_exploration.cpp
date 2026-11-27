@@ -345,6 +345,21 @@ TEST(ActiveExploration, PredictedLoopGainPicksTheTargetThatHelpsAndTriedTargetsA
   for (const auto & c : decision.candidates) {
     EXPECT_NE(c.source, 9);  // predicted drop below min_predicted_drop
   }
+  {
+    // absolute_gain: the same targets, scored by the sigma removed in metres (0.9 x 1.45 m);
+    // min_predicted_drop stays a fraction.
+    ae::SelectionConfig absolute = selection;
+    absolute.absolute_gain = true;
+    ae::ExplorerState fresh;
+    const ae::Decision d = ae::selectGoal(far, {}, graph, absolute, fresh);
+    ASSERT_EQ(d.status, ae::Decision::Status::GOAL) << d.reason;
+    const ae::GoalCandidate & c = d.candidates[static_cast<std::size_t>(d.chosen)];
+    EXPECT_LE(c.source, 2);
+    EXPECT_NEAR(c.uncertainty_drop, 0.9 * 1.45, 1e-9);
+    for (const auto & other : d.candidates) {
+      EXPECT_NE(other.source, 9);
+    }
+  }
 
   // The robot reached the start area and no loop edge came: those targets are tried, and the
   // next choice is elsewhere.

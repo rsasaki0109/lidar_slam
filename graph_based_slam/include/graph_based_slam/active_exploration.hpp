@@ -624,6 +624,10 @@ struct SelectionConfig
   // is predicted to remove (GraphUncertainty::predicted_sigma), or without predictions the
   // sigma difference to the target.
   double uncertainty_weight {1.0};
+  // With predictions: false scores the fraction of the newest sigma removed, true the absolute
+  // sigma removed [m] (newest sigma minus the predicted one), so that a revisit's value grows
+  // with the drift it removes. min_predicted_drop is a fraction either way.
+  bool absolute_gain {false};
   double distance_weight {0.5};  // per m of path
   // Revisit mode starts when the newest submap's sigma exceeds revisit_trigger_sigma and ends
   // when it falls below revisit_release_sigma (hysteresis).
@@ -660,8 +664,8 @@ struct GoalCandidate
   int source {-1};  // frontier index, or the submap index of a revisit target
   double path_length {0.0};
   double unknown_area {0.0};
-  // Revisits: the predicted fraction of the newest sigma removed (or, without predictions, the
-  // newest sigma minus the target's).
+  // Revisits: the predicted fraction of the newest sigma removed (SelectionConfig::absolute_gain:
+  // the predicted sigma removed [m]; without predictions, the newest sigma minus the target's).
   double uncertainty_drop {0.0};
   double utility {0.0};
 };
@@ -784,10 +788,11 @@ inline Decision selectGoal(
         if (!std::isfinite(after) || newest_sigma <= 0.0) {
           continue;
         }
-        gain = (newest_sigma - after) / newest_sigma;
-        if (gain < config.min_predicted_drop) {
+        const double fraction = (newest_sigma - after) / newest_sigma;
+        if (fraction < config.min_predicted_drop) {
           continue;
         }
+        gain = config.absolute_gain ? newest_sigma - after : fraction;
       } else {
         if (s > config.anchor_sigma_ratio * newest_sigma) {
           continue;

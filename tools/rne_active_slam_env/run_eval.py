@@ -46,6 +46,7 @@ def run_one(config: dict[str, Any], world: str, seed: int, policy: str, out: Pat
         '--revisit-release-sigma', str(config['revisit_release_sigma']),
         '--uncertainty-weight', str(config['uncertainty_weight']),
         '--min-predicted-drop', str(config['min_predicted_drop']),
+        *(['--absolute-gain'] if config.get('absolute_gain') else []),
         '--pilaster-spacing', str(config.get('pilaster_spacing', 0)),
         '--rko-param', str(ROOT / config['rko_param']),
         '--lidarslam-param', str(ROOT / config['lidarslam_param']),

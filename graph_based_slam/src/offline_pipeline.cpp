@@ -1348,6 +1348,8 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
     "exploration_uncertainty_weight", selection.uncertainty_weight,
     selection.uncertainty_weight);
   node.get_parameter_or(
+    "exploration_revisit_absolute_gain", selection.absolute_gain, selection.absolute_gain);
+  node.get_parameter_or(
     "exploration_distance_weight", selection.distance_weight, selection.distance_weight);
   double revisit_trigger = 0.0;
   node.get_parameter_or("exploration_revisit_trigger_sigma", revisit_trigger, 0.0);

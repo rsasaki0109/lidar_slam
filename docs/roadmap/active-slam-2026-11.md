@@ -644,6 +644,18 @@ travel cost always wins. Next development change: score a revisit by the absolut
 predicted to remove (metres, `newest_sigma - after`), so that its value grows with the drift,
 and retune `w_u` on these two worlds only (the holdout stays untouched).
 
+### Absolute revisit gain: tuning rule (written before its runs)
+
+`exploration_revisit_absolute_gain` (`SelectionConfig::absolute_gain`) scores a revisit by
+`w_u x (newest sigma - predicted sigma)` [m]; `min_predicted_drop` stays a fraction (0.2). With
+the distance weight 0.5 per m, `w_u` is twice the path [m] one metre of sigma removed is worth.
+Sweep on the tunnels set (seeds 1-3, `active` only; `frontier_info` and `nearest_frontier` are
+the baseline's runs, which the change does not touch), `w_u` in {50, 150, 400}, trigger and
+release unchanged. Choice: the lowest median final-map ATE over the 6 runs among the settings
+whose median coverage is within 5 points of `frontier_info`'s and with no failed run; ties
+(within 0.02 m) go to the smaller `w_u`. If no setting beats the fraction gain's median
+(0.30 m `tunnel_loop`, 0.50 m `long_tunnels`, pooled 0.46 m), the change is not adopted.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
