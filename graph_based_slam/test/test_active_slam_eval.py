@@ -131,3 +131,32 @@ def test_development_worlds_are_fully_reachable_under_the_planner_inflation() ->
     for name, build in {**worlds.DEVELOPMENT, **worlds.HOLDOUT}.items():
         fractions = worlds.reachable_fractions(build())
         assert min(fractions) > 0.99, (name, fractions)
+
+
+def test_odometry_drift_is_the_segment_error_per_metre() -> None:
+    # Straight 100 m along x; the odometry reads 1 % short: 0.5 m over 50 m.
+    truth = [(0.1 * k, 0.0, 0.0) for k in range(1001)]
+    odometry = [(0.099 * k, 0.0, 0.0) for k in range(1001)]
+    distances = [0.1 * k for k in range(1001)]
+    assert harness.odometry_drift(truth, odometry, distances) == pytest.approx(1.0, abs=1e-3)
+    assert harness.odometry_drift(truth, truth, distances) == 0.0
+    # Expressed in the start pose: a constant heading offset alone is not drift.
+    turned = [(0.1 * k * math.cos(0.3), 0.1 * k * math.sin(0.3), 0.3) for k in range(1001)]
+    assert harness.odometry_drift(turned, turned, distances) == 0.0
+    assert harness.odometry_drift(truth[:100], odometry[:100], distances[:100]) is None
+
+
+def test_thin_pilasters_keeps_multiples_and_routes_stay_on_the_floor() -> None:
+    for name in worlds.DEVELOPMENT:
+        full = worlds.world_for(name, 1)
+        thin = worlds.world_for(name, 1, pilaster_spacing_m=12)
+        none = worlds.world_for(name, 1, pilaster_spacing_m=-1)
+        count = [sum(worlds.is_pilaster(b) for b in w['boxes']) for w in (full, thin, none)]
+        assert count[0] > count[1] > count[2] == 0, (name, count)
+        assert len(full['boxes']) - count[0] == len(none['boxes']), name
+        routed = worlds.world_for(name, 1, route=True)
+        coverage = harness.Coverage(routed['free_region'])
+        for x, y in harness.densify(routed['route']):
+            i = int((x - coverage.origin[0]) / coverage.res)
+            j = int((y - coverage.origin[1]) / coverage.res)
+            assert coverage.free[i, j], (name, x, y)

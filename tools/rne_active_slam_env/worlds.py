@@ -284,9 +284,58 @@ def reachable_fractions(world: dict[str, Any], inflation: float = 0.8,
     return fractions
 
 
-def world_for(name: str, seed: int) -> dict[str, Any]:
-    """Return a world with the seed's start pose (seed % 10) and noise seed."""
-    world = WORLDS[name]()
+# Fixed calibration routes (world-frame waypoints along corridor centre lines), driven on the
+# true pose to measure the odometry's drift without any exploration policy.
+ROUTES = {
+    'ring': [(2.5, 2.5), (37.5, 2.5), (37.5, 21.5), (2.5, 21.5), (2.5, 2.5), (37.5, 2.5),
+             (37.5, 21.5), (2.5, 21.5), (2.5, 4.5)],
+    'grid': [(1.5, 1.5), (55.5, 1.5), (55.5, 33.5), (1.5, 33.5), (1.5, 17.5), (55.5, 17.5),
+             (55.5, 3.5)],
+    'branches2': [(6.0, 24.0), (64.0, 24.0), (64.0, 6.0), (6.0, 6.0), (6.0, 24.0), (14.0, 24.0),
+                  (14.0, 42.0), (14.0, 24.0), (42.0, 24.0), (42.0, 44.0), (42.0, 26.0)],
+    'long_loop2': [(2.0, 2.0), (72.0, 2.0), (72.0, 42.0), (2.0, 42.0), (2.0, 4.0)],
+}
+
+
+def is_pilaster(box: dict[str, Any]) -> bool:
+    """Return whether a box is a pilaster (0.3 m x 0.2 m, full height)."""
+    size = sorted(round(box['max'][i] - box['min'][i], 3) for i in (0, 1))
+    return size == [0.2, 0.3] and box['max'][2] >= HEIGHT
+
+
+def thin_pilasters(world: dict[str, Any], spacing_m: int) -> dict[str, Any]:
+    """Keep only the pilasters at multiples of spacing_m along their wall (0: all, < 0: none).
+
+    The scene's feature density, a difficulty knob set without looking at any policy.
+    """
+    if spacing_m == 0:
+        return world
+    kept = []
+    for box in world['boxes']:
+        if is_pilaster(box):
+            wide_in_x = box['max'][0] - box['min'][0] > box['max'][1] - box['min'][1]
+            along = 0.5 * (box['min'][0] + box['max'][0]) if wide_in_x else \
+                0.5 * (box['min'][1] + box['max'][1])
+            if spacing_m < 0 or round(along) % spacing_m != 0:
+                continue
+        kept.append(box)
+    world['boxes'] = kept
+    return world
+
+
+def world_for(name: str, seed: int, pilaster_spacing_m: int = 0,
+              imu_noise_scale: float = 1.0, route: bool = False) -> dict[str, Any]:
+    """Return a world with the seed's start pose (seed % 10) and noise seed.
+
+    pilaster_spacing_m and imu_noise_scale set the difficulty (see thin_pilasters); with route,
+    the start is the first waypoint of ROUTES[name], facing the second.
+    """
+    world = thin_pilasters(WORLDS[name](), pilaster_spacing_m)
     world['start'] = world['starts'][seed % 10]
+    if route:
+        (x0, y0), (x1, y1) = ROUTES[name][:2]
+        world['start'] = [x0, y0, math.atan2(y1 - y0, x1 - x0)]
+        world['route'] = [list(p) for p in ROUTES[name]]
     world['seed'] = seed
+    world['imu_noise_scale'] = imu_noise_scale
     return world

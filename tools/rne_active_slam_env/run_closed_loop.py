@@ -193,6 +193,41 @@ class Coverage:
 POLICIES = ('nearest_frontier', 'frontier_info', 'active')
 
 
+def densify(waypoints: list[list[float]], step: float = 0.25) -> list[tuple[float, float]]:
+    """Return points every step metres along a polyline."""
+    out: list[tuple[float, float]] = [tuple(waypoints[0])]
+    for (x0, y0), (x1, y1) in zip(waypoints, waypoints[1:]):
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / step))
+        out += [(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n) for k in range(1, n + 1)]
+    return out
+
+
+def odometry_drift(truth: list[tuple[float, float, float]],
+                   odometry: list[tuple[float, float, float]], distances: list[float],
+                   segment_m: float = 50.0) -> float | None:
+    """Mean translational drift of the odometry over segment_m of travel, in % (KITTI-style).
+
+    For each start frame, the odometry's displacement over the next segment_m of travel,
+    expressed in the start pose, against the truth's; None when the run is shorter.
+    """
+    errors = []
+    j = 0
+    for i in range(0, len(truth), 5):
+        while j < len(truth) and distances[j] - distances[i] < segment_m:
+            j += 1
+        if j >= len(truth):
+            break
+        rel = []
+        for track in (truth, odometry):
+            (xi, yi, ai), (xj, yj, _) = track[i], track[j]
+            c, s = math.cos(ai), math.sin(ai)
+            dx, dy = xj - xi, yj - yi
+            rel.append((c * dx + s * dy, -s * dx + c * dy))
+        errors.append(math.hypot(rel[0][0] - rel[1][0], rel[0][1] - rel[1][1]) /
+                      (distances[j] - distances[i]))
+    return round(100.0 * float(np.mean(errors)), 4) if errors else None
+
+
 def save_grid_png(grid: dict[str, Any], track: list[tuple[float, float]], path: Path,
                   scale: int = 4) -> None:
     """Write the explorer's coverage grid (unknown grey, free white, occupied black) and the
@@ -280,6 +315,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--revisit-release-sigma', type=float, default=0.0)
     parser.add_argument('--inflation-radius', type=float, default=0.8,
                         help='obstacle inflation [m]: robot radius 0.25 m plus the SLAM error')
+    parser.add_argument('--pilaster-spacing', type=int, default=0,
+                        help='difficulty: keep pilasters only every this many metres '
+                        '(0: all, -1: none)')
+    parser.add_argument('--imu-noise-scale', type=float, default=1.0,
+                        help='difficulty: scale of the simulated IMU noise and bias')
+    parser.add_argument('--route', action='store_true',
+                        help="calibration: drive the world's fixed route on the true pose "
+                        '(no exploration decisions; --policy is ignored)')
     parser.add_argument('--rko-param', type=Path,
                         default=ROOT / 'lidarslam' / 'param' / 'rko_lio_mid360_walking.yaml',
                         help='RKO-LIO parameters (the indoor preset; on the simulated scans the '
@@ -299,7 +342,9 @@ def main(argv: list[str] | None = None) -> int:
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    world = world_for(args.world, args.seed)
+    world = world_for(args.world, args.seed, args.pilaster_spacing, args.imu_noise_scale,
+                      route=args.route)
+    route_path = densify(world['route']) if args.route else []
     world_file = out / 'world.json'
     world_file.write_text(json.dumps(world, indent=1) + '\n', encoding='utf-8')
 
@@ -351,6 +396,10 @@ def main(argv: list[str] | None = None) -> int:
     coverage_90 = None  # (seconds, metres) when 90 % of the floor was first seen
     revisit_frames = 0
     est_track: list[tuple[float, float]] = []
+    distances: list[float] = []  # travelled distance at each frame
+    odometry_distances: list[float] = []
+    odometry_track: list[tuple[float, float, float]] = []
+    truth_track: list[tuple[float, float, float]] = []
     max_frames = int(args.max_seconds / FRAME_S)
     settle_frames = 30  # stand still while RKO-LIO initializes
     for frame in range(max_frames):
@@ -371,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         if prev_truth is not None:
             distance += math.hypot(tx - prev_truth[0], ty - prev_truth[1])
         prev_truth = (tx, ty)
+        distances.append(distance)
         collisions += int(header['collided'])
 
         if 'odometry' not in latest:
@@ -378,6 +428,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             o = latest['odometry']
             est = (o[0], o[1], yaw_of(o[3:7]))
+            odometry_track.append(est)
+            truth_track.append(truth)
+            odometry_distances.append(distance)
         if 'map' in latest:
             m = latest['map']
             est_track.append((m[0], m[1]))
@@ -395,7 +448,17 @@ def main(argv: list[str] | None = None) -> int:
                 session.reject_exploration_goal(*decision['goal'])
                 rejected += 1
                 goal_collisions = 0
-        if backing_off > 0:
+        if args.route:
+            if frame >= settle_frames and route_path:
+                # Only the next stretch: a route passes the same place more than once.
+                v, w, nearest = pure_pursuit((tx, ty, tyaw), route_path[:40])
+                route_path = route_path[nearest:]
+                if len(route_path) <= 4 or len(route_path) < 40 and math.hypot(
+                        route_path[-1][0] - tx, route_path[-1][1] - ty) < 0.5:
+                    route_path = []
+            elif frame >= settle_frames:
+                break  # the route is done
+        elif backing_off > 0:
             backing_off -= 1
             v = -0.3
         elif frame >= settle_frames and 'odometry' in latest:
@@ -457,6 +520,10 @@ def main(argv: list[str] | None = None) -> int:
         'coverage_90_seconds': coverage_90[0] if coverage_90 else None,
         'coverage_90_distance_m': round(coverage_90[1], 2) if coverage_90 else None,
         'loop_edges': loop_edges, 'revisit_goal_frames': revisit_frames,
+        'odometry_drift_50m_pct': odometry_drift(truth_track, odometry_track,
+                                                 odometry_distances),
+        'pilaster_spacing_m': args.pilaster_spacing, 'imu_noise_scale': args.imu_noise_scale,
+        'route': args.route,
         'collisions': collisions, 'rejected_goals': rejected,
         'exploration_done': done_count >= 3, 'diverged': diverged,
         'failed': diverged or cov < 0.5,
