@@ -62,6 +62,8 @@ class Session:
     height that best fit its submaps to the stored sessions' where the paths overlap
     (:func:`lidarslam.height_check.correct`; not with store tracking, whose submap poses are
     stored as tracked).
+    ``height_profile`` then also lowers each submap by a height offset fitted along the session
+    (:func:`lidarslam.height_check.profile`, experimental), for drift that grows inside it.
     ``start_near_first_submap`` searches for a verified startup pose within 5 m of the first
     stored submap, when the operator knows that the recording starts in that area.
     ``relocalize_anywhere`` searches every stored keyframe for as long as the session runs
@@ -83,7 +85,7 @@ class Session:
                  start_near_first_submap: bool = False, refine_visibility: bool = False,
                  relocalize_anywhere: bool = False, background_search: bool = False,
                  max_height_drift: float | None = MAX_HEIGHT_DRIFT_M,
-                 correct_tilt: bool = True):
+                 correct_tilt: bool = True, height_profile: bool = False):
         filter_new_points = filter_new_points or refine_visibility
         detect_changes = detect_changes or filter_new_points
         if sum([initial_pose is not None, start_near_first_submap, relocalize_anywhere]) > 1:
@@ -134,6 +136,7 @@ class Session:
         self._track_shared_surfaces = track_shared_surfaces
         self._max_height_drift = max_height_drift
         self._correct_tilt = correct_tilt and not (track_store or track_shared_surfaces)
+        self._height_profile = height_profile and not (track_store or track_shared_surfaces)
         backend_params.setdefault('offline_map_bundle', True)
         backend_params.setdefault('bag_path', str(self.out / 'live'))
         backend_params['output_dir'] = str(self.out)
@@ -291,12 +294,12 @@ class Session:
                             info['map_change_refined_visibility'] = True
                         summary['store_removed_voxels'] = int((self._change_rows[:, 8] == 2).sum())
             before_commit = None
-            if ((self._correct_tilt or self._max_height_drift) and
+            if ((self._correct_tilt or self._height_profile or self._max_height_drift) and
                     info.get('store_from_session') is not None):
                 aligned = self._store._aligned_sessions()
 
                 def before_commit(directory: str) -> dict[str, Any] | None:
-                    from lidarslam.height_check import check, correct
+                    from lidarslam.height_check import check, correct, profile
                     updates = None
                     if self._correct_tilt:
                         result = correct(aligned, directory, info['store_from_session'])
@@ -309,8 +312,13 @@ class Session:
                                        'store_tilt_correction':
                                            summary['store_tilt_correction']}
                             summary['store_from_session'] = result['store_from_session']
+                    transform = (updates or info)['store_from_session']
+                    if self._height_profile:
+                        result = profile(aligned, directory, transform)
+                        summary['store_height_profile'] = result
+                        if result['corrected']:
+                            updates = {**(updates or {}), 'store_height_profile': result}
                     if self._max_height_drift:
-                        transform = (updates or info)['store_from_session']
                         result = check(aligned, directory, transform, self._max_height_drift)
                         summary['store_height_check'] = result
                         if result['refused']:
@@ -354,7 +362,7 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
            start_near_first_submap: bool = False, refine_visibility: bool = False,
            relocalize_anywhere: bool = False,
            max_height_drift: float | None = MAX_HEIGHT_DRIFT_M,
-           correct_tilt: bool = True) -> dict[str, Any]:
+           correct_tilt: bool = True, height_profile: bool = False) -> dict[str, Any]:
     """Plays a sensor log into a :class:`Session` and writes its live trajectory and timing.
 
     With ``realtime`` each message is handed over no earlier than its log time after the first
@@ -386,7 +394,8 @@ def replay(log_path: str | Path, odometry_params: dict[str, Any],
                       relocalize_anywhere=relocalize_anywhere,
                       background_search=realtime,
                       refine_visibility=refine_visibility,
-                      max_height_drift=max_height_drift, correct_tilt=correct_tilt)
+                      max_height_drift=max_height_drift, correct_tilt=correct_tilt,
+                      height_profile=height_profile)
     topics = [session.lidar_topic, session.imu_topic]
     with SensorLog(log_path) as sensor_log:
         types = {t.name: t.msgtype for t in sensor_log.topics()}

@@ -147,6 +147,9 @@ def main(argv: list[str] | None = None) -> int:
     live.add_argument('--no-tilt-correction', dest='correct_tilt', action='store_false',
                       help='add an anchored session at its anchor transform, without fitting its '
                            'roll, pitch and height to the stored sessions where the paths overlap')
+    live.add_argument('--height-profile', action='store_true',
+                      help='also lower each submap of an anchored session by a height offset '
+                           'fitted along the session to the stored sessions (experimental)')
     live.add_argument('--refine-visibility', action='store_true',
                       help='detect changes and filter new points with complete ray evidence '
                            '(recommended change mode; experimental)')
@@ -280,7 +283,8 @@ def main(argv: list[str] | None = None) -> int:
                                      start_near_first_submap=args.start_near_first_submap,
                                      refine_visibility=args.refine_visibility,
                                      max_height_drift=args.max_height_drift,
-                                     correct_tilt=args.correct_tilt)
+                                     correct_tilt=args.correct_tilt,
+                                     height_profile=args.height_profile)
         print(json.dumps(summary, indent=2))
     elif args.command == 'colmap':
         from lidarslam.gsplat_export import export

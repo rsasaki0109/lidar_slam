@@ -2146,3 +2146,49 @@ Files (`bench_report/data/long_term_2026-11/lifelong/`):
 - `consistency_A.jsonl` and `consistency_C.jsonl`: the scores, from `consistency_score.py`.
 
 Day names follow the chain, so the 2012-05-26 update appears as 2012-05-27 (UTC) in the scores.
+
+#### Height profile along the session (`live --height-profile`, experimental)
+
+A rigid correction leaves drift that grows inside a session. In the rebuilt chain, 2012-03-31
+stayed at 2.53 m against the whole store. `lidarslam.height_check.profile` runs after the tilt
+correction and lowers each submap by a height offset that is piecewise linear in submap order:
+
+- Knots are placed every 30 submaps, kept within the compared stretch. A knot needs at least 10
+  compared submaps within 30 submaps of it.
+- The knot values are fitted to the compared height differences by least squares, with Huber
+  weights beyond 0.3 m.
+- Beyond the outer knots the offset is held constant.
+
+The lowered poses are written to the session's `store_submap_poses.npy`, which export,
+relocalization and later height checks already read in place of the rigid transform. The
+session's `store_from_session` is unchanged, and the fit is recorded as `store_height_profile`.
+Only the position changes: a submap's rotation, and so the local slope of its scans, is not
+corrected. The height check then runs on the lowered poses.
+
+Applied, without writing, to the stored sessions of the rebuilt store against the sessions
+before them, the fit ran as follows. This was a smoke test of the code, and the parameters
+above were fixed before it ran:
+
+| session | before | after | largest offset |
+|---|---:|---:|---:|
+| 2012-03-31 | 0.89 m | 0.28 m | 2.70 m |
+| 2012-05-11 | 0.97 m | 0.18 m | 1.22 m |
+| 2012-11-16 | 0.49 m | 0.13 m | 0.56 m |
+
+#### Rebuilding the lifelong chain with the height profile (preregistered 2026-11-27, before the run)
+
+- **Chains:** C is the store rebuilt with the tilt correction (above). D is built again from the
+  same base session with the same 19 updates, bags, order and options, adding `--height-profile`
+  (`profile_chain.sh`). No ground truth is read.
+- **Score:** as for C: per session, the p95 |dz| of its submap positions against all the other
+  sessions of the same store (`consistency_score.py`). This score is partly circular: the
+  profile fits each update to the sessions before it, and the score compares it with those
+  sessions as well as with the later ones.
+- **Rule:** D makes the store **more consistent** than C when, over the sessions committed in
+  both stores, all of the following hold:
+  - fewer sessions are above 1.0 m in D than in C;
+  - the median does not rise;
+  - no session rises by more than 0.1 m.
+  A session D refuses is reported and does not count for D. The result is reported whatever it
+  is, together with the wall time and whether the store exports.
+- **Default:** `--height-profile` becomes the `live` default only if D passes.
