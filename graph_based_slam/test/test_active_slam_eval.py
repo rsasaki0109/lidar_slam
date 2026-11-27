@@ -123,3 +123,10 @@ def test_worlds_have_ten_free_starts_and_a_free_region() -> None:
     assert set(worlds.HOLDOUT).isdisjoint(worlds.DEVELOPMENT)
     w = worlds.world_for('branches', 103)
     assert w['start'] == worlds.world_branches()['starts'][3] and w['seed'] == 103
+
+
+def test_development_worlds_are_fully_reachable_under_the_planner_inflation() -> None:
+    # Every holdout world must pass this before it is run (the first holdout worlds did not).
+    for name, build in worlds.DEVELOPMENT.items():
+        fractions = worlds.reachable_fractions(build())
+        assert min(fractions) > 0.99, (name, fractions)

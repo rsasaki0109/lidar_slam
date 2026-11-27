@@ -411,6 +411,41 @@ the revisits' benefit.
 **Frozen:** `w_u` = 80, the rest as above; `eval_config.yaml` at commit `1127155`
 (SHA-256 prefix `8c1ee164b521f6c8`). The holdout set is run once at that configuration.
 
+### Holdout result (2026-11-27): fail, and the holdout was invalid
+
+Run once at commit `aa85121` (configuration as frozen, SHA-256 `8c1ee164...`), 2 worlds x 10
+seeds x 3 policies:
+
+| world | policy | failed | median final-map ATE | median coverage |
+| --- | --- | --- | --- | --- |
+| branches | active | 9/10 | 0.026 m | 16.8 % |
+| branches | frontier_info | 9/10 | 0.026 m | 16.8 % |
+| branches | nearest_frontier | 9/10 | 0.023 m | 18.5 % |
+| big_loop | active | 10/10 | 0.149 m | 17.7 % |
+| big_loop | frontier_info | 10/10 | 0.149 m | 17.7 % |
+| big_loop | nearest_frontier | 10/10 | 0.141 m | 23.3 % |
+
+By the rule: **fail** in both worlds (`active` lower in 0/9 and 1/10 seeds; 9 vs 9 and 10 vs 10
+failures).
+
+Why, found after the run: 57 of the 60 runs ended with `exploration_done` after 5-120 s (3
+diverged in big_loop). The holdout worlds put crates (and 0.2 m pilasters) inside 3 m
+corridors; with the planner's 0.8 m inflation they cut the worlds into pieces: from the ten
+starts only 8-34 % (branches) and 19-42 % (big_loop) of the floor the robot can stand on is
+reachable (`worlds.reachable_fractions`; the development worlds give 100 % from every start). The
+explorer correctly reported nothing reachable left. The checks before the run looked only at the
+start poses' clearance. So this holdout says nothing about the method: all three policies
+explored the same small piece, and `active` chose a revisit in 3 of 20 runs.
+
+Kept as the record of this holdout; it is not re-run, and these two worlds are now seen.
+`reachable_fractions` must give 1.0 from every start for a world to be used
+(`test_active_slam_eval.py` checks the development worlds).
+
+Proposed amendment (needs the maintainer's approval before anything runs): two new holdout
+worlds of the same two kinds (dead-end branches; a long loop with sparse features), built and
+checked with `reachable_fractions` and nothing else, then run once at the frozen configuration
+(`w_u` 80; the stop rule and everything else unchanged).
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

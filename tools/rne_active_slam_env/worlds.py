@@ -192,6 +192,54 @@ HOLDOUT = {'branches': world_branches, 'big_loop': world_big_loop}
 WORLDS = {**DEVELOPMENT, **HOLDOUT}
 
 
+def reachable_fractions(world: dict[str, Any], inflation: float = 0.8,
+                        resolution: float = 0.25) -> list[float]:
+    """Return, per start, the fraction of the floor a robot can stand on that it can reach.
+
+    A cell can be stood on when it is farther than ``inflation`` from every obstacle (the
+    explorer's planner inflates obstacles so); reach is 4-connected over such cells from the
+    start's cell. A usable world gives 1.0 for every start: on the first holdout worlds, crates
+    and pilasters in 3 m corridors cut them into pieces (8-42 % reachable).
+    """
+    import numpy as np  # noqa: I900 (numpy is a dependency of the harness)
+    from collections import deque
+
+    obstacles = [b for b in world['boxes'] if b['max'][2] > 0.05]
+    width = int(max(b['max'][0] for b in obstacles) / resolution) + 2
+    height = int(max(b['max'][1] for b in obstacles) / resolution) + 2
+    cx = (np.arange(width) + 0.5) * resolution
+    cy = (np.arange(height) + 0.5) * resolution
+    gx, gy = np.meshgrid(cx, cy, indexing='ij')
+    inside = np.zeros((width, height), dtype=bool)
+    blocked = np.zeros((width, height), dtype=bool)
+    for b in obstacles:
+        dx = np.maximum(np.maximum(b['min'][0] - gx, 0.0), gx - b['max'][0])
+        dy = np.maximum(np.maximum(b['min'][1] - gy, 0.0), gy - b['max'][1])
+        distance = np.hypot(dx, dy)
+        inside |= distance == 0.0
+        blocked |= distance < inflation
+    standable = ~inside & ~blocked
+    fractions = []
+    for sx, sy, _ in world['starts']:
+        start = (int(sx / resolution), int(sy / resolution))
+        seen = np.zeros_like(blocked)
+        if not standable[start]:
+            fractions.append(0.0)
+            continue
+        seen[start] = True
+        queue = deque([start])
+        while queue:
+            x, y = queue.popleft()
+            for ox, oy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + ox, y + oy
+                if 0 <= nx < width and 0 <= ny < height and standable[nx, ny] and \
+                        not seen[nx, ny]:
+                    seen[nx, ny] = True
+                    queue.append((nx, ny))
+        fractions.append(float(seen[standable].sum() / standable.sum()))
+    return fractions
+
+
 def world_for(name: str, seed: int) -> dict[str, Any]:
     """Return a world with the seed's start pose (seed % 10) and noise seed."""
     world = WORLDS[name]()
