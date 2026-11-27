@@ -91,6 +91,8 @@ struct ExplorationDecision
   std::string kind;  // "frontier" or "revisit" with a goal
   bool revisit_mode {false};
   double newest_sigma {0.0};  // the newest submap's sigma in the latest uncertainty state
+  // The map's mean sigma, weighted by each submap's novel area (active_exploration::mapSigma).
+  double map_sigma {0.0};
   Eigen::Vector2d goal {Eigen::Vector2d::Zero()};  // odometry frame
   double path_length {0.0};
   std::vector<Eigen::Vector2d> path;  // from the robot's cell to the goal's (odometry frame)

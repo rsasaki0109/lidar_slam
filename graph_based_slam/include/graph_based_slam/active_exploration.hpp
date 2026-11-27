@@ -236,22 +236,35 @@ public:
     for (int oy = -clear; oy <= clear; ++oy) {
       for (int ox = -clear; ox <= clear; ++ox) {
         if (ox * ox + oy * oy <= clear2) {
-          ++passes_[cell(a.x() + ox, a.y() + oy)];
+          pass(cell(a.x() + ox, a.y() + oy));
         }
       }
     }
     for (const Ray & ray : rays) {
-      detail::walkCells(a, ray.end, [this](int x, int y) {++passes_[cell(x, y)];});
+      detail::walkCells(a, ray.end, [this](int x, int y) {pass(cell(x, y));});
       if (ray.obstacle) {
-        ++hits_[cell(ray.end.x(), ray.end.y())];
+        hit(cell(ray.end.x(), ray.end.y()));
       } else {
-        ++passes_[cell(ray.end.x(), ray.end.y())];
+        pass(cell(ray.end.x(), ray.end.y()));
       }
     }
   }
 
+  // Cells any ray has reached (free or occupied), over all scans so far.
+  std::size_t knownCells() const {return known_;}
+
 private:
   std::size_t cell(int x, int y) const {return static_cast<std::size_t>(index(x, y));}
+  void pass(std::size_t i)
+  {
+    known_ += (hits_[i] == 0U && passes_[i] == 0U) ? 1U : 0U;
+    ++passes_[i];
+  }
+  void hit(std::size_t i)
+  {
+    known_ += (hits_[i] == 0U && passes_[i] == 0U) ? 1U : 0U;
+    ++hits_[i];
+  }
 
   // Grows the stored block (with a margin, so most scans fit without a copy) to hold lo..hi.
   void reserve(const Eigen::Vector2i & lo, const Eigen::Vector2i & hi)
@@ -298,6 +311,7 @@ private:
   int height_ {0};
   std::vector<std::uint32_t> hits_;
   std::vector<std::uint32_t> passes_;
+  std::size_t known_ {0U};
 };
 
 // The coverage grid of the scans.
@@ -628,6 +642,12 @@ struct SelectionConfig
   // sigma removed [m] (newest sigma minus the predicted one), so that a revisit's value grows
   // with the drift it removes. min_predicted_drop is a fraction either way.
   bool absolute_gain {false};
+  // Map objective (needs GraphUncertainty::novel_area and predicted_sigma): revisit mode follows
+  // the map's mean sigma (each submap's sigma weighted by the area it first observed) instead of
+  // the newest submap's, and a revisit is scored by the predicted drop of that mean [m]. Ground
+  // the robot covers again adds no area, so a part of the map a loop has corrected is not paid
+  // for again on the next pass. min_predicted_drop stays the newest sigma's fraction.
+  bool map_objective {false};
   double distance_weight {0.5};  // per m of path
   // Revisit mode starts when the newest submap's sigma exceeds revisit_trigger_sigma and ends
   // when it falls below revisit_release_sigma (hysteresis).
@@ -702,7 +722,60 @@ struct GraphUncertainty
   std::vector<double> predicted_sigma;
   // Optional, per submap: the distance travelled when it was created [m]. Empty: none.
   std::vector<double> travel;
+  // Optional, per submap: the area it first observed [m^2] (SelectionConfig::map_objective).
+  std::vector<double> novel_area;
 };
+
+// The map's mean sigma: each submap's sigma weighted by its novel area (0 without area).
+inline double mapSigma(const GraphUncertainty & graph)
+{
+  double area = 0.0;
+  double weighted = 0.0;
+  for (std::size_t j = 0; j < graph.sigma.size() && j < graph.novel_area.size(); ++j) {
+    area += graph.novel_area[j];
+    weighted += graph.novel_area[j] * graph.sigma[j];
+  }
+  return area > 0.0 ? weighted / area : 0.0;
+}
+
+// The predicted drop of mapSigma from a loop edge k -> newest whose predicted newest sigma is
+// `after`. The trajectory between them is taken as a chain whose variance (sigma^2) grows from
+// submap k on: the loop measures x_newest - x_k, so submap j (k < j <= newest) has covariance
+// v_j - v_k with it and its variance drops by (v_j - v_k)^2 / S, with S = (v_n - v_k)^2 / drop_n
+// fixed by the predicted newest drop; submaps up to k do not change. Exact for a chain from a
+// fixed start, an approximation once the graph has loops (their sigmas already include them).
+inline double predictedMapSigmaDrop(const GraphUncertainty & graph, int k, double after)
+{
+  const int n = static_cast<int>(graph.sigma.size()) - 1;
+  if (k < 0 || k >= n || graph.novel_area.size() != graph.sigma.size()) {
+    return 0.0;
+  }
+  const auto var = [&](int j) {
+      const double s = graph.sigma[static_cast<std::size_t>(j)];
+      return s * s;
+    };
+  const double vk = var(k);
+  const double vn = var(n);
+  const double drop_n = vn - after * after;
+  if (!(drop_n > 0.0) || !(vn > vk)) {
+    return 0.0;
+  }
+  const double s_total = (vn - vk) * (vn - vk) / drop_n;
+  double area = 0.0;
+  double reduced = 0.0;
+  for (int j = 0; j <= n; ++j) {
+    const double a = graph.novel_area[static_cast<std::size_t>(j)];
+    area += a;
+    if (j <= k || a <= 0.0) {
+      continue;
+    }
+    const double vj = var(j);
+    const double c = std::max(0.0, vj - vk);
+    const double after_j = std::sqrt(std::max(0.0, vj - std::min(vj, c * c / s_total)));
+    reduced += a * (graph.sigma[static_cast<std::size_t>(j)] - after_j);
+  }
+  return area > 0.0 ? reduced / area : 0.0;
+}
 
 inline Decision selectGoal(
   const PathField & paths, const std::vector<Frontier> & frontiers,
@@ -710,10 +783,14 @@ inline Decision selectGoal(
 {
   Decision decision;
   const double newest_sigma = graph.sigma.empty() ? 0.0 : graph.sigma.back();
+  const bool map_objective = config.map_objective &&
+    graph.novel_area.size() == graph.sigma.size() &&
+    graph.predicted_sigma.size() == graph.sigma.size();
+  const double mode_sigma = map_objective ? mapSigma(graph) : newest_sigma;
   if (state.revisit_mode) {
-    state.revisit_mode = newest_sigma > config.revisit_release_sigma;
+    state.revisit_mode = mode_sigma > config.revisit_release_sigma;
   } else {
-    state.revisit_mode = newest_sigma > config.revisit_trigger_sigma;
+    state.revisit_mode = mode_sigma > config.revisit_trigger_sigma;
   }
   if (!state.revisit_mode) {
     state.tried_revisits.clear();
@@ -792,7 +869,8 @@ inline Decision selectGoal(
         if (fraction < config.min_predicted_drop) {
           continue;
         }
-        gain = config.absolute_gain ? newest_sigma - after : fraction;
+        gain = map_objective ? predictedMapSigmaDrop(graph, k, after) :
+          config.absolute_gain ? newest_sigma - after : fraction;
       } else {
         if (s > config.anchor_sigma_ratio * newest_sigma) {
           continue;

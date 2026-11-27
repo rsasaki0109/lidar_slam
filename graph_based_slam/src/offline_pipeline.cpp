@@ -1352,6 +1352,8 @@ void readPoseGraphConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or(
     "exploration_revisit_absolute_gain", selection.absolute_gain, selection.absolute_gain);
   node.get_parameter_or(
+    "exploration_revisit_map_objective", selection.map_objective, selection.map_objective);
+  node.get_parameter_or(
     "exploration_distance_weight", selection.distance_weight, selection.distance_weight);
   double revisit_trigger = 0.0;
   node.get_parameter_or("exploration_revisit_trigger_sigma", revisit_trigger, 0.0);
@@ -1724,6 +1726,8 @@ struct BagPass
   // active_exploration_timeline state.
   graphslam::active_exploration::CoverageGrid exploration_grid;
   graphslam::active_exploration::ExplorerState explorer_state;
+  // Per submap: the coverage area its scan first observed [m^2] (exploration map objective).
+  std::vector<double> exploration_novel_area;
   std::ofstream exploration_timeline;
   // The latest uncertainty state's submap positions (odometry) and sigmas.
   graphslam::active_exploration::GraphUncertainty exploration_graph;
@@ -2189,6 +2193,9 @@ struct BagPass
       graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
       graph.sigma.push_back(newest);
       graph.travel.push_back(bag.records[i].meta.travel_distance);
+      if (i < exploration_novel_area.size()) {
+        graph.novel_area.push_back(exploration_novel_area[i]);
+      }
       if (predicted) {
         graph.predicted_sigma.push_back(std::numeric_limits<double>::quiet_NaN());
       }
@@ -2223,6 +2230,7 @@ struct BagPass
       "no_reachable_goal";
     out.revisit_mode = decision.revisit_mode;
     out.newest_sigma = graph.sigma.back();
+    out.map_sigma = ae::mapSigma(graph);
     out.submaps = bag.records.size();
     out.frontiers = frontiers.size();
     for (const ae::GoalCandidate & c : decision.candidates) {
@@ -2281,7 +2289,11 @@ struct BagPass
     for (std::size_t i = 0; i < cloud.size(); i += std::max<std::size_t>(1U, stride)) {
       scan.points.emplace_back(cloud.points[i].x, cloud.points[i].y, cloud.points[i].z);
     }
+    const std::size_t known_before = exploration_grid.knownCells();
     exploration_grid.addScan(scan, config.exploration_grid);
+    exploration_novel_area.push_back(
+      static_cast<double>(exploration_grid.knownCells() - known_before) *
+      exploration_grid.resolution() * exploration_grid.resolution());
   }
 
   // active_exploration_timeline: the goal the explorer would choose for this graph state.
@@ -2296,6 +2308,9 @@ struct BagPass
       graph.positions.emplace_back(bag.records[i].meta.pose.translation().head<2>());
       graph.sigma.push_back(report.per_vertex[i].sigma_translation_max);
       graph.travel.push_back(bag.records[i].meta.travel_distance);
+      if (i < exploration_novel_area.size()) {
+        graph.novel_area.push_back(exploration_novel_area[i]);
+      }
     }
     // The newest sigma after a loop edge from each submap (exact for the linearized graph).
     if (result.newest_cross_covariances.size() == result.poses.size() && !result.poses.empty()) {

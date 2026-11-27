@@ -283,6 +283,7 @@ public:
     out["kind"] = d.kind;
     out["revisit_mode"] = d.revisit_mode;
     out["newest_sigma"] = d.newest_sigma;
+    out["map_sigma"] = d.map_sigma;
     out["goal"] = py::make_tuple(d.goal.x(), d.goal.y());
     out["path_length"] = d.path_length;
     py::list path;

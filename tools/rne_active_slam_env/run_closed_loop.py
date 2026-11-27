@@ -250,7 +250,8 @@ def save_grid_png(grid: dict[str, Any], track: list[tuple[float, float]], path: 
 
 
 def policy_parameters(policy: str, trigger: float, release: float, uncertainty_weight: float,
-                      min_predicted_drop: float, absolute_gain: bool = False) -> dict[str, Any]:
+                      min_predicted_drop: float, absolute_gain: bool = False,
+                      map_objective: bool = False) -> dict[str, Any]:
     """Return the backend's exploration parameters of a policy (see the roadmap's P0)."""
     if policy == 'nearest_frontier':
         return {'exploration_info_weight': 0.0, 'exploration_distance_weight': 1.0,
@@ -264,6 +265,7 @@ def policy_parameters(policy: str, trigger: float, release: float, uncertainty_w
         # absolute_gain the predicted sigma removed [m].
         return {**frontier_info, 'exploration_uncertainty_weight': uncertainty_weight,
                 'exploration_revisit_absolute_gain': absolute_gain,
+                'exploration_revisit_map_objective': map_objective,
                 'exploration_revisit_trigger_sigma': trigger,
                 'exploration_revisit_release_sigma': release,
                 'exploration_min_predicted_drop': min_predicted_drop}
@@ -315,6 +317,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--absolute-gain', action='store_true',
                         help="active: score a revisit by the sigma it removes [m], "
                         "not the fraction")
+    parser.add_argument('--map-objective', action='store_true',
+                        help="active: revisit on the map's area-weighted mean sigma and score "
+                        'a revisit by its predicted drop')
+    parser.add_argument('--loop-min-translation-information-ratio', type=float, default=0.0,
+                        help='backend loop degeneracy gate (0: off)')
     parser.add_argument('--revisit-trigger-sigma', type=float, default=0.0,
                         help='active: revisit above this newest-submap sigma (0: never)')
     parser.add_argument('--revisit-release-sigma', type=float, default=0.0)
@@ -363,7 +370,11 @@ def main(argv: list[str] | None = None) -> int:
                   'exploration_inflation_radius': args.inflation_radius})
     graph.update(policy_parameters(args.policy, args.revisit_trigger_sigma,
                                    args.revisit_release_sigma, args.uncertainty_weight,
-                                   args.min_predicted_drop, args.absolute_gain))
+                                   args.min_predicted_drop, args.absolute_gain,
+                                   args.map_objective))
+    if args.loop_min_translation_information_ratio > 0.0:
+        graph['loop_min_translation_information_ratio'] = \
+            args.loop_min_translation_information_ratio
     (out / 'params.json').write_text(json.dumps(
         {'odometry': odometry, 'backend': graph, 'policy': args.policy, 'world': args.world,
          'seed': args.seed},

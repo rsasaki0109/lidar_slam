@@ -443,4 +443,55 @@ TEST(ActiveExploration, DecisionIsDeterministic)
   }
 }
 
+TEST(ActiveExploration, MapObjectiveCountsOnlyNovelAreaAndPredictsTheChainDrop)
+{
+  // A chain of 11 submaps from a fixed start: variance grows by 0.01 m^2 per submap.
+  ae::GraphUncertainty graph;
+  for (int j = 0; j <= 10; ++j) {
+    graph.positions.emplace_back(2.0 * j, 0.0);
+    graph.sigma.push_back(std::sqrt(0.01 * j));
+    graph.novel_area.push_back(j <= 5 ? 10.0 : 0.0);  // the last five re-cover known ground
+  }
+  // Mean over the first six only.
+  double expected = 0.0;
+  for (int j = 0; j <= 5; ++j) {
+    expected += std::sqrt(0.01 * j) / 6.0;
+  }
+  EXPECT_NEAR(ae::mapSigma(graph), expected, 1e-12);
+  // A loop to the start (k = 0) that removes half the newest variance: S = v_n^2 / (v_n / 2).
+  const double vn = 0.1;
+  const double after = std::sqrt(vn / 2.0);
+  double reduced = 0.0;
+  for (int j = 1; j <= 5; ++j) {
+    const double vj = 0.01 * j;
+    reduced += 10.0 * (std::sqrt(vj) - std::sqrt(vj - vj * vj / (2.0 * vn)));
+  }
+  EXPECT_NEAR(ae::predictedMapSigmaDrop(graph, 0, after), reduced / 60.0, 1e-12);
+  // Submaps up to the target do not change, and no area means no drop.
+  EXPECT_LT(ae::predictedMapSigmaDrop(graph, 5, after), 1e-12);
+  graph.novel_area.assign(11, 0.0);
+  EXPECT_EQ(ae::mapSigma(graph), 0.0);
+  EXPECT_EQ(ae::predictedMapSigmaDrop(graph, 0, after), 0.0);
+}
+
+TEST(ActiveExploration, GridCountsKnownCellsOnce)
+{
+  const auto walls = room(false);
+  const ae::CoverageGridConfig config = gridConfig();
+  ae::CoverageGrid grid(config.resolution);
+  EXPECT_EQ(grid.knownCells(), 0U);
+  grid.addScan(scanFrom({1.5, 1.5}, walls), config);
+  const std::size_t first = grid.knownCells();
+  EXPECT_GT(first, 0U);
+  grid.addScan(scanFrom({1.5, 1.5}, walls), config);
+  EXPECT_EQ(grid.knownCells(), first);  // the same ground again adds nothing
+  std::size_t counted = 0;
+  for (int y = grid.y0(); y < grid.y0() + grid.height(); ++y) {
+    for (int x = grid.x0(); x < grid.x0() + grid.width(); ++x) {
+      counted += grid.state(x, y, config.occupied_ratio) != ae::Cell::UNKNOWN ? 1U : 0U;
+    }
+  }
+  EXPECT_EQ(counted, first);
+}
+
 }  // namespace
