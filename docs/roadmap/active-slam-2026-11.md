@@ -583,6 +583,25 @@ fix the position along the tunnel.
   set).
 - Frozen before any policy runs on the tunnels.
 
+### Degenerate worlds: calibration result (2026-11-27)
+
+Seed 1, routes of ~400 m, no collision. Drift over 50 m [%] (largest live error [m]):
+
+| pilaster spacing [m] | tunnel_loop | long_tunnels |
+| --- | --- | --- |
+| 6 (as built) | 0.12 (0.37) | 0.13 (0.36) |
+| 12 | 0.12 (0.73) | 0.13 (0.33) |
+| 24 | 0.13 (0.55) | 0.14 (0.39) |
+| 48 | 4.37 (6.04) | 0.53 (1.32) |
+| none | 32.3 (58.6) | 8.02 (14.3) |
+
+By the rule: `long_tunnels` at 48 m (0.53 %, in the band); `tunnel_loop` has no setting in the
+band (24 m is below, 48 m above both limits). The drift jumps between 24 and 48 m.
+
+Amendment, made after seeing this table and before any policy run on the tunnels: a finer
+sweep of `tunnel_loop` at 30, 36 and 42 m under the same rule, and seeds 2 and 3 of
+`long_tunnels` at 48 m to see whether one seed's 0.53 % holds. No policy result is involved.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
