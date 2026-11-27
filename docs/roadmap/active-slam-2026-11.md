@@ -822,6 +822,26 @@ on the true pose, no policy), odometry drift over 50 m, IMU noise scale 1.
   seeds 101-110, the three policies) is run once with `--frozen` from a clean tree and reported
   as it comes out, under the preregistered pass rule.
 
+### Third holdout: calibration result (2026-11-27)
+
+42 routes (~419 m and ~412 m), no collision. Median drift over 50 m [%] over seeds 1-3 (largest
+live error over the three [m]):
+
+| pilaster spacing [m] | dogleg_loop | mine_branches |
+| --- | --- | --- |
+| 6 (as built) | 0.144 (0.39) | 0.133 (0.16) |
+| 12 | 0.143 (0.48) | 0.138 (0.27) |
+| 24 | 0.148 (0.63) | 0.178 (0.38) |
+| 30 | 0.153 (0.65) | 0.211 (0.93) |
+| 36 | 0.326 (1.43) | 0.205 (0.29) |
+| 42 | 0.159 (1.03) | 0.185 (0.66) |
+| 48 | 0.173 (0.85) | 0.309 (2.08) |
+
+By the rule: `dogleg_loop` every 36 m, `mine_branches` every 48 m; both just inside the band,
+and no route reaches 5 m. The drift is not monotonic in the spacing (`dogleg_loop` 42 m is below
+36 m): which pilasters remain near the long straights' middles matters more than how many.
+Frozen in `eval_config.yaml` (`world_overrides`, set `holdout`) before any policy runs on them.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

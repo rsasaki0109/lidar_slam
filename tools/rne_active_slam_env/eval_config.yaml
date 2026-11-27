@@ -23,6 +23,8 @@ loop_min_translation_information_ratio: 0.002
 world_overrides:
   tunnel_loop: {pilaster_spacing: 30, max_seconds: 1500, divergence_m: 10.0}
   long_tunnels: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
+  dogleg_loop: {pilaster_spacing: 36, max_seconds: 1500, divergence_m: 10.0}
+  mine_branches: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
 
 policies: [nearest_frontier, frontier_info, active]
 sets:
@@ -33,5 +35,5 @@ sets:
     worlds: [tunnel_loop, long_tunnels]
     seeds: [1, 2, 3]
   holdout:
-    worlds: []  # the next holdout worlds are still to be built
+    worlds: [dogleg_loop, mine_branches]  # third holdout (roadmap "Third holdout")
     seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
