@@ -100,6 +100,9 @@ struct ExplorationDecision
   std::size_t frontiers {0U};
   std::size_t reachable_frontiers {0U};
   std::size_t revisit_candidates {0U};
+  // The goal was planned through unknown cells: no path through known free cells reached a
+  // frontier, but frontiers were left.
+  bool through_unknown {false};
 };
 
 // The map-saving parameters (offline_map_bundle's map_leaf_size, map_grid_size_x, ...), with the

@@ -2189,12 +2189,31 @@ struct BagPass
         graph.predicted_sigma.push_back(std::numeric_limits<double>::quiet_NaN());
       }
     }
-    const ae::PathField paths(
+    const ae::PathField known_paths(
       exploration_grid, config.exploration_grid, config.exploration_planner, robot_xy);
-    const std::vector<ae::Frontier> frontiers = ae::findFrontiers(
-      exploration_grid, config.exploration_grid, paths, config.exploration_frontier);
-    const ae::Decision decision = ae::selectGoal(
-      paths, frontiers, graph, explorationSelection(), explorer_state);
+    std::unique_ptr<ae::PathField> optimistic_paths;
+    const ae::PathField * paths = &known_paths;
+    std::vector<ae::Frontier> frontiers = ae::findFrontiers(
+      exploration_grid, config.exploration_grid, known_paths, config.exploration_frontier);
+    ae::Decision decision = ae::selectGoal(
+      known_paths, frontiers, graph, explorationSelection(), explorer_state);
+    // Frontiers left that no path through known free cells reaches (a gap the grid has not
+    // cleared yet) do not end the exploration: plan again through unknown cells.
+    const bool unreachable_left = std::any_of(
+      frontiers.begin(), frontiers.end(), [](const ae::Frontier & f) {return !f.reachable;});
+    if (decision.status != ae::Decision::Status::GOAL && unreachable_left &&
+      !config.exploration_planner.allow_unknown)
+    {
+      ae::PlannerConfig optimistic = config.exploration_planner;
+      optimistic.allow_unknown = true;
+      optimistic_paths = std::make_unique<ae::PathField>(
+        exploration_grid, config.exploration_grid, optimistic, robot_xy);
+      paths = optimistic_paths.get();
+      frontiers = ae::findFrontiers(
+        exploration_grid, config.exploration_grid, *paths, config.exploration_frontier);
+      decision = ae::selectGoal(*paths, frontiers, graph, explorationSelection(), explorer_state);
+      out.through_unknown = decision.status == ae::Decision::Status::GOAL;
+    }
     out.status = decision.status == ae::Decision::Status::GOAL ? "goal" :
       decision.status == ae::Decision::Status::EXPLORATION_DONE ? "exploration_done" :
       "no_reachable_goal";
@@ -2213,7 +2232,7 @@ struct BagPass
       out.path_length = c.path_length;
       out.unknown_area = c.unknown_area;
       out.uncertainty_drop = c.uncertainty_drop;
-      out.path = paths.pathTo(c.goal);
+      out.path = paths->pathTo(c.goal);
     }
     return out;
   }

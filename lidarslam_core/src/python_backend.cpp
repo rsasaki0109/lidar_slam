@@ -273,7 +273,7 @@ public:
   // The explorer's next goal for a robot at (x, y) in the odometry frame (OfflinePipeline::
   // decideExploration), as a dict: status, kind, revisit_mode, newest_sigma, goal [x, y],
   // path_length, path [[x, y], ...], unknown_area, uncertainty_drop, submaps, frontiers,
-  // reachable_frontiers, revisit_candidates.
+  // reachable_frontiers, revisit_candidates, through_unknown.
   py::dict decideExploration(double x, double y)
   {
     const graphslam::offline::ExplorationDecision d =
@@ -296,6 +296,7 @@ public:
     out["frontiers"] = d.frontiers;
     out["reachable_frontiers"] = d.reachable_frontiers;
     out["revisit_candidates"] = d.revisit_candidates;
+    out["through_unknown"] = d.through_unknown;
     return out;
   }
 
