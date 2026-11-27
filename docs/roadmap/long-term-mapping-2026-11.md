@@ -2034,3 +2034,29 @@ be set before a run on sessions this chain has not used.
   than with A and no scored update rises by more than 0.3 m. With fewer than four scored updates
   the check is inconclusive. If C passes, a pre-commit correction is implemented in `live`.
   Reported whatever it is.
+
+#### Results of the check on sessions the chain has not used (2026-11-27)
+
+Six of the seven sessions pass through the square (2013-01-10 does not); all six were appended
+(`live` exit 0). 2012-04-29 passes for 23 s and has 14 submaps within reach of the even sessions,
+too few to fit, so five updates are scored (`lifelong/fresh_tilt_score.jsonl`). The 95th
+percentile of |dz| against the odd sessions:
+
+| Update | Compared | A (as committed) | C (corrected) | Tilt (roll, pitch), offset |
+| --- | ---: | ---: | ---: | --- |
+| 2012-01-08 | 246 | 2.51 m | 2.12 m | +0.25, 0; +0.24 m |
+| 2012-02-04 | 283 | 0.59 m | 0.70 m | 0, 0; +0.11 m |
+| 2012-02-12 | 225 | 2.36 m | 0.84 m | +0.25, +0.50; +0.92 m |
+| 2012-02-19 | 238 | 1.43 m | 0.79 m | −0.50, −0.25; −0.37 m |
+| 2013-04-05 | 199 | 0.52 m | 0.56 m | +0.25, 0; +0.19 m |
+
+| Rule | A | C | |
+| --- | ---: | ---: | --- |
+| scored updates above 1.0 m | 3 | 1 | fewer: met |
+| largest rise | — | +0.11 m (2012-02-04) | ≤ 0.3 m: met |
+| scored updates | 5 | | ≥ 4: conclusive |
+
+The correction **reduces the drift** on sessions the chain has not used, and by the preregistered
+rule a pre-commit correction is implemented in `live`. 2012-01-08 stays above 1.0 m: its drift is
+not a rigid tilt of the whole session. The two sessions that were already flat rise by 0.04 and
+0.11 m, the cost of fitting against half the store.

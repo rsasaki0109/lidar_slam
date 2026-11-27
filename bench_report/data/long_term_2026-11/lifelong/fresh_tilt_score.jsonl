@@ -1,0 +1,7 @@
+{"day": "2012-01-08", "fit_compared": 257, "roll_deg": 0.25, "pitch_deg": 0.0, "offset_m": 0.241, "score_compared": 246, "A_p95_m": 2.513, "C_p95_m": 2.118}
+{"day": "2012-02-04", "fit_compared": 310, "roll_deg": 0.0, "pitch_deg": 0.0, "offset_m": 0.109, "score_compared": 283, "A_p95_m": 0.593, "C_p95_m": 0.702}
+{"day": "2012-02-12", "fit_compared": 226, "roll_deg": 0.25, "pitch_deg": 0.5, "offset_m": 0.918, "score_compared": 225, "A_p95_m": 2.358, "C_p95_m": 0.838}
+{"day": "2012-02-19", "fit_compared": 235, "roll_deg": -0.5, "pitch_deg": -0.25, "offset_m": -0.368, "score_compared": 238, "A_p95_m": 1.43, "C_p95_m": 0.794}
+{"day": "2012-04-29", "fit_compared": 14, "skipped": "too little overlap with the even sessions"}
+{"day": "2013-01-10", "skipped": "no pass through the square"}
+{"day": "2013-04-05", "fit_compared": 222, "roll_deg": 0.25, "pitch_deg": 0.0, "offset_m": 0.193, "score_compared": 199, "A_p95_m": 0.524, "C_p95_m": 0.558}
