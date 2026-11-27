@@ -1997,3 +1997,22 @@ flatters it, so its check has to score the correction on data the fit did not us
   by at least 20% from A to C, no more updates are above 1.5 m with C than with A, and no update
   rises by more than 0.3 m. Then a pre-commit correction is implemented in `live`. Reported
   whatever it is. The later sessions carry their own drift, which both arms share.
+
+#### Results of the out-of-sample check (2026-11-27)
+
+Sixteen updates have at least 20 submaps within reach of later sessions (the last two have
+none, 2012-01-22 too little overlap to fit). Per-update 95th percentile of |dz| against the later
+sessions (`tilt_check.jsonl`):
+
+| Over 16 updates | A (as committed) | C (corrected) | Rule |
+| --- | ---: | ---: | --- |
+| median | 0.78 m | 0.74 m (−4.9%) | needs −20%: **fails** |
+| updates above 1.5 m | 3 | 1 | met |
+| largest rise | — | +0.28 m (2012-03-17) | met (≤ 0.3 m) |
+
+The correction does **not** pass, and nothing is implemented. As with moving-start gravity, it
+acts on the worst sessions (2012-03-31 3.99 → 1.80 m, 2012-11-16 1.78 → 0.75 m, 2012-11-17
+1.41 → 0.75 m, 2012-09-28 1.08 → 0.39 m) while the median sits on sessions whose later
+comparison is bounded by the later sessions' own drift (0.6–0.8 m). Two preregistered rules on
+the median have now failed for corrections that mostly act on the tail; a rule on the tail has to
+be set before a run on sessions this chain has not used.
