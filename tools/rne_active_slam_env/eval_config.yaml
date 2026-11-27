@@ -17,8 +17,8 @@ min_predicted_drop: 0.2
 policies: [nearest_frontier, frontier_info, active]
 sets:
   development:
-    worlds: [ring, grid]
+    worlds: [ring, grid, branches2, long_loop2]
     seeds: [1, 2, 3]
   holdout:
-    worlds: [branches2, long_loop2]
+    worlds: []  # the next holdout worlds are still to be built
     seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]

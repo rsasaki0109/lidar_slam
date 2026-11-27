@@ -4,9 +4,10 @@ A world is a dict for rne_active_slam_env (``boxes``, ``start``, ``seed``) plus 
 needs: ``starts`` (10 start poses [x, y, yaw]; a seed picks one) and ``free_region`` (the free
 floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``free_rects``).
 
-Development worlds (tuned on): ``ring``, ``grid``. Holdout worlds (run once, after the freeze):
-``branches2``, ``long_loop2``; ``branches`` and ``big_loop`` were the first holdout, retired.
-They are built the same way: walls 2.5 m high, a floor box, and
+Development worlds (tuned on): ``ring``, ``grid``, and ``branches2``, ``long_loop2`` (the second
+holdout, run once on 2026-11-27 with a sensor bug, so seen). ``branches`` and ``big_loop`` were
+the first holdout, retired. The next holdout worlds are still to be built. All are built the
+same way: walls 2.5 m high, a floor box, and
 pilasters (0.3 m wide, 0.2 m deep) along the walls as door frames; flat walls alone leave a
 corridor's axis unobservable to the LiDAR.
 """
@@ -225,10 +226,13 @@ def world_long_loop2() -> dict[str, Any]:
     return rect_world(74, 44, free, starts, pilaster_spacing=6, seed=6)
 
 
-DEVELOPMENT = {'ring': world_ring, 'grid': world_grid}
+# branches2 and long_loop2 were the second holdout (run once on 2026-11-27); seen, so tuned on now.
+DEVELOPMENT = {'ring': world_ring, 'grid': world_grid, 'branches2': world_branches2,
+               'long_loop2': world_long_loop2}
 # The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
 RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
-HOLDOUT = {'branches2': world_branches2, 'long_loop2': world_long_loop2}
+# The next holdout: to be built, checked statically and approved before it is run once.
+HOLDOUT: dict = {}
 WORLDS = {**DEVELOPMENT, **RETIRED, **HOLDOUT}
 
 

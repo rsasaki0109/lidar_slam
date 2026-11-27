@@ -23,7 +23,6 @@
 //!
 //! RobotNativeEngine's world is y-up; this program maps z-up (x, y, z) to y-up (x, z, -y).
 
-use std::f64::consts::FRAC_PI_2;
 use std::io::{self, BufRead, BufWriter, Write};
 
 use rne_ecs::{spawn_named, Entity, World};
@@ -187,11 +186,18 @@ struct State {
     v: f64,
 }
 
-/// The sensor's pose in y-up: the z-up sensor frame (x forward, z up) rotated by yaw, then
-/// mapped to y-up.
+/// The sensor's pose in y-up. RNE's sensor frame is +X forward, +Y Livox up, +Z Livox right;
+/// upright at yaw 0 it is the y-up world frame itself, so yaw (counter-clockwise seen from
+/// above) is a rotation about +Y.
 fn sensor_transform(state: &State) -> Transform3 {
-    let rotation = Quat::from_rotation_x(-FRAC_PI_2) * Quat::from_rotation_z(state.yaw);
+    let rotation = Quat::from_rotation_y(state.yaw);
     Transform3::from_translation_rotation(to_y_up([state.x, state.y, SENSOR_HEIGHT_M]), rotation)
+}
+
+/// A point in RNE's sensor frame (+X forward, +Y up, +Z right) in the Livox frame (x forward,
+/// y left, z up).
+fn to_livox(local: Vec3) -> [f64; 3] {
+    [local.x, -local.z, local.y]
 }
 
 struct Env {
@@ -340,9 +346,10 @@ impl Env {
             let intensity = cloud.intensities.get(index).copied().unwrap_or(0.0) * 100.0;
             let line = cloud.channel_indices.get(index).copied().unwrap_or(0) as u8;
             let stamp = frame_start_ns as f64 + (time_s * 1e9).round();
-            points.extend_from_slice(&(local.x as f32).to_le_bytes());
-            points.extend_from_slice(&(local.y as f32).to_le_bytes());
-            points.extend_from_slice(&(local.z as f32).to_le_bytes());
+            let livox = to_livox(local);
+            points.extend_from_slice(&(livox[0] as f32).to_le_bytes());
+            points.extend_from_slice(&(livox[1] as f32).to_le_bytes());
+            points.extend_from_slice(&(livox[2] as f32).to_le_bytes());
             points.extend_from_slice(&intensity.to_le_bytes());
             points.push(0); // tag
             points.push(line);
@@ -413,4 +420,73 @@ fn main() {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Livox-frame (x, y, z) of a frame's points (26-byte livox_ros_driver2 records).
+    fn livox_points(frame: &Frame) -> Vec<[f32; 3]> {
+        frame
+            .points
+            .chunks_exact(26)
+            .map(|r| {
+                let f = |i: usize| f32::from_le_bytes(r[i..i + 4].try_into().unwrap());
+                [f(0), f(4), f(8)]
+            })
+            .collect()
+    }
+
+    /// A 4 m corridor along world x (walls at y = 0 and y = 4) closed by a wall at x = 20; the
+    /// robot stands at (10, 1) facing `yaw`: the left wall is 3 m away, the right wall 1 m.
+    fn corridor_frame(yaw: f64) -> Vec<[f32; 3]> {
+        let spec = format!(
+            r#"{{"boxes": [
+                {{"min": [-1, -1, -0.1], "max": [21, 5, 0]}},
+                {{"min": [0, -1, 0], "max": [20, 0, 2.5]}},
+                {{"min": [0, 4, 0], "max": [20, 5, 2.5]}},
+                {{"min": [20, -1, 0], "max": [21, 5, 2.5]}}],
+              "start": [10, 1, {yaw}], "seed": 1}}"#
+        );
+        let mut env = Env::new(&spec).expect("world");
+        let mut points = Vec::new();
+        for _ in 0..5 {
+            points.extend(livox_points(&env.step(0.0, 0.0)));
+        }
+        points
+    }
+
+    fn count(points: &[[f32; 3]], keep: impl Fn(&[f32; 3]) -> bool) -> usize {
+        points.iter().filter(|p| keep(p)).count()
+    }
+
+    #[test]
+    fn the_sensor_sees_both_sides_and_ahead_in_the_livox_frame() {
+        // Facing +x: left (Livox +y) wall 3 m away, right (-y) wall 1 m away, end wall 10 m ahead.
+        let p = corridor_frame(0.0);
+        let wall = |q: &[f32; 3]| q[2] > 0.2;
+        let left = count(&p, |q| wall(q) && (q[1] - 3.0).abs() < 0.1);
+        let right = count(&p, |q| wall(q) && (q[1] + 1.0).abs() < 0.1);
+        let ahead = count(&p, |q| wall(q) && (q[0] - 10.0).abs() < 0.1);
+        assert!(left > 1000 && right > 1000 && ahead > 100, "{left} {right} {ahead}");
+        // The floor is 0.5 m below the sensor.
+        let floor = count(&p, |q| (q[2] + SENSOR_HEIGHT_M as f32).abs() < 0.05);
+        assert!(floor > 100, "{floor}"); // seen from about 4 m out (lowest beam -7 deg)
+        // Nothing is below the floor or behind the walls.
+        assert_eq!(count(&p, |q| q[2] < -0.6 || q[1] > 3.2 || q[1] < -1.2), 0);
+    }
+
+    #[test]
+    fn turning_left_moves_the_end_wall_to_the_right() {
+        // Facing +y (yaw +90 deg): the end wall (x = 20) is 10 m to the right (Livox -y), the
+        // right wall (y = 0) 1 m behind.
+        let p = corridor_frame(FRAC_PI_2_TEST);
+        let wall = |q: &[f32; 3]| q[2] > 0.2;
+        assert!(count(&p, |q| wall(q) && (q[1] + 10.0).abs() < 0.1) > 100);
+        assert!(count(&p, |q| wall(q) && (q[0] + 1.0).abs() < 0.1) > 1000);
+        assert!(count(&p, |q| wall(q) && (q[0] - 3.0).abs() < 0.1) > 1000);
+    }
+
+    const FRAC_PI_2_TEST: f64 = std::f64::consts::FRAC_PI_2;
 }

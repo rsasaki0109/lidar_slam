@@ -193,6 +193,27 @@ class Coverage:
 POLICIES = ('nearest_frontier', 'frontier_info', 'active')
 
 
+def save_grid_png(grid: dict[str, Any], track: list[tuple[float, float]], path: Path,
+                  scale: int = 4) -> None:
+    """Write the explorer's coverage grid (unknown grey, free white, occupied black) and the
+    estimated track (red) to a PNG, for looking at why a run ended."""
+    from PIL import Image, ImageDraw
+    width, height, res = grid['width'], grid['height'], grid['resolution']
+    if width == 0 or height == 0:
+        return
+    cells = np.frombuffer(bytes(grid['cells']), dtype=np.uint8).reshape(height, width)
+    palette = np.array([[150, 150, 150], [255, 255, 255], [0, 0, 0]], dtype=np.uint8)
+    image = Image.fromarray(palette[np.clip(cells, 0, 2)][::-1]).resize(
+        (width * scale, height * scale), Image.NEAREST)
+    draw = ImageDraw.Draw(image)
+
+    def pixel(x: float, y: float) -> tuple[float, float]:
+        return ((x / res - grid['x0']) * scale, (height - (y / res - grid['y0'])) * scale)
+    if len(track) > 1:
+        draw.line([pixel(x, y) for x, y in track], fill=(220, 30, 30), width=2)
+    image.save(path)
+
+
 def policy_parameters(policy: str, trigger: float, release: float, uncertainty_weight: float,
                       min_predicted_drop: float) -> dict[str, Any]:
     """Return the backend's exploration parameters of a policy (see the roadmap's P0)."""
@@ -329,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
     diverged = False
     coverage_90 = None  # (seconds, metres) when 90 % of the floor was first seen
     revisit_frames = 0
+    est_track: list[tuple[float, float]] = []
     max_frames = int(args.max_seconds / FRAME_S)
     settle_frames = 30  # stand still while RKO-LIO initializes
     for frame in range(max_frames):
@@ -358,6 +380,7 @@ def main(argv: list[str] | None = None) -> int:
             est = (o[0], o[1], yaw_of(o[3:7]))
         if 'map' in latest:
             m = latest['map']
+            est_track.append((m[0], m[1]))
             errors.append(math.hypot(m[0] - truth[0], m[1] - truth[1]))
             if errors[-1] > args.divergence_m:
                 diverged = True
@@ -409,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
             coverage_90 = ((frame + 1) * FRAME_S, distance)
         if done_count >= 3 or diverged:
             break
+    try:
+        save_grid_png(session.exploration_grid(), est_track, out / 'exploration_grid.png')
+    except (ImportError, KeyError, ValueError) as error:
+        print(f'warning: no exploration_grid.png: {error}', file=sys.stderr)
     env.close()
     frames.close()
     decisions.close()
