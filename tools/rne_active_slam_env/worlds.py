@@ -5,7 +5,7 @@ needs: ``starts`` (10 start poses [x, y, yaw]; a seed picks one) and ``free_regi
 floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``free_rects``).
 
 Development worlds (tuned on): ``ring``, ``grid``. Holdout worlds (run once, after the freeze):
-``branches``, ``big_loop``. They are built the same way: walls 2.5 m high, a floor box, and
+``branches2``, ``long_loop2``; ``branches`` and ``big_loop`` were the first holdout, retired. They are built the same way: walls 2.5 m high, a floor box, and
 pilasters (0.3 m wide, 0.2 m deep) along the walls as door frames; flat walls alone leave a
 corridor's axis unobservable to the LiDAR.
 """
@@ -187,9 +187,48 @@ def world_big_loop() -> dict[str, Any]:
     return rect_world(76, 46, free, starts, pilaster_spacing=6, seed=4, crates=crates)
 
 
+def world_branches2() -> dict[str, Any]:
+    """Return 4 m corridors: a main corridor with six dead ends (two into rooms) and one loop.
+
+    Second holdout, after the first (``branches``) was cut into pieces by crates in its 3 m
+    corridors. Crates stand in the rooms only.
+    """
+    free = [
+        [4, 22, 66, 26],                                  # main corridor
+        [62, 4, 66, 22], [4, 4, 66, 8], [4, 8, 8, 22],    # the return loop
+        [12, 26, 16, 44],                                 # dead end up
+        [26, 26, 30, 40], [22, 40, 34, 48],               # dead end up into a room
+        [40, 26, 44, 46],                                 # dead end up
+        [52, 26, 56, 38], [48, 38, 60, 48],               # dead end up into a room
+        [20, 11, 24, 22], [46, 11, 50, 22],               # dead ends down (3 m short of y = 8)
+    ]
+    starts = [[10.0, 24.0, 0.0], [35.0, 24.0, math.pi], [64.0, 14.0, -math.pi / 2],
+              [35.0, 6.0, math.pi], [6.0, 14.0, math.pi / 2], [14.0, 35.0, -math.pi / 2],
+              [28.0, 44.0, -math.pi / 2], [42.0, 36.0, -math.pi / 2], [54.0, 43.0, -math.pi / 2],
+              [48.0, 16.0, math.pi / 2]]
+    crates = [(25.0, 46.0), (31.5, 42.5), (50.5, 45.5), (57.5, 40.5)]
+    return rect_world(70, 50, free, starts, pilaster_spacing=3, seed=5, crates=crates)
+
+
+def world_long_loop2() -> dict[str, Any]:
+    """Return a 4 m corridor around a 66 m x 36 m block (~220 m loop), pilasters every 6 m.
+
+    Second holdout, after the first (``big_loop``) was cut into pieces by crates in its 3 m
+    corridor. No crates: the sparse pilasters are the only features along the walls.
+    """
+    free = [[0, 0, 74, 4], [0, 40, 74, 44], [0, 4, 4, 40], [70, 4, 74, 40]]
+    starts = [[2.0, 22.0, math.pi / 2], [37.0, 2.0, 0.0], [72.0, 22.0, math.pi / 2],
+              [37.0, 42.0, math.pi], [2.0, 2.0, 0.0], [72.0, 2.0, math.pi / 2],
+              [72.0, 42.0, math.pi], [2.0, 42.0, -math.pi / 2], [20.0, 2.0, math.pi],
+              [55.0, 42.0, 0.0]]
+    return rect_world(74, 44, free, starts, pilaster_spacing=6, seed=6)
+
+
 DEVELOPMENT = {'ring': world_ring, 'grid': world_grid}
-HOLDOUT = {'branches': world_branches, 'big_loop': world_big_loop}
-WORLDS = {**DEVELOPMENT, **HOLDOUT}
+# The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
+RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
+HOLDOUT = {'branches2': world_branches2, 'long_loop2': world_long_loop2}
+WORLDS = {**DEVELOPMENT, **RETIRED, **HOLDOUT}
 
 
 def reachable_fractions(world: dict[str, Any], inflation: float = 0.8,

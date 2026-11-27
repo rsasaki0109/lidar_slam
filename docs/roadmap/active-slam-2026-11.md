@@ -441,10 +441,19 @@ Kept as the record of this holdout; it is not re-run, and these two worlds are n
 `reachable_fractions` must give 1.0 from every start for a world to be used
 (`test_active_slam_eval.py` checks the development worlds).
 
-Proposed amendment (needs the maintainer's approval before anything runs): two new holdout
-worlds of the same two kinds (dead-end branches; a long loop with sparse features), built and
-checked with `reachable_fractions` and nothing else, then run once at the frozen configuration
-(`w_u` 80; the stop rule and everything else unchanged).
+Amendment (approved by the maintainer 2026-11-27): two new holdout worlds of the same two
+kinds, built and checked with `reachable_fractions` and the start clearance only (no policy was
+run on them), then run once at the frozen configuration (`w_u` 80; the stop rule and everything
+else unchanged):
+
+- `branches2`: 4 m corridors (70 x 50 m): a main corridor with four dead ends up (two into
+  rooms) and two down, and one loop through a return corridor; crates in the rooms only.
+- `long_loop2`: a 4 m corridor around a 66 x 36 m block (~220 m loop), pilasters every 6 m, no
+  crates.
+- Checks: every start reaches 100 % of the floor the robot can stand on under the 0.8 m
+  inflation; the start clearance is 1.8 m or more.
+- `eval_config.yaml` changes only its holdout world list (SHA-256 prefix `2b471555c417f025`); the first
+  holdout worlds are kept as `RETIRED` in `worlds.py`.
 
 ### To build before the runs
 

@@ -20,5 +20,5 @@ sets:
     worlds: [ring, grid]
     seeds: [1, 2, 3]
   holdout:
-    worlds: [branches, big_loop]
+    worlds: [branches2, long_loop2]
     seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
