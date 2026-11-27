@@ -488,6 +488,25 @@ This closes the holdout for this configuration. Any change (stop rule, planner, 
 trigger tied to the travel distance rather than sigma alone) needs new development work and a
 new, untouched holdout before a claim is made.
 
+### Sensor bug found after the second holdout (2026-11-27)
+
+Looking into the 15-second `branches2` seed 104 runs showed that the simulated Mid-360 saw only
+the robot's left: RNE's sensor frame is +X forward, +Y Livox up, +Z right, and the env rotated
+it as if it were z-up, so the sensor lay on its side. Every closed-loop number above (the
+development tuning, the `w_u` freeze and both holdouts) was measured with it; they are kept as
+the record but say nothing about the method with a working sensor. Fixed in the env (yaw about
++Y, points converted to the Livox frame) with cargo tests that both corridor walls and the end
+wall appear where they should.
+
+What follows from it:
+
+- `branches2` and `long_loop2` have been run, so they join the development set (`ring`, `grid`,
+  `branches2`, `long_loop2`); the next holdout must be new worlds, built, checked statically and
+  with a short dry run from every start, and approved before it is run once.
+- Development restarts from the frozen configuration with the fixed sensor, then the two
+  changes the second holdout pointed at: the stop rule (frontiers that exist but are unreachable
+  are not "done") and a revisit trigger tied to the travel since the last loop.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
