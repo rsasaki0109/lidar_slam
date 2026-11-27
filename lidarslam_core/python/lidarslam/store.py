@@ -313,10 +313,12 @@ class Store:
                     backend_params: dict[str, Any], info: dict[str, Any] | None = None,
                     export: bool = True,
                     log: Callable[[str, str], None] | None = None,
-                    before_commit: Callable[[str], None] | None = None) -> dict[str, Any]:
+                    before_commit: Callable[[str], dict[str, Any] | None] | None = None
+                    ) -> dict[str, Any]:
         """Writes a session with ``write(directory)`` (returns its submap count), commits it and,
         when ``export`` is true and the sessions share a frame, exports the bundle. Returns its entry.
-        ``before_commit(directory)`` runs on the written session and may raise
+        ``before_commit(directory)`` runs on the written session; it may return entries that
+        replace those of ``info`` (a corrected ``store_from_session``), or raise
         :class:`SessionRefused`: the session is then left uncommitted, as after a crash."""
         session_id, directory = self.new_session()
         submaps = write(str(directory))
@@ -325,7 +327,10 @@ class Store:
         entry_info = {'submaps': submaps, **(info or {})}
         _write_json(directory / 'session.json', {'id': session_id, **entry_info})
         if before_commit is not None:
-            before_commit(str(directory))
+            updates = before_commit(str(directory))
+            if updates:
+                entry_info.update(updates)
+                _write_json(directory / 'session.json', {'id': session_id, **entry_info})
         entry = self.commit(session_id, entry_info)
         if export:
             self.export_if_aligned(log=log)

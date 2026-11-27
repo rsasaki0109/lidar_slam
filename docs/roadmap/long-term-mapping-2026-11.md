@@ -2060,3 +2060,16 @@ The correction **reduces the drift** on sessions the chain has not used, and by 
 rule a pre-commit correction is implemented in `live`. 2012-01-08 stays above 1.0 m: its drift is
 not a rigid tilt of the whole session. The two sessions that were already flat rise by 0.04 and
 0.11 m, the cost of fitting against half the store.
+
+#### Tilt correction before the commit (`live`, on by default)
+
+`live` now fits the correction before an anchored session is committed
+(`lidarslam.height_check.correct`): the same grid fit as in the check, against every stored
+session, applied to `store_from_session` (the anchor transform is kept as
+`store_from_session_uncorrected`, the fit as `store_tilt_correction`). The height check then runs
+on the corrected transform. Sessions with fewer than 20 overlapping submaps, and store tracking
+(whose submap poses are stored as tracked), keep the anchor transform; `--no-tilt-correction`
+turns it off. The fit takes 14–16 s on a 20-session NCLT store. On the fresh stores it brings
+2012-02-12 from 2.48 to 0.58 m and 2012-02-04 from 0.41 to 0.30 m (in-sample, against all twenty
+sessions). The change evidence is still traced with the anchor transform and is not traced again
+after the correction, which moves a session by up to about a metre at its far end (2012-02-12).
