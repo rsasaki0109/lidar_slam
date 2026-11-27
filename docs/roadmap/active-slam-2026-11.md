@@ -794,6 +794,34 @@ default. Next: new holdout worlds, built and checked (static checks and a short 
 every start, no policy comparison) before the user approves them, then one run of the holdout
 set with `--frozen` from a clean tree.
 
+### Third holdout: worlds and calibration rule (written before any run on them)
+
+Built after the configuration was frozen (approved by the maintainer 2026-11-27); no policy has
+run on them. Both are 4 m tunnels with pilasters every 6 m as built, of the degenerate kind,
+not copies of the development tunnels:
+
+- `dogleg_loop` (150 x 70 m): a ~440 m loop with a dogleg (straights of 150, 40, 76, 30, 70 and
+  66 m) and a 20 m dead-end spur.
+- `mine_branches` (190 x 60 m): a 190 m main tunnel, a ~230 m loop above it through a top
+  gallery, and three dead ends (28, 24, 20 m).
+
+Static checks: `reachable_fractions` gives 1.0 from all ten starts (also with pilasters every
+24, 36, 48 m); start clearance and the fixed routes are covered by `test_active_slam_eval.py`.
+
+Difficulty, measured as for the tunnels: fixed routes (`worlds.ROUTES`, ~430 m and ~410 m,
+on the true pose, no policy), odometry drift over 50 m, IMU noise scale 1.
+
+- Sweep: pilaster spacing 6 (as built), 12, 24, 30, 36, 42, 48 m; seeds 1, 2, 3.
+- Rule: per world, the setting closest to as built whose median drift over the three seeds is
+  in 0.3-1.0 % and none of whose routes has a live error of 5 m or more. If a world has none,
+  report that, and that world is not run.
+- Budget 1500 s and divergence limit 10 m, as for the tunnels (both worlds are of their size).
+- Then one 60 s check run from each of the ten starts with `nearest_frontier` only (no
+  collision, no divergence, the robot moves); its ATE is not looked at.
+- The maintainer approves the worlds and settings; then the set `holdout` (these two worlds,
+  seeds 101-110, the three policies) is run once with `--frozen` from a clean tree and reported
+  as it comes out, under the preregistered pass rule.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

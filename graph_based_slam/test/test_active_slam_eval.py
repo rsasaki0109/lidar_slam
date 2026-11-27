@@ -147,7 +147,7 @@ def test_odometry_drift_is_the_segment_error_per_metre() -> None:
 
 
 def test_thin_pilasters_keeps_multiples_and_routes_stay_on_the_floor() -> None:
-    for name in worlds.DEVELOPMENT:
+    for name in {**worlds.DEVELOPMENT, **worlds.HOLDOUT}:
         full = worlds.world_for(name, 1)
         thin = worlds.world_for(name, 1, pilaster_spacing_m=12)
         none = worlds.world_for(name, 1, pilaster_spacing_m=-1)

@@ -6,10 +6,9 @@ floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``fre
 
 Development worlds (tuned on): ``ring``, ``grid``, and ``branches2``, ``long_loop2`` (the second
 holdout, run once on 2026-11-27 with a sensor bug, so seen). ``branches`` and ``big_loop`` were
-the first holdout, retired. The next holdout worlds are still to be built. All are built the
-same way: walls 2.5 m high, a floor box, and
-pilasters (0.3 m wide, 0.2 m deep) along the walls as door frames; flat walls alone leave a
-corridor's axis unobservable to the LiDAR.
+the first holdout, retired. ``dogleg_loop`` and ``mine_branches`` are the third holdout. All are
+built the same way: walls 2.5 m high, a floor box, and pilasters (0.3 m wide, 0.2 m deep) along
+the walls as door frames; flat walls alone leave a corridor's axis unobservable to the LiDAR.
 """
 
 from __future__ import annotations
@@ -257,14 +256,50 @@ def world_long_tunnels() -> dict[str, Any]:
     return rect_world(200, 60, free, starts, pilaster_spacing=6, seed=8)
 
 
+# ------------------------------------------------------------------- third holdout
+
+
+def world_dogleg_loop() -> dict[str, Any]:
+    """Return a 4 m tunnel loop with a dogleg (~440 m) and a 20 m dead-end spur.
+
+    Bottom 150 m, up 40 m, left 80 m, up 30 m, left 74 m, down 70 m; the spur leaves the
+    bottom tunnel at x = 100. The two longest straights (150 m, 70+ m) put the end walls out of
+    range midway, as in the tunnels; the dogleg's corners are the only other constraint.
+    """
+    free = [[0, 0, 150, 4], [146, 4, 150, 40], [70, 36, 146, 40], [70, 40, 74, 70],
+            [0, 66, 70, 70], [0, 4, 4, 66], [100, 4, 104, 24]]
+    starts = [[2.0, 34.0, math.pi / 2], [60.0, 2.0, 0.0], [148.0, 20.0, math.pi / 2],
+              [110.0, 38.0, math.pi], [72.0, 52.0, math.pi / 2], [36.0, 68.0, math.pi],
+              [2.0, 2.0, 0.0], [130.0, 2.0, math.pi], [102.0, 18.0, -math.pi / 2],
+              [20.0, 68.0, 0.0]]
+    return rect_world(150, 70, free, starts, pilaster_spacing=6, seed=9)
+
+
+def world_mine_branches() -> dict[str, Any]:
+    """Return a 190 m main tunnel with one loop above it and three dead ends (4 m tunnels).
+
+    The loop (~230 m) runs up at x = 30, along a top gallery and down at x = 116; dead ends go
+    down at x = 60 (28 m) and x = 150 (24 m) and up at x = 160 (20 m).
+    """
+    free = [[0, 28, 190, 32], [30, 32, 34, 56], [30, 56, 120, 60], [116, 32, 120, 56],
+            [60, 0, 64, 28], [150, 4, 154, 28], [160, 32, 164, 52]]
+    starts = [[2.0, 30.0, 0.0], [90.0, 30.0, math.pi], [188.0, 30.0, math.pi],
+              [32.0, 44.0, math.pi / 2], [75.0, 58.0, 0.0], [118.0, 44.0, -math.pi / 2],
+              [62.0, 10.0, math.pi / 2], [152.0, 12.0, math.pi / 2], [162.0, 46.0, -math.pi / 2],
+              [140.0, 30.0, 0.0]]
+    return rect_world(190, 60, free, starts, pilaster_spacing=6, seed=10)
+
+
 # branches2 and long_loop2 were the second holdout (run once on 2026-11-27); seen, so tuned on now.
 DEVELOPMENT = {'ring': world_ring, 'grid': world_grid, 'branches2': world_branches2,
                'long_loop2': world_long_loop2, 'tunnel_loop': world_tunnel_loop,
                'long_tunnels': world_long_tunnels}
 # The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
 RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
-# The next holdout: to be built, checked statically and approved before it is run once.
-HOLDOUT: dict = {}
+# The third holdout: built 2026-11-27 after the configuration was frozen; checked (reach, start
+# clearance, odometry drift on fixed routes, a 60 s check run from every start) and approved
+# before it is run once.
+HOLDOUT = {'dogleg_loop': world_dogleg_loop, 'mine_branches': world_mine_branches}
 WORLDS = {**DEVELOPMENT, **RETIRED, **HOLDOUT}
 
 
@@ -328,6 +363,10 @@ ROUTES = {
     'long_loop2': [(2.0, 2.0), (72.0, 2.0), (72.0, 42.0), (2.0, 42.0), (2.0, 4.0)],
     'tunnel_loop': [(2.0, 2.0), (162.0, 2.0), (162.0, 42.0), (2.0, 42.0), (2.0, 4.0)],
     'long_tunnels': [(2.0, 2.0), (198.0, 2.0), (198.0, 58.0), (100.0, 58.0), (100.0, 4.0)],
+    'dogleg_loop': [(2.0, 2.0), (148.0, 2.0), (148.0, 38.0), (72.0, 38.0), (72.0, 68.0),
+                    (2.0, 68.0), (2.0, 4.0)],
+    'mine_branches': [(2.0, 30.0), (118.0, 30.0), (118.0, 58.0), (32.0, 58.0), (32.0, 30.0),
+                      (188.0, 30.0)],
 }
 
 
