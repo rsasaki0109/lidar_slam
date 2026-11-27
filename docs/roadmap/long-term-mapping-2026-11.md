@@ -1953,3 +1953,66 @@ The filter judges a voxel only by the update's own scans, so it masks structure 
 already confirms and keeps transients the update saw from several scans (a parked car seen
 while walking past). A filter for a long-term store would have to weigh the stored sessions'
 support as well. Peak memory stayed at 5.5–5.8 GB (high-water mark).
+
+### Most of the height drift is the anchor's tilt (development, 2026-11-27)
+
+Re-read of the 2012-03-31 attitude: the base z axis stays 15.6–17.6 degrees from the odometry
+world z over the whole session (the moving start's world frame is tilted); the "pitch" change
+reported above was the Euler decomposition mixing in the heading, not an attitude jump.
+
+One rigid correction per session, a tilt (roll, pitch, on a 0.25 degree grid within ±4 degrees,
+about its first submap) and a height offset, fitted to minimise the 95th percentile of |dz| of
+its committed submaps against the sessions before it (descriptive, in-sample):
+
+| Update | 95th pct. \|dz\| | after the fit | Tilt (roll, pitch) |
+| --- | ---: | ---: | --- |
+| 2012-02-02 | 0.44 m | 0.15 m | 0, 0 |
+| 2012-03-17 | 1.11 m | 0.25 m | −0.25, +0.50 |
+| 2012-03-25 | 1.18 m | 0.44 m | 0, +0.50 |
+| 2012-03-31 | 3.44 m | 1.13 m | +0.50, +1.75 |
+| 2012-05-11 | 1.44 m | 0.91 m | +0.75, +0.25 |
+| 2012-05-26 | 1.18 m | 0.63 m | +0.25, −0.50 |
+| 2012-09-28 | 0.82 m | 0.36 m | +0.25, +0.25 |
+| 2012-11-16 | 1.62 m | 0.57 m | 0, −0.75 |
+| 2012-11-17 | 1.18 m | 0.48 m | −0.50, −0.25 |
+| the other nine | 0.32–0.66 m | 0.23–0.55 m | within 0.25 |
+
+A tilt of 0.25–1.75 degrees with a height offset accounts for most of the drift: the anchor is
+registered over the first few keyframes, where tilt is weakly constrained, and 1.75 degrees
+amount to 3 m over 100 m. Correcting the store transform's roll, pitch and height from the
+overlap of the whole session before it is committed is the candidate fix; an in-sample fit
+flatters it, so its check has to score the correction on data the fit did not use.
+
+#### Out-of-sample check of a tilt and height correction (preregistered 2026-11-27, before the run)
+
+- **Correction (C):** for update k of the lifelong store with at least 20 committed submaps
+  within reach of sessions 0..k−1 (the `height_check` comparison), a rotation about its first
+  submap position (roll and pitch on a 0.25 degree grid within ±4 degrees, keeping at least 80%
+  of the compared submaps) followed by a height offset, chosen to minimise the 95th percentile of
+  |dz − median dz| against sessions 0..k−1, the offset being that median. Sessions 0..k−1 only.
+- **Score, data the fit did not use:** the update's submap positions, before (A) and after (C) the
+  correction, against the later sessions k+1..19 (`height_differences`, 1.5 m, three neighbours):
+  the 95th percentile of |dz| per update, for updates with at least 20 compared submaps.
+- **Rule:** the correction **reduces the drift** when the median of these per-update values falls
+  by at least 20% from A to C, no more updates are above 1.5 m with C than with A, and no update
+  rises by more than 0.3 m. Then a pre-commit correction is implemented in `live`. Reported
+  whatever it is. The later sessions carry their own drift, which both arms share.
+
+#### Results of the out-of-sample check (2026-11-27)
+
+Sixteen updates have at least 20 submaps within reach of later sessions (the last two have
+none, 2012-01-22 too little overlap to fit). Per-update 95th percentile of |dz| against the later
+sessions (`tilt_check.jsonl`):
+
+| Over 16 updates | A (as committed) | C (corrected) | Rule |
+| --- | ---: | ---: | --- |
+| median | 0.78 m | 0.74 m (−4.9%) | needs −20%: **fails** |
+| updates above 1.5 m | 3 | 1 | met |
+| largest rise | — | +0.28 m (2012-03-17) | met (≤ 0.3 m) |
+
+The correction does **not** pass, and nothing is implemented. As with moving-start gravity, it
+acts on the worst sessions (2012-03-31 3.99 → 1.80 m, 2012-11-16 1.78 → 0.75 m, 2012-11-17
+1.41 → 0.75 m, 2012-09-28 1.08 → 0.39 m) while the median sits on sessions whose later
+comparison is bounded by the later sessions' own drift (0.6–0.8 m). Two preregistered rules on
+the median have now failed for corrections that mostly act on the tail; a rule on the tail has to
+be set before a run on sessions this chain has not used.
