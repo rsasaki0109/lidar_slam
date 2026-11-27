@@ -1906,3 +1906,50 @@ updates are measured; G is higher on both, by 0.68 m on 2012-02-04. G **fails** 
 `rko_lio_nclt.yaml` keeps no gravity window. Together with the first check: the window helps
 sessions that start far from level but can cost several tenths of a metre on sessions that start
 near it, so it is not a setting to turn on for every session.
+
+### Transient objects in the lifelong store (development, 2026-11-27)
+
+Without the six sessions whose height drifted, the cells that one session alone saw hold about
+82,000 points at 0.3–2.2 m above the ground (0.3% of the store's points). Grouped into connected
+0.25 m columns of at least 30 points: 98 person-sized groups along the paths, 6 car-sized ones,
+and 116 larger ones, most of them parallel strips in one parking area (x 15–95 m, y 45–135 m)
+seen by 2012-12-01, 2013-02-23 and 2012-02-05. The chain ran with `--detect-changes` only,
+which removes old points a later session sees through; nothing removes a session's own
+briefly seen points. `--refine-visibility` masks those (the change mode the NCLT holdout check
+preferred, above).
+
+#### Check of `--refine-visibility` on the lifelong store (preregistered 2026-11-27, before the runs)
+
+- **Updates:** 2012-12-01 and 2013-02-23 (the two sessions with the most parking-area points),
+  each appended again with `--relocalize-anywhere --refine-visibility` to the lifelong store as it
+  was before it (its first 18 and 19 sessions), against the chain's own commit of the same session
+  (`--detect-changes`).
+- **Cells:** the lifelong store's exported points in 0.75 m cells, each with the number of
+  sessions that have points in it; heights above the lowest exported point of the 2 m column.
+- **T (transients removed):** of the update's points at 0.3–2.2 m in cells only the update has
+  points in, the share the rerun's export leaves out.
+- **S (structure kept):** of the update's points in cells at least three sessions have points in,
+  the share the rerun's export keeps.
+- **Rule:** `--refine-visibility` **cleans the lifelong map** when, for both updates, T ≥ 50% and
+  S ≥ 95%. Then the lifelong chain takes it. The result is reported whatever it is.
+
+#### Results of the refine-visibility check (2026-11-27)
+
+| Update | Points | Masked new voxels | T (transients removed) | S (structure kept) | Rule |
+| --- | ---: | ---: | ---: | ---: | --- |
+| chain's commit of 2012-12-01 (`--detect-changes`) | 2,077,962 | — | 0.0% | 100.0% | — |
+| 2012-12-01, `--refine-visibility` | 2,077,962 | 606,568 | 47.1% | 64.6% | fails |
+| 2013-02-23, `--refine-visibility` | 2,172,025 | 497,305 | 40.2% | 74.3% | fails |
+
+`--refine-visibility` does **not** clean the lifelong map under the preregistered rule: it removes
+less than half of the single-session points at people and car height, and it drops a quarter to
+a third of the update's points in cells that three or more sessions confirm. The lifelong chain
+keeps `--detect-changes`.
+
+Post hoc (not preregistered): most of what S counts as lost is redundant. Of the 0.75 m cells the
+update has points in, 96.2% and 96.1% still hold a kept point of some session after the rerun
+(98.9% and 100% with the chain's commit), and the store's exported cells fall by 0.2% and 1.2%.
+The filter judges a voxel only by the update's own scans, so it masks structure the store
+already confirms and keeps transients the update saw from several scans (a parked car seen
+while walking past). A filter for a long-term store would have to weigh the stored sessions'
+support as well. Peak memory stayed at 5.5–5.8 GB (high-water mark).
