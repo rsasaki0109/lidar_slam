@@ -912,6 +912,21 @@ end), which adds up to ~0.14 m to each edge's error. The 2 m threshold for a fal
 15 false loops found are unaffected; the "within 0.52 m" figure is an upper bound. The harness's
 own metrics (`final_map_ate`, `odometry_drift`) use the frame end and are correct.
 
+### Does the way of driving change the error? Rule (written before its runs)
+
+If the place-dependent under-registration depends on how a stretch is driven, the active part
+of active SLAM is how to drive there, not where to go back to. First lever: speed (more scans
+per metre). Harness: `--speed` (path follower, default 0.7 m/s as before).
+
+- Fixed routes on the true pose (no policy) on `tunnel_loop` (pilasters 30 m) and
+  `long_tunnels` (48 m), seeds 1-3, at 0.35, 0.7 and 1.0 m/s; budget long enough to finish.
+- Measured on the odometry only (`trajectory_raw`, no loops on a route that does not repeat
+  itself much): `|scale - 1|` of the similarity fit, the SE(2) ATE, and the drift over 50 m.
+- Speed is worth building a policy on if, at 0.35 m/s, the median `|scale - 1|` over the six
+  runs is at least 30 % lower than at 0.7 m/s and the ATE is lower in at least 5 of 6.
+  Otherwise speed is recorded as not a lever here, and the next lever (keeping pilasters in
+  view) is tried under its own rule.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

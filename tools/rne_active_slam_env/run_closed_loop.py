@@ -332,6 +332,8 @@ def main(argv: list[str] | None = None) -> int:
                         '(0: all, -1: none)')
     parser.add_argument('--imu-noise-scale', type=float, default=1.0,
                         help='difficulty: scale of the simulated IMU noise and bias')
+    parser.add_argument('--speed', type=float, default=0.7,
+                        help='forward speed of the path follower [m/s]')
     parser.add_argument('--route', action='store_true',
                         help="calibration: drive the world's fixed route on the true pose "
                         '(no exploration decisions; --policy is ignored)')
@@ -467,7 +469,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.route:
             if frame >= settle_frames and route_path:
                 # Only the next stretch: a route passes the same place more than once.
-                v, w, nearest = pure_pursuit((tx, ty, tyaw), route_path[:40])
+                v, w, nearest = pure_pursuit((tx, ty, tyaw), route_path[:40],
+                                             speed=args.speed)
                 route_path = route_path[nearest:]
                 if len(route_path) <= 4 or len(route_path) < 40 and math.hypot(
                         route_path[-1][0] - tx, route_path[-1][1] - ty) < 0.5:
@@ -498,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
             frames_since_decision += 1
             status = decision.get('status', 'init')
             if path and len(path) > 1:
-                v, w, _ = pure_pursuit(est, path)
+                v, w, _ = pure_pursuit(est, path, speed=args.speed)
             elif path:
                 v, w = 0.0, 0.0
                 path = []
@@ -539,7 +542,7 @@ def main(argv: list[str] | None = None) -> int:
         'odometry_drift_50m_pct': odometry_drift(truth_track, odometry_track,
                                                  odometry_distances),
         'pilaster_spacing_m': args.pilaster_spacing, 'imu_noise_scale': args.imu_noise_scale,
-        'route': args.route,
+        'route': args.route, 'speed': args.speed,
         'collisions': collisions, 'rejected_goals': rejected,
         'exploration_done': done_count >= 3, 'diverged': diverged,
         'failed': diverged or cov < 0.5,
