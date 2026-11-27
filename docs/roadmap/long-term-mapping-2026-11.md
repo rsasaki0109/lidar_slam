@@ -2073,3 +2073,14 @@ turns it off. The fit takes 14–16 s on a 20-session NCLT store. On the fresh s
 2012-02-12 from 2.48 to 0.58 m and 2012-02-04 from 0.41 to 0.30 m (in-sample, against all twenty
 sessions). The change evidence is still traced with the anchor transform and is not traced again
 after the correction, which moves a session by up to about a metre at its far end (2012-02-12).
+
+#### Re-running the two refused sessions with the tilt correction (preregistered 2026-11-27, before the run)
+
+- **Updates:** 2012-03-31 (`bags/2012-03-31_live2in`) and 2012-11-16 (`bags/2012-11-16`), the
+  two sessions the height check refuses, each appended with `live --relocalize-anywhere
+  --detect-changes` (tilt correction and the 1.5 m height check on, the defaults) to a copy of the
+  lifelong store holding only the sessions before it (0–6 and 0–15).
+- **Rule:** the correction **admits** a session when it is committed (not refused) with a 95th
+  percentile of |dz| against the sessions before it of at most 1.5 m after the correction. Its
+  95th percentile against the later lifelong sessions (k+1..19), anchor transform (A) and
+  corrected (C), is reported alongside; C should not be above A there. Reported whatever it is.
