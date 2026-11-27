@@ -5,7 +5,8 @@ needs: ``starts`` (10 start poses [x, y, yaw]; a seed picks one) and ``free_regi
 floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``free_rects``).
 
 Development worlds (tuned on): ``ring``, ``grid``. Holdout worlds (run once, after the freeze):
-``branches2``, ``long_loop2``; ``branches`` and ``big_loop`` were the first holdout, retired. They are built the same way: walls 2.5 m high, a floor box, and
+``branches2``, ``long_loop2``; ``branches`` and ``big_loop`` were the first holdout, retired.
+They are built the same way: walls 2.5 m high, a floor box, and
 pilasters (0.3 m wide, 0.2 m deep) along the walls as door frames; flat walls alone leave a
 corridor's axis unobservable to the LiDAR.
 """

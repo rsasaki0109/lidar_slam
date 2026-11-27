@@ -455,6 +455,39 @@ else unchanged):
 - `eval_config.yaml` changes only its holdout world list (SHA-256 prefix `2b471555c417f025`); the first
   holdout worlds are kept as `RETIRED` in `worlds.py`.
 
+### Second holdout result (2026-11-27): fail
+
+Run once at commit `c6a50ee`, config SHA-256 prefix `2b471555c417f025`, clean tree; 60 runs,
+nothing rerun or excluded. Judged by the success rule above:
+
+| world | median paired ATE reduction | active lower | median coverage diff | failed (active / frontier_info) | rule |
+| --- | --- | --- | --- | --- | --- |
+| `branches2` | 7.9 % (need >= 15 %) | 6 / 10 (need 7) | -2.8 points | 2 / 2 | fail |
+| `long_loop2` | 3.7 % (need >= 15 %) | 5 / 10 (need 7) | -0.7 points | 2 / 3 | fail |
+
+Median final-map ATE (active / frontier_info / nearest_frontier): `branches2` 0.095 / 0.099 /
+0.036 m, `long_loop2` 0.132 / 0.176 / 0.148 m. The pass/fail verdict above is the result; what
+follows is post-hoc reading, not a claim:
+
+- The direction is right but the size is not: in the seeds where `active` revisited and neither
+  run failed, it lowered the ATE in 6 of 8 (`branches2`, median 11 %) and 4 of 7 (`long_loop2`,
+  median 7 %), at a cost of 2-4 coverage points.
+- `nearest_frontier`, which ignores uncertainty, had by far the lowest median ATE in
+  `branches2`. The baseline the rule compares against (`frontier_info`) drives long information-
+  rich legs; `active`'s revisits recover part of what that choice costs, not more.
+- Failures not caused by the policy: seed 104 in `branches2` ended after 15 s for all three
+  policies with `exploration_done` while one frontier was left but unreachable on the coverage
+  grid (the stop rule treats "no reachable frontier" as done); seed 101 in `branches2` ended
+  with 30+ collisions at about 190 s for all three. 6 of the 7 `long_loop2` failures are the
+  odometry passing the 2 m divergence limit in the ~220 m loop before a loop closed, and in
+  seeds 101 and 109 `active` never revisited, so it ran identically to `frontier_info`.
+- The static checks (reachability, start clearance) did not catch the two `branches2` start
+  failures; a short dry run of each start would have.
+
+This closes the holdout for this configuration. Any change (stop rule, planner, a revisit
+trigger tied to the travel distance rather than sigma alone) needs new development work and a
+new, untouched holdout before a claim is made.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

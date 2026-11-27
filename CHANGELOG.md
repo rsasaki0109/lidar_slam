@@ -48,6 +48,10 @@
   `distance_loop_closure`, targets reached without a loop are dropped, frontiers and revisits
   compete by utility, and `Session.reject_exploration_goal` drops a goal the robot cannot reach.
   The closed-loop harness gains a `grid` world, the indoor graph preset and an inflation option.
+- Active SLAM evaluation (`tools/rne_active_slam_env/run_eval.py`, preregistered rule in
+  docs/roadmap/active-slam-2026-11.md): the frozen configuration failed both holdouts. The
+  second (`branches2`, `long_loop2`, 60 runs) gave a median paired ATE reduction of 7.9 % and
+  3.7 % against `frontier_info`, below the 15 % the rule requires.
 
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
