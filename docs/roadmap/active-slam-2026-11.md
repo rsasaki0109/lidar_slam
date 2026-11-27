@@ -524,6 +524,24 @@ next step sets the env's difficulty without looking at any exploration policy: a
 route per world, odometry alone, and sensor/IMU noise and scene features chosen so the drift
 matches a stated target from real Mid-360 data; only then are the policies run again.
 
+### Difficulty calibration: target and rule (written before the sweep's results)
+
+Measured on fixed routes per development world (`worlds.ROUTES`, driven on the true pose; no
+exploration policy runs), by `calibrate_difficulty.py`: RKO-LIO's mean translational drift over
+50 m of travel (`odometry_drift_50m_pct`, odometry only, no loop closure).
+
+- Target: median over the four development worlds of 0.3-1.0 % of the distance. Reference
+  points: KITTI-class LiDAR odometry is about 1 % (the repo's KITTI 00 graph run: 1.02 %), and
+  the real Mid-360 drive in this repo gives 0.19 % translational RPE with the graph backend
+  (docs/research/phase7-plane-revisit-regression-2026-07.md), so odometry alone drifts more.
+- Knobs: pilaster spacing (0 as built, 12, 24 m, none) x IMU noise scale (1, 5). The as-built
+  ring already gives 0.18 % (two laps, one check run).
+- Rule: the setting closest to as built (fewest pilasters removed first, then the lower IMU
+  noise) whose median is in the band and with no world above 2 %. If none is, report that and
+  do not run policies on a setting outside the band.
+- The setting chosen applies to every world, development and holdout alike, and is frozen
+  before any policy is run on it.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
