@@ -507,6 +507,23 @@ What follows from it:
   changes the second holdout pointed at: the stop rule (frontiers that exist but are unreachable
   are not "done") and a revisit trigger tied to the travel since the last loop.
 
+### Development baseline with the fixed sensor (2026-11-27)
+
+The frozen configuration on the four development worlds, seeds 1-3, 36 runs: no run failed or
+diverged, and every policy's median final-map ATE is 0.022-0.044 m (`ring` 0.023 / 0.022 /
+0.024 m for active / frontier_info / nearest_frontier, `grid` 0.027 / 0.025 / 0.025, `branches2`
+0.041 / 0.044 / 0.037, `long_loop2` 0.031 / 0.037 / 0.032). `active` revisits, closes more loops
+(e.g. `grid` seed 2: 10 against 2) and covers as much or more, but the ATE barely moves: the
+largest live error of any run is 0.39 m over 100-360 m of travel, so there is little drift for a
+revisit to remove.
+
+So the simulation, with a working sensor, is easier than the real thing: perfect boxes with
+pilasters every few metres give RKO-LIO constraints in every direction, and drift is about
+0.01 % of the distance. A test of active SLAM needs odometry that drifts like a real one. The
+next step sets the env's difficulty without looking at any exploration policy: a fixed scripted
+route per world, odometry alone, and sensor/IMU noise and scene features chosen so the drift
+matches a stated target from real Mid-360 data; only then are the policies run again.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
