@@ -12,6 +12,12 @@ roll and pitch are weakly constrained, and 0.25-1.75 degrees amount to metres at
 overlap of the whole session; on NCLT sessions the fit had not seen it brought the updates above
 1.0 m (95th percentile of |dz|) from three of five to one ("Check of the tilt and height
 correction on sessions the chain has not used").
+
+A rigid correction cannot remove drift that grows inside the session (2012-03-31 climbs 5 m in
+its last 100 s). :func:`profile` then lowers each submap by a height offset that is piecewise
+linear in submap order, with knots every PROFILE_SPACING submaps, fitted robustly to the height
+differences of the compared submaps. The corrected poses are written
+as ``store_submap_poses.npy``, which take precedence over the rigid transform (lidarslam.store).
 """
 
 from __future__ import annotations
@@ -31,16 +37,24 @@ MIN_COMPARED = 20
 TILT_STEP_DEG = 0.25
 MAX_TILT_DEG = 4.0
 MIN_KEPT = 0.8  # a tilt must keep this share of the compared submaps
+PROFILE_SPACING = 30  # submaps between the knots of a height profile
+PROFILE_MIN = 10  # compared submaps a knot needs
+PROFILE_HUBER_M = 0.3  # residuals beyond this get Huber weights in the profile fit
 
 
-def submap_positions(directories, transforms) -> list[np.ndarray]:
-    """The store-frame submap positions of each session (N x 3), as export places them."""
+def submap_poses(directories, transforms) -> list[np.ndarray]:
+    """The store-frame submap poses of each session (N x 4 x 4), as export places them."""
     directories = [str(directory) for directory in directories]
     poses = [tracked_poses(directory) for directory in directories]
     matcher = _core.StoreRelocalizer(directories, [np.asarray(t, dtype=float) for t in transforms],
                                      [{}] * len(directories), poses)
-    return [np.array([np.asarray(pose)[:3, 3] for pose in session]).reshape(-1, 3)
+    return [np.array([np.asarray(pose) for pose in session]).reshape(-1, 4, 4)
             for session in matcher.session_poses()]
+
+
+def submap_positions(directories, transforms) -> list[np.ndarray]:
+    """The store-frame submap positions of each session (N x 3), as export places them."""
+    return [poses[:, :3, 3] for poses in submap_poses(directories, transforms)]
 
 
 class HeightReference:
@@ -56,12 +70,13 @@ class HeightReference:
             self.cells[(x, y)].append(index)
         self.cells = {key: np.asarray(value) for key, value in self.cells.items()}
 
-    def differences(self, update: np.ndarray) -> np.ndarray:
+    def differences(self, update: np.ndarray, with_index: bool = False):
         """For each update position with at least ``min_neighbours`` reference positions within
-        ``radius`` (XY): its height minus their median height."""
+        ``radius`` (XY): its height minus their median height (and, ``with_index``, the indices
+        of those positions)."""
         radius, reference = self.radius, self.reference
-        differences = []
-        for position in np.asarray(update, dtype=float).reshape(-1, 3):
+        differences, indices = [], []
+        for i, position in enumerate(np.asarray(update, dtype=float).reshape(-1, 3)):
             x, y = np.floor(position[:2] / radius).astype(np.int64)
             parts = [self.cells[key] for key in ((x + dx, y + dy) for dx in (-1, 0, 1)
                                                   for dy in (-1, 0, 1)) if key in self.cells]
@@ -72,7 +87,9 @@ class HeightReference:
             near = near[np.sum(offsets ** 2, axis=1) <= radius * radius]
             if len(near) >= self.min_neighbours:
                 differences.append(position[2] - float(np.median(reference[near, 2])))
-        return np.asarray(differences, dtype=float)
+                indices.append(i)
+        differences = np.asarray(differences, dtype=float)
+        return (differences, np.asarray(indices, dtype=np.int64)) if with_index else differences
 
 
 def height_differences(reference: np.ndarray, update: np.ndarray, radius: float = RADIUS_M,
@@ -138,6 +155,64 @@ def correct(aligned, directory: str | Path, transform) -> dict[str, Any]:
         return {'corrected': False, 'store_from_session': transform.tolist()}
     correction = fit.pop('correction')
     return {'corrected': True, **fit, 'store_from_session': (correction @ transform).tolist()}
+
+
+def fit_profile(reference: np.ndarray, update: np.ndarray) -> dict[str, Any] | None:
+    """The height offset of each update position (see the module docstring): piecewise linear
+    between knots (every PROFILE_SPACING positions, within the compared stretch) with at least
+    PROFILE_MIN compared positions within PROFILE_SPACING, constant beyond the outer ones,
+    fitted to the compared height differences by least squares with Huber weights
+    (PROFILE_HUBER_M). None with fewer than MIN_COMPARED compared positions or no knot."""
+    update = np.asarray(update, dtype=float).reshape(-1, 3)
+    index = HeightReference(reference)
+    before, compared = index.differences(update, with_index=True)
+    if len(before) < MIN_COMPARED:
+        return None
+    # Knots stay within the compared stretch, so the offset is held, not extrapolated, beyond it.
+    first, last = int(compared[0]), int(compared[-1])
+    knots = sorted({int(np.clip(knot, first, last))
+                    for knot in range(0, len(update) + PROFILE_SPACING - 1, PROFILE_SPACING)})
+    knots = [knot for knot in knots
+             if np.count_nonzero(np.abs(compared - knot) <= PROFILE_SPACING) >= PROFILE_MIN]
+    if not knots:
+        return None
+
+    def basis(positions):
+        return np.stack([np.interp(positions, knots, np.eye(len(knots))[k])
+                         for k in range(len(knots))], axis=1)
+
+    design = basis(compared)
+    weights = np.ones(len(before))
+    for _ in range(10):
+        root = np.sqrt(weights)[:, None]
+        values = np.linalg.lstsq(design * root, before * root[:, 0], rcond=None)[0]
+        residual = np.abs(design @ values - before)
+        weights = np.minimum(1.0, PROFILE_HUBER_M / np.maximum(residual, 1e-9))
+    offsets = basis(np.arange(len(update))) @ values
+    lowered = update - np.outer(offsets, [0.0, 0.0, 1.0])
+    after = index.differences(lowered)
+    return {'knots': len(knots), 'compared_submaps': int(len(before)),
+            'max_abs_offset_m': round(float(np.max(np.abs(offsets))), 3),
+            'p95_abs_dz_before_m': round(float(np.percentile(np.abs(before), 95)), 3),
+            'p95_abs_dz_after_m': round(float(np.percentile(np.abs(after), 95)), 3),
+            'offsets': offsets}
+
+
+def profile(aligned, directory: str | Path, transform) -> dict[str, Any]:
+    """Fits :func:`fit_profile` for the written session in ``directory`` (store transform
+    ``transform``) against the aligned stored sessions and writes the lowered submap poses to
+    ``store_submap_poses.npy`` there. ``corrected`` is False (nothing written) when the fit
+    returns None."""
+    directories = [path for path, _ in aligned] + [str(directory)]
+    poses = submap_poses(directories, [t for _, t in aligned] + [transform])
+    reference = np.concatenate([p[:, :3, 3] for p in poses[:-1]])
+    fit = fit_profile(reference, poses[-1][:, :3, 3])
+    if fit is None:
+        return {'corrected': False}
+    lowered = poses[-1].copy()
+    lowered[:, 2, 3] -= fit.pop('offsets')
+    np.save(Path(directory) / 'store_submap_poses.npy', lowered, allow_pickle=False)
+    return {'corrected': True, **fit}
 
 
 def check(aligned, directory: str | Path, transform, limit: float) -> dict[str, Any]:
