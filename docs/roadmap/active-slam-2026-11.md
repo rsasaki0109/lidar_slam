@@ -542,6 +542,29 @@ exploration policy runs), by `calibrate_difficulty.py`: RKO-LIO's mean translati
 - The setting chosen applies to every world, development and holdout alike, and is frozen
   before any policy is run on it.
 
+### Difficulty calibration: result (2026-11-27): no setting is in the band
+
+`calibrate_difficulty.py`, seed 1, 32 routes of 210-256 m, no collision. Odometry drift over
+50 m [%]:
+
+| pilaster spacing [m] | IMU noise | ring | grid | branches2 | long_loop2 | median |
+| --- | --- | --- | --- | --- | --- | --- |
+| as built | 1 | 0.178 | 0.187 | 0.211 | 0.130 | 0.183 |
+| as built | 5 | 0.178 | 0.209 | 0.206 | 0.145 | 0.192 |
+| 12 | 1 | 0.181 | 0.207 | 0.179 | 0.134 | 0.180 |
+| 12 | 5 | 0.178 | 0.220 | 0.188 | 0.143 | 0.183 |
+| 24 | 1 | 0.176 | 0.207 | 0.204 | 0.130 | 0.190 |
+| 24 | 5 | 0.181 | 0.227 | 0.192 | 0.142 | 0.187 |
+| none | 1 | 0.173 | 0.248 | 0.191 | 0.145 | 0.182 |
+| none | 5 | 0.180 | 0.279 | 0.180 | 0.160 | 0.180 |
+
+By the rule, no setting reaches 0.3 %, so no policy is run on any of them. The drift barely
+depends on either knob: without pilasters the corners, end walls and crates still constrain
+RKO-LIO, and IMU noise five times larger hardly matters to a LiDAR-dominated estimate. Shifting
+the truth by one frame either way raises the drift (ring: 0.44 / 0.19 / 0.64 % at -1 / 0 / +1),
+so it is not a timing artifact of the metric. The simulated odometry drifts about as much as
+the repo's real Mid-360 drive with its graph backend (0.19 %).
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
