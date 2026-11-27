@@ -656,6 +656,33 @@ whose median coverage is within 5 points of `frontier_info`'s and with no failed
 (within 0.02 m) go to the smaller `w_u`. If no setting beats the fraction gain's median
 (0.30 m `tunnel_loop`, 0.50 m `long_tunnels`, pooled 0.46 m), the change is not adopted.
 
+### Absolute revisit gain: result (2026-11-27): not adopted
+
+`active` over the 6 tunnel runs (final-map ATE median, coverage median, failed):
+
+| gain | `w_u` | ATE [m] | coverage | failed |
+| --- | --- | --- | --- | --- |
+| fraction (baseline) | 80 | 0.458 | 0.993 | 0 |
+| absolute | 50 | 0.654 | 0.993 | 0 |
+| absolute | 150 | 0.565 | 0.992 | 0 |
+| absolute | 400 | 0.309 | 0.333 | 5 |
+
+By the rule the change is not adopted (50 and 150 are worse than the baseline; 400 fails the
+coverage and failure conditions); the default stays the fraction gain. What the runs show:
+
+- 50 and 150 mostly reproduce `frontier_info` (`tunnel_loop` 1 and 2, `long_tunnels` 3 are
+  identical to it): with sigma 0.3-1 m the absolute gain is smaller than the fraction, so
+  revisits are chosen even less.
+- 400 does go back, and the parts it maps are accurate (ATE 0.03-0.37 m where it did not
+  diverge, 35-91 loop edges), but revisit mode never ends (trigger 0.05 m is passed again within
+  tens of metres), so it shuttles back and forth and runs out of the 1500 s budget at 23-57 %
+  coverage. On `tunnel_loop` 1 and 2 the live error passed 10 m (divergence): with pilasters
+  every 30 m the corridor repeats, and many revisit loop searches add the chance of a false loop.
+
+Reading: the missing piece is not the revisit's value but when revisit mode is on. The trigger
+(0.05 m) and release (0.02 m) were set with the half-blind sensor; at the tunnels' drift they
+keep revisit mode on all the time.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
