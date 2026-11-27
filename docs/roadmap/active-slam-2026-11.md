@@ -683,6 +683,16 @@ Reading: the missing piece is not the revisit's value but when revisit mode is o
 (0.05 m) and release (0.02 m) were set with the half-blind sensor; at the tunnels' drift they
 keep revisit mode on all the time.
 
+### Revisit trigger: tuning rule (written before its runs)
+
+Absolute gain with `w_u` 400 (the only setting that does go back), revisit mode on above a
+trigger in {0.3, 0.5, 0.8} m and off below 0.4 x the trigger (0.12, 0.2, 0.32 m). Tunnels set,
+seeds 1-3, `active` only (the other policies' runs are the baseline's). Choice and adoption: the
+same rule as for the absolute gain (no failed run, median coverage within 5 points of
+`frontier_info`, lowest median final-map ATE, ties within 0.02 m to the higher trigger, and
+adopted only if below the fraction gain's 0.46 m). In parallel, the two diverged `w_u` 400 runs
+are checked for false loop edges against the truth.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
