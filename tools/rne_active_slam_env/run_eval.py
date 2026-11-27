@@ -35,6 +35,8 @@ def run_one(config: dict[str, Any], world: str, seed: int, policy: str, out: Pat
     metrics_file = out / 'metrics.json'
     if metrics_file.is_file():
         return json.loads(metrics_file.read_text())
+    # Per-world settings (the calibrated difficulty, a budget for the world's size).
+    config = {**config, **config.get('world_overrides', {}).get(world, {})}
     command = [
         sys.executable, str(HERE / 'run_closed_loop.py'), '--world', world, '--seed', str(seed),
         '--policy', policy, '--out', str(out), '--max-seconds', str(config['max_seconds']),
@@ -44,6 +46,7 @@ def run_one(config: dict[str, Any], world: str, seed: int, policy: str, out: Pat
         '--revisit-release-sigma', str(config['revisit_release_sigma']),
         '--uncertainty-weight', str(config['uncertainty_weight']),
         '--min-predicted-drop', str(config['min_predicted_drop']),
+        '--pilaster-spacing', str(config.get('pilaster_spacing', 0)),
         '--rko-param', str(ROOT / config['rko_param']),
         '--lidarslam-param', str(ROOT / config['lidarslam_param']),
     ]
@@ -143,7 +146,7 @@ def markdown(summary: dict[str, Any], header: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--set', required=True, choices=['development', 'holdout'])
+    parser.add_argument('--set', required=True, choices=['development', 'tunnels', 'holdout'])
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--config', type=Path, default=HERE / 'eval_config.yaml')
     parser.add_argument('--jobs', type=int, default=2)

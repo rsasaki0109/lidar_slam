@@ -14,10 +14,20 @@ revisit_release_sigma: 0.02
 uncertainty_weight: 80.0
 min_predicted_drop: 0.2
 
+# Per world: the difficulty calibrated without any policy (calibrate_difficulty.py, roadmap
+# "Degenerate worlds"), and a budget and divergence limit for the tunnels' size (a ~400 m tour
+# takes ~580 s; the odometry's live error reached 1.4 m on the calibration routes).
+world_overrides:
+  tunnel_loop: {pilaster_spacing: 30, max_seconds: 1500, divergence_m: 10.0}
+  long_tunnels: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
+
 policies: [nearest_frontier, frontier_info, active]
 sets:
   development:
     worlds: [ring, grid, branches2, long_loop2]
+    seeds: [1, 2, 3]
+  tunnels:
+    worlds: [tunnel_loop, long_tunnels]
     seeds: [1, 2, 3]
   holdout:
     worlds: []  # the next holdout worlds are still to be built

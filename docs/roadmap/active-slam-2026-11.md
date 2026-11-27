@@ -602,6 +602,17 @@ Amendment, made after seeing this table and before any policy run on the tunnels
 sweep of `tunnel_loop` at 30, 36 and 42 m under the same rule, and seeds 2 and 3 of
 `long_tunnels` at 48 m to see whether one seed's 0.53 % holds. No policy result is involved.
 
+### Degenerate worlds: frozen difficulty (2026-11-27)
+
+Finer sweep: `tunnel_loop` 30 m 0.81 % (live error up to 1.45 m), 36 m 2.26 % (4.75 m), 42 m
+4.95 % (10.8 m); `long_tunnels` at 48 m, seeds 2 and 3: 0.78 % and 0.49 % (seed 1: 0.53 %).
+By the rule: `tunnel_loop` pilasters every 30 m, `long_tunnels` every 48 m (no common spacing
+is in the band for both). Frozen in `eval_config.yaml` (`world_overrides`) before any policy
+runs on the tunnels, with a 1500 s budget (a ~400 m tour takes ~580 s) and a 10 m divergence
+limit (2 m is below what the odometry reaches on the routes). The tunnels are run as the set
+`tunnels` (development, seeds 1-3); the policy configuration is still the earlier frozen one
+(`w_u` 80, trigger 0.05), tuned with the buggy sensor, so this run is a baseline, not a test.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
