@@ -2016,3 +2016,21 @@ acts on the worst sessions (2012-03-31 3.99 → 1.80 m, 2012-11-16 1.78 → 0.75
 comparison is bounded by the later sessions' own drift (0.6–0.8 m). Two preregistered rules on
 the median have now failed for corrections that mostly act on the tail; a rule on the tail has to
 be set before a run on sessions this chain has not used.
+
+#### Check of the tilt and height correction on sessions the chain has not used (preregistered 2026-11-27, before any data of these sessions is read)
+
+- **Updates:** the seven NCLT sessions outside the lifelong chain (2012-01-08, 02-04, 02-12, 02-19,
+  04-29, 2013-01-10, 2013-04-05). For each, its 1 Hz ground-truth positions are read only to pick
+  its longest pass through the lifelong square (x −180…−30 m, y −585…−435 m, ±10 s, as for
+  `windows.json`); the pass is converted (`convert_nclt_session.py --point-step 6`) and appended to
+  its own copy of the 20-session lifelong store with `--relocalize-anywhere --detect-changes
+  --max-height-drift 0`. Ground truth is not used to score.
+- **Correction (C):** as in the out-of-sample check above, fitted against the store's even
+  sessions (0, 2, …, 18) only.
+- **Score:** the update's committed submap positions, as committed (A) and corrected (C), against
+  the odd sessions (1, 3, …, 19): the 95th percentile of |dz| (1.5 m, three neighbours), for
+  updates with at least 20 compared submaps.
+- **Rule (on the tail):** C **reduces the drift** when fewer scored updates are above 1.0 m with C
+  than with A and no scored update rises by more than 0.3 m. With fewer than four scored updates
+  the check is inconclusive. If C passes, a pre-commit correction is implemented in `live`.
+  Reported whatever it is.
