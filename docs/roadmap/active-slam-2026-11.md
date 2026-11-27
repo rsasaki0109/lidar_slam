@@ -927,6 +927,29 @@ per metre). Harness: `--speed` (path follower, default 0.7 m/s as before).
   Otherwise speed is recorded as not a lever here, and the next lever (keeping pilasters in
   view) is tried under its own rule.
 
+### Speed: result (2026-11-27): slowing down is not a lever; the error depends on speed
+
+18 routes (~400 m each, odometry only, no collision). Medians over the six runs per speed:
+
+| speed [m/s] | `\|scale - 1\|` | SE(2) ATE [m] | drift over 50 m [%] | largest live error [m] |
+| --- | --- | --- | --- | --- |
+| 0.35 | 0.0136 | 0.940 | 1.24 | 1.95-2.65 |
+| 0.7 | 0.0070 | 0.621 | 0.80 | 1.01-2.11 |
+| 1.0 | 0.0005 | 0.167 | 0.20 | 0.49-0.76 |
+
+By the rule speed is not a lever in the direction tested: at 0.35 m/s the scale error doubles
+and the ATE is lower in 1 of 6 runs. The opposite holds strongly: at 1.0 m/s the shrink all but
+disappears (ATE lower in 6 of 6). The distance lost per scan is about the same at 0.35 and 0.7
+m/s (so the fraction doubles when the per-scan motion halves) and collapses at 0.1 m per scan:
+it looks like a property of the frontend's registration in a degenerate corridor at small
+per-scan motion against its 0.25 m voxel map (`voxel_size`, `max_correspondence_distance`), not
+of the corridor's geometry alone. Two consequences:
+
+- The tunnels' difficulty (calibrated at 0.7 m/s) is speed-dependent: a policy that drives
+  faster changes the difficulty it is measured at. Every policy drives at 0.7 m/s.
+- "Drive faster through degenerate stretches" would be adopted only under its own rule and only
+  after the frontend's part is understood; it may be a parameter artifact rather than physics.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
