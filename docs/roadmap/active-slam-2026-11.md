@@ -865,7 +865,7 @@ edge of the 499 is off by more than 2 m.
 `active` revisits in every run (720-6984 revisit goal frames) and closes more loops than
 `frontier_info` (e.g. 28 vs 11 on `mine_branches` 107), and it travels further (median 612 vs
 504 m, 691 vs 619 m) and hits the 1500 s budget in 4 of 20 runs; but its final map is no more
-accurate. In 6 of the 20 seed pairs the two ATEs are within 0.002 m of each other although
+accurate. In 7 of the 20 seed pairs the two ATEs are within 0.002 m of each other although
 `active` closed different loops: the error that remains is not one a revisit's loop removes.
 `nearest_frontier`, which never revisits, has the lowest median on `dogleg_loop`. The spread
 between seeds (0.03-0.9 m) is far larger than any difference between the policies.
