@@ -1093,6 +1093,8 @@ void readLoopSearchConfig(const RunnerParameters & node, RunnerConfig & config)
   node.get_parameter_or("loop_max_drift_ratio", gates.max_drift_ratio, 0.0);
   node.get_parameter_or("loop_max_drift_offset_m", gates.max_drift_offset_m, 0.5);
   node.get_parameter_or(
+    "loop_min_translation_information_ratio", gates.min_translation_information_ratio, 0.0);
+  node.get_parameter_or(
     "loop_max_translation_delta_descriptor", gates.max_translation_descriptor_m, -1.0);
   node.get_parameter_or(
     "loop_max_rotation_delta_deg_descriptor", gates.max_rotation_descriptor_deg, -1.0);

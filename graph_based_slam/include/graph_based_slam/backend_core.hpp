@@ -896,6 +896,25 @@ public:
         continue;
       }
 
+      double information_ratio = 0.0;
+      if (loop_verifier::rejectsAsDegenerate(
+          search_config.gates, candidate_result.registration_covariance_valid,
+          candidate_result.registration_covariance, &information_ratio))
+      {
+        if (debug) {
+          std::snprintf(
+            log_buffer, sizeof(log_buffer),
+            "Rejected loop candidate %d -> %d because translational information ratio %.6f "
+            "is below %.6f (degenerate registration)",
+            candidate.index,
+            latest_idx,
+            information_ratio,
+            search_config.gates.min_translation_information_ratio);
+          output.logs.push_back({true, std::string(log_buffer)});
+        }
+        continue;
+      }
+
       candidate_result.valid = true;
       selection.considerValid(candidate_result);
     }

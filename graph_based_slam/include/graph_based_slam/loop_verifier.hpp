@@ -43,6 +43,7 @@
 #include <limits>
 
 #include <Eigen/Core>  // NOLINT(build/include_order)
+#include <Eigen/Eigenvalues>  // NOLINT(build/include_order)
 #include <Eigen/Geometry>  // NOLINT(build/include_order)
 
 namespace graphslam
@@ -215,6 +216,12 @@ struct GateConfig
   // non-positive ratio disables the gate.
   double max_drift_ratio {0.0};
   double max_drift_offset_m {0.5};
+  // Degeneracy gate: the registration's translational information (the 3x3 translation block of
+  // the inverse registration covariance) must have min / max eigenvalue at least this ratio. In
+  // a corridor the scans constrain the along-axis translation hardly at all, and a loop edge
+  // there can slide by metres while reporting a good fitness. A non-positive ratio disables the
+  // gate; registrations that report no covariance are not judged by it.
+  double min_translation_information_ratio {0.0};
 };
 
 enum class GateRejection
@@ -224,7 +231,8 @@ enum class GateRejection
   TRANSLATION,
   ROTATION,
   DRIFT,
-  OVERLAP
+  OVERLAP,
+  DEGENERATE
 };
 
 struct GateResult
@@ -297,6 +305,48 @@ inline GateResult evaluateGates(
     return result;
   }
   return result;
+}
+
+// min / max eigenvalue of the translation block of a 6x6 registration covariance's inverse
+// (rotation first, then translation, as the registration plugins report it); NaN when the
+// covariance is not positive definite. The ratio does not depend on the frame the covariance is
+// expressed in, since a frame change rotates that block.
+inline double translationInformationRatio(const Eigen::Matrix<double, 6, 6> & covariance)
+{
+  using Matrix6d = Eigen::Matrix<double, 6, 6>;
+  const Matrix6d symmetric = 0.5 * (covariance + covariance.transpose());
+  if (!symmetric.allFinite()) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const Eigen::SelfAdjointEigenSolver<Matrix6d> full(symmetric);
+  if (full.info() != Eigen::Success || !(full.eigenvalues().minCoeff() > 0.0)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const Matrix6d information = full.eigenvectors() *
+    full.eigenvalues().cwiseInverse().asDiagonal() * full.eigenvectors().transpose();
+  const Eigen::Matrix3d translation = information.bottomRightCorner<3, 3>();
+  const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> block(
+    0.5 * (translation + translation.transpose()));
+  const double largest = block.eigenvalues().maxCoeff();
+  if (block.info() != Eigen::Success || !(largest > 0.0)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return block.eigenvalues().minCoeff() / largest;
+}
+
+// The degeneracy gate (GateConfig::min_translation_information_ratio); true rejects.
+inline bool rejectsAsDegenerate(
+  const GateConfig & config, bool covariance_valid,
+  const Eigen::Matrix<double, 6, 6> & covariance, double * ratio = nullptr)
+{
+  if (!(config.min_translation_information_ratio > 0.0) || !covariance_valid) {
+    return false;
+  }
+  const double r = translationInformationRatio(covariance);
+  if (ratio != nullptr) {
+    *ratio = r;
+  }
+  return std::isfinite(r) && r < config.min_translation_information_ratio;
 }
 
 // The historical three-track selection. Every converged registration feeds

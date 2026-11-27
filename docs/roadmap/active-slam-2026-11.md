@@ -693,6 +693,24 @@ same rule as for the absolute gain (no failed run, median coverage within 5 poin
 adopted only if below the fraction gain's 0.46 m). In parallel, the two diverged `w_u` 400 runs
 are checked for false loop edges against the truth.
 
+### False loop edges in the tunnels (2026-11-27)
+
+Every loop edge of the tunnel runs was checked against the truth (relative truth pose of the two
+submaps vs the edge's measurement). The baseline's 18 runs have none off by more than 2 m. The
+`w_u` 400 runs have 15 (10 of the 11 edges on `tunnel_loop` 2, 4 of 30 on `tunnel_loop` 1, 1 on
+`long_tunnels` 1): all slide along the corridor (measured along-axis offset ~0, truth 2-8 m),
+some with a good fitness (0.05). Revisiting more means more loop searches in a corridor that
+repeats every 30 m, and the two diverged runs are these.
+
+The registration's information separates them: the ratio of the smallest to the largest
+eigenvalue of its translation block is <= 0.0016 for all 15, and of the 540 edges of the
+baseline and sweep runs, the 450 with ratio >= 0.002 are all within 0.52 m of the truth (90
+rejected). New gate `loop_min_translation_information_ratio`
+(`GateConfig::min_translation_information_ratio`, default 0: off, so the release gate's runs do
+not change): a loop registration whose ratio is below it is rejected. 0.002 is chosen from these
+development runs; it changes the backend for every policy, so the tunnels are run again for all
+three policies with it before any policy setting is compared.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
