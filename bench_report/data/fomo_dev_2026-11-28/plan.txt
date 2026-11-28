@@ -1,0 +1,76 @@
+FoMo (Foret Montmorency) as forest development data, summer and winter (written 2026-11-28, before any LiDAR, IMU,
+odometry or ground-truth byte of a FoMo trajectory is read)
+
+Why
+  The maintainer asked for better accuracy in forests, in both summer and winter, with no in-house rig. The forest
+  results so far are four GrandTour missions in November (report chapters 57 and 62): G22 is the best method on all
+  four (HOEB-1, KAEB-1, LMB-1, ALB-1 without reference spikes), at 1-2 cm. They are one legged robot, one season, and
+  opened. Nothing in this repository measures a forest in summer foliage or under snow, or a wheeled robot in a forest.
+
+Family
+  FoMo (Boxan et al., IJRR 2026, doi:10.1177/02783649261491481; CC BY 4.0, s3://fomo-dataset, no account needed).
+  Boreal forest 80 km north of Quebec City; a Clearpath Warthog (skid steer); six routes named by colour (red, blue,
+  green, magenta, yellow, orange) repeated on 12 deployments from 2024-11-21 to 2025-11-03, from -19 C with more than
+  1 m of snow to summer foliage. LiDARs: RoboSense Ruby Plus (128 beams, spinning) and a Leishen hybrid solid-state;
+  IMUs: VectorNav VN-100 and an Xsens. Reference: PPK GNSS from three Emlid M2 rovers and a static base, TUM file
+  gt.txt, with per-pose covariances (gt_covariance.csv). Per-frame files on S3 (robosense/<us>.bin = float32 N x 6:
+  x, y, z, intensity, ring, time), IMU CSV (t [us], wx wy wz [rad/s], ax ay az [m/s^2]), calib/transforms.json.
+  No FoMo file was ever in this repository's records.
+
+What was read before this plan
+  The bucket listing, LICENSE.txt and sizes.json (bytes per sensor per trajectory); for data/2025-08-20/red_*: the
+  key names, CHANGELOG.md, calib/ (transforms.json, imu.json, the two Allan-variance reports, key names of the rest),
+  and the header row plus the first two rows of vectornav.csv, xsens.csv and odom.csv (odom: zeros at the start).
+  The README and the loader functions of norlab-ulaval/fomo-dataset-tutorials (file formats). Not read: its section
+  Q5 (localization methods across seasons, which contains results), the paper's result tables, any gt.txt, any LiDAR
+  frame.
+
+Split, from route names, dates and sizes only
+  Development (opened by this plan), routes red and blue, two winter and two summer deployments:
+    winter  2025-01-29  red (RoboSense 14.2 GB)   blue (28.7 GB)
+    winter  2025-03-10  red ( 9.7 GB)             blue (26.4 GB)
+    summer  2025-06-26  red ( 8.3 GB)             blue (15.0 GB)
+    summer  2025-08-20  red ( 8.7 GB)             blue (15.8 GB)
+  Phase A is the four red drives; phase B adds the four blue drives (streamed from S3 into the bag, never stored raw,
+  because a blue drive does not fit /dev/shm on this VM).
+  Holdout routes, not read in any deployment (no LiDAR, IMU, odometry, calibration or reference byte): green and
+  magenta. They keep a forest route whose geometry no setting has seen, in every season, for a later blind run whose
+  selection is written before it is fetched.
+  Within-route holdout, not read for now: red and blue on the other eight deployments.
+  Out of scope by size on this VM: yellow and orange (55-124 GB of RoboSense per drive).
+
+Per-rig inputs (fixed here, before any run)
+  LiDAR: RoboSense Ruby Plus, topic /points, frame robosense. Base frame base_link; base_link -> robosense is a
+    180 deg yaw with zero translation (transforms.json). Poses are written in base_link.
+  IMU: VectorNav VN-100 (vectornav.csv), m/s^2, extrinsic from transforms.json via zedx_left. Chosen over the Xsens
+    by the rig's own Allan reports (gyro angle random walk 0.17-0.21 vs 1.76-1.89 deg/sqrt(h); bias instability
+    1.8-2.4 vs 13-16 deg/h). Tactical-gyro keys (G21): off (bias instability above 1 deg/h). Gravity window: off
+    (no static multi-orientation calibration).
+  The convention of "to"/"from" in transforms.json is checked once on phase A's first drive by the frame check of
+  earlier families (gravity direction in the IMU at rest, LiDAR ground plane); the check uses no reference.
+  Conversion: one rosbag2 MCAP per drive with sensor_msgs/PointCloud2 (x, y, z, intensity float32; ring uint16;
+  time float32 seconds from the frame stamp) and sensor_msgs/Imu, written with rosbags. Every point is kept.
+  The odometry CSV and the Leishen are not used in phase A.
+
+Methods
+  G22 (configs/sota_v7/rko_lio_global_G22_2026-11-10.yaml) with the rig keys above, through the pip package
+  (python -m lidarslam odometry, byte-identical to the ROS offline node on HILTI exp14, ros-free-core M3), then the
+  default backend (python -m lidarslam backend). Both outputs are scored: frontend odometry and backend trajectory.
+  Upstream RKO-LIO (PyPI 0.4.x, its defaults) as the reference point, since chapters 65-66 found that it beats G22 on
+  a 128-beam rig outdoors. Other rivals only if phase A shows a gap that needs them.
+
+Score
+  ATE in metres: positions of the estimate interpolated to gt.txt stamps, SE(3) Umeyama alignment without scale,
+  RMSE, over the reference poses inside the estimate's time span. Also, as in the blind runs, the value without
+  reference spikes, and the reference's own covariance summary per drive (median and 95th percentile horizontal
+  sigma), because PPK under canopy can be worse than a LiDAR odometry. Per drive: RTF and peak RSS. Winter and summer
+  are reported as separate geometric means; neither season's mean may get worse for the other to get better.
+
+What this can decide
+  Phase A is a diagnosis: where G22 loses in a forest, by season. A change to G that comes out of it needs its own
+  preregistered rule with the usual development screening (MapsHD 8, exp04, Odyssey 7, as for G23 in chapter 65),
+  and an accuracy claim in forests needs the holdout routes run blind. FoMo can never be a fresh family for the
+  general claim tiers after this plan, only its unread routes can be a within-family holdout.
+
+Record
+  Each later step is appended here before it is run; results go to results.txt next to this file.
