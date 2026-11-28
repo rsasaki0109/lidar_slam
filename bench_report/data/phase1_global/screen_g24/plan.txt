@@ -28,3 +28,10 @@ Record
     By the reading fixed above G24 does not go on to a decision rule. The limit is not moved.
     Runs 2 and 3 (MapsHD, Odyssey) are still done, as information for the maintainer (as for G23): whether the key
     helps only in open scenes is input for choosing the operating point from the scan (chapter 66, conclusion 3).
+  2026-11-28, run 2 (MapsHD, information only; mapshd.csv, front_score.py APE m, G22 / G24 / ratio):
+    calib1 0.0263 / 0.0223 / 0.851, calib2 0.0207 / 0.0205 / 0.988, flat 0.0148 / 0.0122 / 0.827,
+    corridor 0.0712 / 0.0695 / 0.976, urk 0.0548 / 0.0557 / 1.017, garage1 0.0442 / 0.0392 / 0.887,
+    garage2 0.0289 / 0.0283 / 0.977, garage3 0.0268 / 0.0249 / 0.931. Geometric mean of G24 / G22 0.930; worst +1.7 %.
+    Harness check: the eight G22 scores equal screen_g23's ROS-path scores to six digits (the rosbags port of the
+    MapsHD converter, mapshd_to_ros2_rosbags.py, feeds the same data).
+    So the key is not an open-scene effect: it helps MapsHD (mostly indoor) and FoMo, and hurts exp04 (+7.3 %).
