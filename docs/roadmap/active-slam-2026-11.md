@@ -1131,6 +1131,41 @@ seeds (rule: >= 7), coverage difference +0.12 points, failures 1 vs 1. **Fail.**
   where it adds one of its own (seed 101: 0.74 vs 0.39 m); the median gain is real but the
   per-seed outcome depends on which corridors a run happens to stretch.
 
+### Frontend degeneracy compensation: rule (written before its runs)
+
+Approved direction (maintainer, 2026-11-28): after two holdout failures whose error is the
+frontend's corridor under- or over-registration, compensate it in the frontend instead of
+tuning the policy. The maintained RKO-LIO fork already has the mechanism, set by parameters
+only: `degeneracy_aware_solve` replaces the ICP solve's component along each eigen direction
+of the Hessian whose share of the trace is below `degeneracy_well_conditioned_ratio` with a
+blend of the ICP and the motion prior (the IMU-propagated initial guess), weighted by
+`degeneracy_prior_weight`. A 120 s smoke route on `ladder_tunnels` (seed 101, 1.0 m/s) before
+this rule: ratio 1e-5 with weight 1.0 is close to the baseline (raw ATE 0.097 vs 0.102 m);
+ratio 1e-3 with weight 1.0 diverges (10 m live error after 58 m), since a pure prior along the
+corridor leaves the velocity unobserved. So weight 1.0 is not tried.
+
+`ladder_tunnels` is spent as a holdout (its result is above); it becomes a diagnostic world,
+and any later claim needs a fresh holdout. All runs at the frozen settings (1.0 m/s, pilasters
+60 m), with the RKO-LIO walking preset plus the variant's three parameters, in the harness
+only; the product presets are not changed by this work.
+
+- Variants: ratio in {1e-5, 1e-4, 1e-3} x weight in {0.25, 0.5} (six).
+- Stage A (safety screen): `ladder_tunnels` fixed route, seeds 1-3, odometry only. A variant is
+  dropped if any route's live error reaches 5 m (the calibration's disqualification). Of the
+  survivors, the two with the lowest median raw ATE go on (ties: the smaller weight).
+- Stage B: `frontier_info` closed loop on `ladder_tunnels` seeds 101-110 (no revisits, so the
+  frontend's part is the cleanest), against the fourth holdout's `frontier_info` runs (median
+  final-map ATE 0.264 m, one failure). A variant passes if its median final-map ATE is at least
+  30 % lower, it is lower in at least 7 of 10 seeds, and it fails at most once. Of two passing,
+  the lower median.
+- Stage C (no harm): the passing variant on the `tunnels` set with `frontier_info` (median 0.090
+  m at 1.0 m/s, no failure) must stay within +10 % with no failure, and on the four easy
+  worlds' routes (seeds 1-3; median SE(2) ATE 0.0301 m at 1.0 m/s) within +10 %.
+- If one passes A-C, it becomes the harness frontend, `active` vs `frontier_info` is re-measured
+  on the `tunnels` set and `ladder_tunnels` (development), and only then a fifth holdout on new
+  worlds is proposed. If none passes, the compensation is recorded as not enough at these
+  settings, with the per-variant numbers.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
