@@ -48,10 +48,14 @@
 
 #include <Eigen/Core>  // NOLINT(build/include_order)
 #include <Eigen/Geometry>  // NOLINT(build/include_order)
+#include <Eigen/StdVector>  // NOLINT(build/include_order)
 
 #include "g2o/core/block_solver.h"
 #include "g2o/core/optimization_algorithm_levenberg.h"
+#include "g2o/core/optimization_algorithm_with_hessian.h"
 #include "g2o/core/robust_kernel_impl.h"
+#include "g2o/core/solver.h"
+#include "g2o/core/sparse_block_matrix.h"
 #include "g2o/core/sparse_optimizer.h"
 #include "g2o/solvers/eigen/linear_solver_eigen.h"
 #include "g2o/types/slam3d/edge_se3.h"
@@ -191,6 +195,19 @@ struct OptimizationResult
   int plane_revisit_edges {0};
   double plane_revisit_chi2_before {0.0};
   double plane_revisit_chi2_after {0.0};
+  // compute_marginals: whether marginal_covariances holds a result, and the
+  // marginal covariance of each submap pose (in g2o's VertexSE3 minimal
+  // coordinates: translation, quaternion vector part) at the optimized
+  // estimate, from every edge in the graph with its robust kernel weight;
+  // zero for a fixed vertex (pose_graph_uncertainty.hpp summarizes them).
+  bool marginals_valid {false};
+  std::vector<Eigen::Matrix<double, 6, 6>,
+    Eigen::aligned_allocator<Eigen::Matrix<double, 6, 6>>> marginal_covariances;
+  // With the marginals: Cov(x_i, x_newest) for every submap i (newest = the last), zero for a
+  // fixed vertex; what predicting the effect of a loop edge to the newest needs
+  // (pose_graph_uncertainty::predictedCovarianceAfterLoop).
+  std::vector<Eigen::Matrix<double, 6, 6>,
+    Eigen::aligned_allocator<Eigen::Matrix<double, 6, 6>>> newest_cross_covariances;
 };
 
 // What to collect for the caller's NIS auto-scale update; NONE skips the
@@ -218,7 +235,11 @@ inline OptimizationResult optimizePoseGraph(
   int iterations = 10,
   const std::vector<PlaneRevisitConstraint> & plane_constraints = {},
   // A tracking graph can prepend fixed reference submaps before its active session.
-  std::size_t fixed_prefix = 0)
+  std::size_t fixed_prefix = 0,
+  // Also compute each submap's marginal covariance (OptimizationResult::marginal_covariances).
+  // Off by default: it costs one more linearization and a sparse solve per submap, and the
+  // optimized poses are the same either way.
+  bool compute_marginals = false)
 {
   g2o::SparseOptimizer optimizer;
   optimizer.setVerbose(false);
@@ -420,6 +441,80 @@ inline OptimizationResult optimizePoseGraph(
   for (auto * edge : plane_edges) {
     edge->computeError();
     result.plane_revisit_chi2_after += edge->chi2();
+  }
+
+  if (compute_marginals) {
+    // Re-linearize at the final estimate: the solver's last system was built
+    // before the last update and carried Levenberg-Marquardt damping.
+    auto * with_hessian =
+      dynamic_cast<g2o::OptimizationAlgorithmWithHessian *>(optimizer.solver());
+    std::vector<std::pair<int, int>> blocks;
+    const int newest_h =
+      submaps_size > 0 ? optimizer.vertex(submaps_size - 1)->hessianIndex() : -1;
+    for (int i = 0; i < submaps_size; i++) {
+      const int h = optimizer.vertex(i)->hessianIndex();
+      if (h >= 0) {
+        blocks.emplace_back(h, h);
+        if (newest_h >= 0 && h != newest_h) {
+          blocks.emplace_back(std::min(h, newest_h), std::max(h, newest_h));
+        }
+      }
+    }
+    result.marginal_covariances.assign(
+      static_cast<std::size_t>(submaps_size), Eigen::Matrix<double, 6, 6>::Zero());
+    if (with_hessian != nullptr) {
+      optimizer.computeActiveErrors();
+      g2o::SparseBlockMatrix<Eigen::MatrixXd> marginals;
+      // BlockSolver::buildSystem returns false even when it built the system.
+      with_hessian->solver().buildSystem();
+      if (blocks.empty() || optimizer.computeMarginals(marginals, blocks))
+      {
+        result.marginals_valid = true;
+        for (int i = 0; i < submaps_size; i++) {
+          const int h = optimizer.vertex(i)->hessianIndex();
+          if (h < 0) {
+            continue;
+          }
+          const Eigen::MatrixXd * block = marginals.block(h, h);
+          if (block == nullptr || block->rows() != 6 || block->cols() != 6) {
+            result.marginals_valid = false;
+            break;
+          }
+          const Eigen::Matrix<double, 6, 6> covariance = *block;
+          result.marginal_covariances[static_cast<std::size_t>(i)] =
+            0.5 * (covariance + covariance.transpose());
+        }
+        if (result.marginals_valid && newest_h >= 0) {
+          result.newest_cross_covariances.assign(
+            static_cast<std::size_t>(submaps_size), Eigen::Matrix<double, 6, 6>::Zero());
+          for (int i = 0; i < submaps_size; i++) {
+            const int h = optimizer.vertex(i)->hessianIndex();
+            if (h < 0) {
+              continue;
+            }
+            if (h == newest_h) {
+              result.newest_cross_covariances[static_cast<std::size_t>(i)] =
+                result.marginal_covariances[static_cast<std::size_t>(i)];
+              continue;
+            }
+            const Eigen::MatrixXd * block = marginals.block(std::min(h, newest_h),
+                std::max(h, newest_h));
+            if (block == nullptr || block->rows() != 6 || block->cols() != 6) {
+              result.newest_cross_covariances.clear();
+              break;
+            }
+            // The block is Cov(x_min, x_max); Cov(x_i, x_newest) is it or its transpose.
+            result.newest_cross_covariances[static_cast<std::size_t>(i)] =
+              h < newest_h ? Eigen::Matrix<double, 6, 6>(*block) :
+              Eigen::Matrix<double, 6, 6>(block->transpose());
+          }
+        }
+      }
+    }
+    if (!result.marginals_valid) {
+      result.marginal_covariances.clear();
+      result.newest_cross_covariances.clear();
+    }
   }
 
   if (chi2_collection == Chi2Collection::SPLIT) {

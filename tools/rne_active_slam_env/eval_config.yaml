@@ -1,0 +1,49 @@
+# Closed-loop active SLAM evaluation (docs/roadmap/active-slam-2026-11.md, "Evaluation").
+# Tuned on the development set only; frozen (and its commit recorded in the roadmap) before the
+# holdout set is run once.
+
+# The walking preset plus the translation-only degeneracy compensation (roadmap
+# "Translation-only compensation: result").
+rko_param: tools/rne_active_slam_env/rko_lio_mid360_walking_translation_prior.yaml
+lidarslam_param: lidarslam/param/lidarslam_mid360_rko_graph_walking.yaml
+max_seconds: 600
+divergence_m: 2.0
+inflation_radius: 0.8
+# Path follower speed [m/s] for every policy (roadmap "Tunnels at 1.0 m/s").
+speed: 1.0
+
+# active only (sigma's scale depends on the parameter preset; these are for the walking one)
+revisit_trigger_sigma: 0.05
+revisit_release_sigma: 0.02
+uncertainty_weight: 80.0
+min_predicted_drop: 0.2
+
+# Loop degeneracy gate (roadmap "False loop edges in the tunnels"): applies to every policy.
+loop_min_translation_information_ratio: 0.002
+
+# Per world: the difficulty calibrated without any policy (calibrate_difficulty.py, roadmap
+# "Degenerate worlds"), and a budget and divergence limit for the tunnels' size (a ~400 m tour
+# takes ~580 s; the odometry's live error reached 1.4 m on the calibration routes).
+world_overrides:
+  tunnel_loop: {pilaster_spacing: 30, max_seconds: 1500, divergence_m: 10.0}
+  long_tunnels: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
+  dogleg_loop: {pilaster_spacing: 36, max_seconds: 1500, divergence_m: 10.0}
+  mine_branches: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
+  ladder_tunnels: {pilaster_spacing: 60, max_seconds: 1500, divergence_m: 10.0}
+
+policies: [nearest_frontier, frontier_info, active]
+sets:
+  development:
+    worlds: [ring, grid, branches2, long_loop2]
+    seeds: [1, 2, 3]
+  tunnels:
+    worlds: [tunnel_loop, long_tunnels]
+    seeds: [1, 2, 3]
+  ladder:
+    # the fourth holdout's world, spent (roadmap "Fourth holdout: result"); development now
+    worlds: [ladder_tunnels]
+    seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+  holdout:
+    # none yet: the fourth was run once; a fifth needs new worlds, built and approved first
+    worlds: []
+    seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]

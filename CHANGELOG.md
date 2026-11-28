@@ -4,6 +4,54 @@
 
 ### Added
 
+- Pose-graph uncertainty report (`ros2 run graph_based_slam pose_graph_uncertainty_report
+  --input <map_bundle_dir | pose_graph.g2o> --output-dir <dir>`), the first step of the
+  active SLAM plan (`docs/roadmap/active-slam-2026-11.md`, P1). It linearizes the saved
+  graph's `EDGE_SE3:QUAT` edges at the optimized poses and writes each vertex's marginal
+  covariance summary (largest/smallest translation sigma, weakest direction, largest
+  rotation sigma) to `pose_graph_uncertainty.csv` and the graph's D-optimality to
+  `pose_graph_uncertainty_summary.yaml`. On a 40-vertex graph with rotations and loops the
+  marginals match g2o's `computeMarginals` within 3e-5 relative. Sigmas are in the units
+  of the backend's edge information weights (they rank vertices; they are not metres of
+  error). Gravity-prior and plane-revisit edges are not written to `pose_graph.g2o`, so with
+  either enabled (off by default) the report leaves them out. Eigen only,
+  byte-reproducible, and the SLAM outputs are unchanged.
+- Backend pose uncertainty (active SLAM P1). `optimizePoseGraph` can return each submap's
+  marginal covariance from g2o, with every edge it optimized (GNSS anchors, gravity priors,
+  plane revisit). New report-only offline parameters: `pose_uncertainty_output` writes
+  `pose_uncertainty.csv` and `pose_uncertainty_summary.yaml` for the final graph;
+  `pose_uncertainty_timeline` writes `pose_uncertainty_timeline.csv` (the graph as it stood
+  after each new submap and each loop-edge change) and `pose_uncertainty_timeline_loops.csv`.
+  Off by default; with them on, every other output is byte-identical.
+  `tools/readme_media/render_pose_uncertainty.py` renders a timeline as a GIF;
+  `lidarslam/images/pose_uncertainty_mid360_drive.gif` is the 1.1 km public MID-360 drive,
+  where the newest submap's sigma drops from 74 to 1.4 at the loop closure
+  (`docs/readme-media.md`).
+- Active exploration decisions (active SLAM P2/P3, first version): `active_exploration.hpp`
+  builds a 2D coverage grid from the submap scans, finds frontiers and revisit targets, plans
+  path lengths, and picks the next goal by utility (unknown area, uncertainty drop, path
+  length) with a revisit mode while the newest submap's sigma is high. The offline parameter
+  `active_exploration_timeline` replays its decisions on a recorded run
+  (`active_exploration_timeline.csv`, `exploration_*` parameters). Report-only, off by default.
+- Closed-loop active SLAM simulation (`tools/rne_active_slam_env`): RobotNativeEngine's Livox
+  Mid-360 model on a kinematic robot in a box world, in lockstep with `lidarslam.live.Session`,
+  which now answers `decide_exploration(x, y)` (goal and path) and `exploration_grid()`. The
+  explorer marks the cells around the sensor free, skips frontiers closer than 1 m, counts only
+  unknown cells in line of sight as gain, and drops frontiers the robot reached without seeing
+  them (`exploration_clear_radius`, `exploration_min_goal_distance`,
+  `exploration_visited_radius`). First comparison in docs/roadmap/active-slam-2026-11.md (one
+  world, one seed).
+- Predicted revisit gain: `optimizePoseGraph` returns each submap's covariance with the newest
+  (`newest_cross_covariances`); `pose_graph_uncertainty::predictedCovarianceAfterLoop` gives the
+  newest submap's covariance after a loop edge, and a revisit's gain is the predicted fraction of
+  the newest sigma removed. Revisit targets must be farther back in travel than the loop search's
+  `distance_loop_closure`, targets reached without a loop are dropped, frontiers and revisits
+  compete by utility, and `Session.reject_exploration_goal` drops a goal the robot cannot reach.
+  The closed-loop harness gains a `grid` world, the indoor graph preset and an inflation option.
+- Active SLAM evaluation (`tools/rne_active_slam_env/run_eval.py`, preregistered rule in
+  docs/roadmap/active-slam-2026-11.md): the frozen configuration failed both holdouts. The
+  second (`branches2`, `long_loop2`, 60 runs) gave a median paired ATE reduction of 7.9 % and
+  3.7 % against `frontier_info`, below the 15 % the rule requires.
 - `tools/gaussian_splatting/grandtour_camera_bag.py`: a window of a GrandTour
   mission with a camera, the LiDAR and `/tf_static` as a rosbag2 for
   `lidarslam colmap`, and a tutorial in `lidarslam_core/README.md` from a

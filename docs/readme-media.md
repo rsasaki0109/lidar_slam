@@ -176,6 +176,52 @@ python3 bench_report/scripts/p3_multisession_glow_gif.py join_nc03_nc04_nc01/joi
 - Each session's path is drawn in its season's colour, placed by the transform it committed. Cells it added light up in that colour; cells change detection removed light up in red.
 - The bars are the seconds to relocalize, on a log scale. The GIF is 672×378, 10 fps (4.2 MB).
 
+## Pose uncertainty while mapping (`lidarslam/images/pose_uncertainty_mid360_drive.gif`)
+
+**Data:** [Driving SLAM Test with Livox MID360](https://zenodo.org/records/14841855) (Koide, CC BY 4.0), `rosbag2_2024_04_16-14_17_01` (277 s, the Docker first-map demo bag), `/livox/lidar` and `/livox/imu`.
+
+**Run** (the `rko_lio_graph_mid360_preset` inputs, ROS-free core engine; `uncertainty.yaml` is `lidarslam/param/lidarslam_mid360_rko_graph.yaml` plus `pose_uncertainty_output: true` and `pose_uncertainty_timeline: true`):
+
+```bash
+python3 scripts/run_rko_lio_graph_core.py --bag rosbag2_2024_04_16-14_17_01 \
+  --lidar-topic /livox/lidar --imu-topic /livox/imu \
+  --lidarslam-param uncertainty.yaml --rko-param lidarslam/param/rko_lio_mid360.yaml \
+  --output-dir run --generate-lanelet2 false
+```
+
+- Built from `5e56c03` plus the renderer's PCD and frame-selection changes in the commit that adds this GIF.
+- 2771 scan pairs, 637 submaps, 1076.8 m, 636 graph states in the timeline (140 s for the whole run on 4 cores).
+- Two runs gave byte-identical `pose_uncertainty_timeline.csv`, `pose_uncertainty_timeline_loops.csv`, `pose_uncertainty.csv`, trajectories and `loop_edges.csv`.
+- A run with the two parameters off wrote the other 379 files (map tiles, `map.pcd`, trajectories, `pose_graph.g2o`, ...) byte-identical; only `core_params.json`, which records the parameters, differs.
+
+**Result** (sigmas in the units of the edge information weights, not metres):
+
+| | Value |
+| --- | --- |
+| Newest submap σ before the first loop closure (submap 585, 224 s) | 74.2 |
+| Newest submap σ after it | 1.39 |
+| Largest σ of any submap, before / after the first closure | 74.4 / 59.9 |
+| Largest σ after the last loop edge change (end of run) | 34.2 |
+
+The car drives one block and returns to its start; the loop search keeps the newest edge of the
+revisit (15-584, 15-589, 14-594, 10-599, 6-604), so the plot marks five new loop edges and the
+final graph has one (6-604). Before the closure the newest σ dips without any loop (74 to 65 and
+back) where the car turns: heading and position errors are correlated, and a turn makes them
+partly cancel.
+
+**Render:**
+
+```bash
+python3 tools/readme_media/render_pose_uncertainty.py \
+  --timeline run/pose_uncertainty_timeline.csv --map run/map.pcd --map-max-points 120000 \
+  --out pose_uncertainty_mid360_drive.gif \
+  --title 'Pose uncertainty while mapping: Livox MID-360, 1.1 km drive' \
+  --caption 'Each submap coloured by its marginal translation σ in the pose graph so far; grey: final map'
+```
+
+- 157 of the 636 states (evenly spaced, plus every loop closure and the state before it), 960×540, 1.6 MB; the same timeline gives the same GIF bytes.
+- Left: the submaps of each state as estimated then, coloured by σ (one-hue scale, the same in every frame); the grey map is the final one, so it does not move with the estimate. Right: the newest submap's σ, dashed lines at new loop edges.
+
 ## KITTI street as a 3DGS driving simulator (`lidarslam/images/kitti_3dgs_drive_sim.gif`)
 
 **Data:** [KITTI raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) drive `2011_09_30_drive_0018` (CC BY-NC-SA 3.0, non-commercial), Velodyne HDL-64 + OXTS IMU + left colour camera, about 2.2 km.

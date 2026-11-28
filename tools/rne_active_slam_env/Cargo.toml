@@ -1,0 +1,23 @@
+[package]
+name = "rne_active_slam_env"
+version = "0.1.0"
+edition = "2021"
+license = "BSD-2-Clause"
+description = "Closed-loop active SLAM environment: a kinematic robot with RobotNativeEngine's Livox Mid-360 model and an IMU, driven over stdin/stdout"
+publish = false
+
+# Standalone: not part of any workspace.
+[workspace]
+
+[dependencies]
+# RobotNativeEngine (MIT OR Apache-2.0), pinned.
+rne_ecs = { git = "https://github.com/rsasaki0109/RobotNativeEngine", rev = "1c39c50ddb8a0043ba2a500485fec687728d8a6d" }
+rne_math = { git = "https://github.com/rsasaki0109/RobotNativeEngine", rev = "1c39c50ddb8a0043ba2a500485fec687728d8a6d" }
+rne_physics = { git = "https://github.com/rsasaki0109/RobotNativeEngine", rev = "1c39c50ddb8a0043ba2a500485fec687728d8a6d" }
+rne_sensor = { git = "https://github.com/rsasaki0109/RobotNativeEngine", rev = "1c39c50ddb8a0043ba2a500485fec687728d8a6d" }
+rne_world = { git = "https://github.com/rsasaki0109/RobotNativeEngine", rev = "1c39c50ddb8a0043ba2a500485fec687728d8a6d" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+debug = false

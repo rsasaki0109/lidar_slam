@@ -270,6 +270,57 @@ public:
       });
   }
 
+  // The explorer's next goal for a robot at (x, y) in the odometry frame (OfflinePipeline::
+  // decideExploration), as a dict: status, kind, revisit_mode, newest_sigma, goal [x, y],
+  // path_length, path [[x, y], ...], unknown_area, uncertainty_drop, submaps, frontiers,
+  // reachable_frontiers, revisit_candidates, through_unknown.
+  py::dict decideExploration(double x, double y)
+  {
+    const graphslam::offline::ExplorationDecision d =
+      pipeline_->decideExploration(Eigen::Vector2d(x, y));
+    py::dict out;
+    out["status"] = d.status;
+    out["kind"] = d.kind;
+    out["revisit_mode"] = d.revisit_mode;
+    out["newest_sigma"] = d.newest_sigma;
+    out["map_sigma"] = d.map_sigma;
+    out["goal"] = py::make_tuple(d.goal.x(), d.goal.y());
+    out["path_length"] = d.path_length;
+    py::list path;
+    for (const Eigen::Vector2d & p : d.path) {
+      path.append(py::make_tuple(p.x(), p.y()));
+    }
+    out["path"] = path;
+    out["unknown_area"] = d.unknown_area;
+    out["uncertainty_drop"] = d.uncertainty_drop;
+    out["submaps"] = d.submaps;
+    out["frontiers"] = d.frontiers;
+    out["reachable_frontiers"] = d.reachable_frontiers;
+    out["revisit_candidates"] = d.revisit_candidates;
+    out["through_unknown"] = d.through_unknown;
+    return out;
+  }
+
+  void rejectExplorationGoal(double x, double y)
+  {
+    pipeline_->rejectExplorationGoal(Eigen::Vector2d(x, y));
+  }
+
+  // The explorer's coverage grid (OfflinePipeline::explorationGrid) as a dict: x0, y0, width,
+  // height, resolution, cells (bytes, 0 unknown / 1 free / 2 occupied, row by row).
+  py::dict explorationGrid()
+  {
+    const auto grid = pipeline_->explorationGrid();
+    py::dict out;
+    out["x0"] = grid.x0;
+    out["y0"] = grid.y0;
+    out["width"] = grid.width;
+    out["height"] = grid.height;
+    out["resolution"] = grid.resolution;
+    out["cells"] = py::bytes(reinterpret_cast<const char *>(grid.cells.data()), grid.cells.size());
+    return out;
+  }
+
   const graphslam::offline::OfflinePipeline & pipeline() const {return *pipeline_;}
 
 private:
@@ -846,6 +897,16 @@ void bind_backend(py::module_ & m)
   .def("add_cloud", &BackendPipeline::addCloud, py::arg("cloud"))
   .def("add_gnss_fix", &BackendPipeline::addGnssFix, py::arg("fix"),
     "With use_gnss: a NavSatFix of gnss_topic, in recorded order with the odometry and clouds.")
+  .def("reject_exploration_goal", [](BackendPipeline & self, double x, double y) {
+      self.rejectExplorationGoal(x, y);
+    }, py::arg("x"), py::arg("y"),
+    "The robot could not reach this goal (odometry frame): it is not chosen again.")
+  .def("exploration_grid", &BackendPipeline::explorationGrid,
+    "With active_exploration_timeline: the explorer's coverage grid (0 unknown, 1 free, "
+    "2 occupied).")
+  .def("decide_exploration", &BackendPipeline::decideExploration, py::arg("x"), py::arg("y"),
+    "With active_exploration_timeline: the explorer's next goal for a robot at (x, y) in the "
+    "odometry frame, with the path to it (docs/roadmap/active-slam-2026-11.md).")
   .def("set_live_pose_listener", &BackendPipeline::setLivePoseListener, py::arg("listener"),
     "Call listener(dict) for every odometry / cloud pair with its live (causal) pose: stamp_sec, "
     "odometry and map as [x, y, z, qx, qy, qz, qw], new_submap, submaps, corrections_applied. "

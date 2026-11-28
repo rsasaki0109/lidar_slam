@@ -187,6 +187,29 @@ class Session:
     def gnss_topic(self) -> str:
         return self._pipeline.gnss_topic
 
+    def decide_exploration(self, x: float, y: float) -> dict[str, Any]:
+        """Return the explorer's next goal for a robot at (x, y) in the odometry frame.
+
+        Needs the backend parameters ``pose_uncertainty_timeline`` and
+        ``active_exploration_timeline`` (and no background search). The dict has ``status``
+        (``goal``, ``exploration_done``, ``no_reachable_goal``, ``disabled``, ``no_submaps``),
+        ``kind``, ``goal``, ``path`` (odometry frame), ``path_length``, ``revisit_mode``,
+        ``newest_sigma`` and counts.
+        """
+        return self._pipeline.decide_exploration(x, y)
+
+    def reject_exploration_goal(self, x: float, y: float) -> None:
+        """Tell the explorer that the robot could not reach this goal (odometry frame)."""
+        self._pipeline.reject_exploration_goal(x, y)
+
+    def exploration_grid(self) -> dict[str, Any]:
+        """Return the explorer's coverage grid (see ``decide_exploration``).
+
+        ``cells`` holds bytes, 0 unknown / 1 free / 2 occupied, row by row (y outer) from cell
+        (``x0``, ``y0``); a cell's integer coordinates are floor(world / ``resolution``).
+        """
+        return self._pipeline.exploration_grid()
+
     def _pose(self, pose: LivePose) -> None:
         if self._startup is not None:
             if self._startup.transform is not None:

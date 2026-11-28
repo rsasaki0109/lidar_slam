@@ -489,5 +489,38 @@ TEST(LoopVerifierEdge, RelativePoseChainsCorrectionOntoTheLatestPose)
   EXPECT_NEAR(closed_edge.translation().norm(), 0.0, 1e-6);
 }
 
+TEST(LoopVerifier, DegeneracyGateRejectsARegistrationWithAWeakTranslationAxis)
+{
+  using Matrix6d = Eigen::Matrix<double, 6, 6>;
+  // Information (rotation first, then translation): a corridor along x constrains x 1000 times
+  // less than y and z.
+  Matrix6d information = Matrix6d::Zero();
+  information.diagonal() << 1e5, 1e5, 1e5, 1e3, 1e6, 1e6;
+  const Matrix6d corridor = information.inverse();
+  EXPECT_NEAR(loop_verifier::translationInformationRatio(corridor), 1e-3, 1e-9);
+  // Rotating the frame does not change the ratio.
+  Matrix6d rotate = Matrix6d::Zero();
+  const Eigen::Matrix3d r =
+    Eigen::AngleAxisd(0.7, Eigen::Vector3d(0.2, 0.3, 1.0).normalized()).toRotationMatrix();
+  rotate.topLeftCorner<3, 3>() = r;
+  rotate.bottomRightCorner<3, 3>() = r;
+  EXPECT_NEAR(
+    loop_verifier::translationInformationRatio(rotate * corridor * rotate.transpose()), 1e-3,
+    1e-9);
+
+  GateConfig config;
+  EXPECT_FALSE(loop_verifier::rejectsAsDegenerate(config, true, corridor));  // gate off
+  config.min_translation_information_ratio = 0.002;
+  double ratio = 0.0;
+  EXPECT_TRUE(loop_verifier::rejectsAsDegenerate(config, true, corridor, &ratio));
+  EXPECT_NEAR(ratio, 1e-3, 1e-9);
+  information.diagonal() << 1e5, 1e5, 1e5, 1e4, 1e6, 1e6;
+  EXPECT_FALSE(loop_verifier::rejectsAsDegenerate(config, true, information.inverse()));
+  // No covariance, or one that is not positive definite: not judged.
+  EXPECT_FALSE(loop_verifier::rejectsAsDegenerate(config, false, corridor));
+  EXPECT_FALSE(loop_verifier::rejectsAsDegenerate(config, true, Matrix6d::Zero()));
+  EXPECT_TRUE(std::isnan(loop_verifier::translationInformationRatio(Matrix6d::Zero())));
+}
+
 }  // namespace
 }  // namespace graphslam

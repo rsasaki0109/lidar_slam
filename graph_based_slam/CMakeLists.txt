@@ -653,6 +653,38 @@ if(BUILD_TESTING)
     )
   endif()
   ament_add_gtest(
+    test_active_exploration
+    test/test_active_exploration.cpp
+  )
+  if(TARGET test_active_exploration)
+    target_include_directories(test_active_exploration PRIVATE include ${EIGEN3_INCLUDE_DIR})
+  endif()
+  ament_add_gtest(
+    test_pose_graph_uncertainty
+    test/test_pose_graph_uncertainty.cpp
+  )
+  if(TARGET test_pose_graph_uncertainty)
+    target_include_directories(
+      test_pose_graph_uncertainty PRIVATE include ${EIGEN3_INCLUDE_DIR}
+    )
+  endif()
+  ament_add_gtest(
+    test_pose_graph_uncertainty_g2o
+    test/test_pose_graph_uncertainty_g2o.cpp
+  )
+  if(TARGET test_pose_graph_uncertainty_g2o)
+    target_include_directories(
+      test_pose_graph_uncertainty_g2o PRIVATE include ${EIGEN3_INCLUDE_DIR}
+    )
+    target_link_libraries(
+      test_pose_graph_uncertainty_g2o
+      g2o::core
+      g2o::types_slam3d
+      g2o::solver_eigen
+      g2o::stuff
+    )
+  endif()
+  ament_add_gtest(
     test_degeneracy_diagnostics_csv
     test/test_degeneracy_diagnostics_csv.cpp
   )
@@ -884,6 +916,8 @@ if(BUILD_TESTING)
     test_public_suite_gate
     test_radarless_tunnel_benchmark_tools
     test_realtime_colored_map_evaluator
+    test_render_pose_uncertainty
+    test_active_slam_eval
     test_rko_lio_graph_benchmark_script
     test_rtk_slam_download_script
     test_run_lidar_slam
@@ -1067,6 +1101,13 @@ add_executable(planar_map_filter
   src/planar_map_filter_main.cpp
 )
 
+# Eigen only: reads a saved pose_graph.g2o, no g2o or PCL link.
+add_executable(pose_graph_uncertainty_report
+  src/pose_graph_uncertainty_report_main.cpp
+)
+target_include_directories(pose_graph_uncertainty_report PRIVATE include ${EIGEN3_INCLUDE_DIR})
+target_compile_features(pose_graph_uncertainty_report PRIVATE cxx_std_17)
+
 target_include_directories(map_quality_report PRIVATE include ${EIGEN3_INCLUDE_DIR})
 
 target_compile_features(map_quality_report PRIVATE cxx_std_17)
@@ -1223,6 +1264,7 @@ install(TARGETS
   graph_slam_offline_runner
   map_quality_report
   planar_map_filter
+  pose_graph_uncertainty_report
   DESTINATION lib/${PROJECT_NAME}
 )
 

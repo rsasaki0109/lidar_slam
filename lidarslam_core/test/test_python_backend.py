@@ -146,6 +146,65 @@ def test_walk_around_a_room(tmp_path: Path) -> None:
     assert first == second
 
 
+def test_pose_uncertainty_outputs(tmp_path: Path) -> None:
+    """
+    Check pose_uncertainty_output and pose_uncertainty_timeline.
+
+    They are report-only and deterministic, and a loop closure lowers the newest submap's
+    uncertainty (docs/roadmap/active-slam-2026-11.md, P1).
+    """
+    log = tmp_path / 'backend_input'
+    _write_input(log)
+    params_file = tmp_path / 'params.yaml'
+    params_file.write_text(
+        'graph_based_slam:\n'
+        '  ros__parameters:\n'
+        '    registration_method: "SMALL_GICP"\n'
+        '    gicp_max_correspondence_distance: 0.5\n'
+        '    ndt_num_threads: 1\n'
+        '    voxel_leaf_size: 0.2\n'
+        '    submap_distance_threshold: 1.5\n',
+        encoding='utf-8')
+    base = load_parameters(params_file)
+    on = apply_overrides(  # apply_overrides changes the dict it is given
+        dict(base), ['pose_uncertainty_output:=true', 'pose_uncertainty_timeline:=true',
+                     'active_exploration_timeline:=true'])
+    run(log, base, tmp_path / 'off', log=lambda level, msg: None)
+    run(log, on, tmp_path / 'on1', log=lambda level, msg: None)
+    run(log, on, tmp_path / 'on2', log=lambda level, msg: None)
+
+    off, on1, on2 = (_digests(tmp_path / d) for d in ('off', 'on1', 'on2'))
+    assert on1 == on2
+    added = {'pose_uncertainty.csv', 'pose_uncertainty_summary.yaml',
+             'pose_uncertainty_timeline.csv', 'pose_uncertainty_timeline_loops.csv',
+             'active_exploration_timeline.csv'}
+    assert set(on1) - set(off) == added
+    assert {name: on1[name] for name in off} == off  # every other output unchanged
+
+    summary = (tmp_path / 'on1' / 'pose_uncertainty_summary.yaml').read_text()
+    assert summary.startswith('ok: true\n')
+    final = np.genfromtxt(tmp_path / 'on1' / 'pose_uncertainty.csv', delimiter=',', names=True)
+    assert final['fixed'][0] == 1 and not final['fixed'][1:].any()
+    assert (final['sigma_translation_max'][1:] > 0).all()
+
+    timeline = np.genfromtxt(tmp_path / 'on1' / 'pose_uncertainty_timeline.csv', delimiter=',',
+                             names=True)
+    newest = {}  # step -> (loop edges, sigma of the newest submap)
+    for row in timeline:
+        newest[int(row['step'])] = (int(row['loop_edges']), float(row['sigma_translation_max']))
+    steps = sorted(newest)
+    closing = [s for s in steps[1:] if newest[s][0] > newest[s - 1][0]]
+    assert closing, 'the second lap closes a loop'
+    first = closing[0]
+    assert newest[first][1] < 0.5 * newest[first - 1][1]
+
+    # The room is in view from the start: no frontier is left, so the explorer is done; it
+    # never revisits (no trigger set).
+    decisions = (tmp_path / 'on1' / 'active_exploration_timeline.csv').read_text().splitlines()
+    assert len(decisions) == 1 + len(steps)
+    assert all(',exploration_done,' in row for row in decisions[1:])
+
+
 def test_parameter_types_follow_rclcpp(tmp_path: Path) -> None:
     log = tmp_path / 'backend_input'
     log.mkdir()
