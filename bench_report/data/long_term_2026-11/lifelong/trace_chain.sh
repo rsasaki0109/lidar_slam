@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The lifelong chain built again with the change evidence traced after the height corrections into
 # stores/lifelong_trace (preregistered, roadmap). Same base, updates, bags and options as
-# profile_chain.sh. Run from the bench directory; scored by trace_audit_run.sh and consistency_score.py.
+# profile_chain.sh (--height-profile is now the default). Run from the bench directory; scored by trace_audit_run.sh and consistency_score.py.
 set -u
 R=$(cd "$(dirname "$0")/../../../.." && pwd)
 O="--odometry-params $R/bench_report/data/long_term_2026-11/rko_lio_nclt.yaml --backend-params $R/lidarslam/param/lidarslam_mid360_rko_graph_walking.yaml"
@@ -17,7 +17,7 @@ for entry in $SESSIONS; do
   [ -d lifelong_trace/run_$day ] && continue
   s=$(date +%s)
   python3 -I -m lidarslam live bags/$bag $O --out lifelong_trace/run_$day --store stores/lifelong_trace \
-    --relocalize-anywhere --detect-changes --height-profile > lifelong_trace/log_$day.txt 2>&1
+    --relocalize-anywhere --detect-changes > lifelong_trace/log_$day.txt 2>&1
   code=$?
   rm -rf lifelong_trace/run_$day/pointcloud_map lifelong_trace/run_$day/map.pcd
   python3 -I - "$day" "$code" "$(( $(date +%s) - s ))" <<'PY' >> lifelong_trace/chain.jsonl
