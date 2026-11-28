@@ -52,7 +52,27 @@
   docs/roadmap/active-slam-2026-11.md): the frozen configuration failed both holdouts. The
   second (`branches2`, `long_loop2`, 60 runs) gave a median paired ATE reduction of 7.9 % and
   3.7 % against `frontier_info`, below the 15 % the rule requires.
-
+- `tools/gaussian_splatting/grandtour_camera_bag.py`: a window of a GrandTour
+  mission with a camera, the LiDAR and `/tf_static` as a rosbag2 for
+  `lidarslam colmap`, and a tutorial in `lidarslam_core/README.md` from a
+  GrandTour rosbag to depth-supervised 3DGS (`lidarslam map`, `colmap
+  --depth-lidar-topic`, visloc-rs `gsplat_train --depth-prior`).
+- `python -m lidarslam colmap` (`lidarslam.gsplat_export`): a COLMAP scene for
+  3D Gaussian Splatting from any log with a camera (`Image` or
+  `CompressedImage` with its `CameraInfo`), posed by a lidar_slam run instead of
+  structure from motion: keyframe poses with odometry in between at each image
+  stamp, the camera on the base frame from `/tf_static` or `--extrinsic`, and
+  the run's map near the cameras as coloured initial points. On a KITTI raw
+  drive it gives the poses of `scripts/export_kitti_colmap.py` to within 4 µm.
+  Pillow comes with the `gsplat` extra.
+- `python -m lidarslam colmap --depth-lidar-topic T` also writes a LiDAR depth
+  per image (`OUT/depth_priors/<image name>.bin`) for depth-supervised 3DGS
+  (visloc-rs `gsplat_train --depth-prior`): the scan nearest each image stamp,
+  placed by the run's poses at its own stamp and seen from the camera at the
+  image's, nearest point per pixel, through the camera's distortion. The LiDAR
+  mount comes from `/tf_static` (`--lidar-frame`) or `--lidar-extrinsic`. On a
+  KITTI raw drive the depths match a projection through KITTI's own calibration
+  (median relative difference 0.07 %, the same 10 % pixel coverage).
 - Map review (`lidarslam.map_edits`): a person or an agent keeps or removes what
   a long-term map update changed. `python -m lidarslam store candidates` lists
   the changes as object-sized clusters (old points removed, new points held

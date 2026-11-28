@@ -1,0 +1,41 @@
+# #171 Refinement that helps on CON-1 / CON-2 — preregistered dev screen (2026-11-26, before any run)
+
+Background (bench_report/data/refine_stability_2026-11-17): the window plane BA made GrandTour
+CON-1/CON-2 worse than the pose graph (ATE 0.450 vs 0.384 m, 0.352 vs 0.291 m). The adjacency gate
+(RB, now the default) discards almost every window there, i.e. turns the refinement off; relative
+factors (RA, 0.05 m / 0.0087 rad) keep every window but were still 2-3 % worse than the pose graph.
+Question now: is there an RA setting where the refinement *improves* on the pose graph on CON-1/2?
+
+Inputs (rebuilt; the 11-17 inputs are gone with the old container): CON-1 2024-12-09-09-34-43,
+CON-2 2024-12-09-09-41-46, Hesai XT-32 + STIM320 converted without ROS (gt_to_bag.py, same
+messages as p1_grandtour_to_ros2.py), RKO-LIO params rko_lio_grandtour_hs_G15g_2026-10-28 with the
+mission extrinsics, deskewed scans at 0.1 m, `python -m lidarslam map --backend-input` (package
+built from develop 0ae54d2), backend params lidarslam/param/lidarslam.yaml. Each backend input is
+then replayed with `python -m lidarslam backend` per variant. References: the missions'
+prism_position (development references, opened before in the 11-17 screen). Held-out missions are
+not touched.
+
+Variants (backend parameters):
+  PG   pose graph: trajectory_optimized.tum of the DEF run (report only, the bar)
+  DEF  current default (gate on, no relative factors)
+  OFF  gate 0, no relative factors (the old R0)
+  RA1  gate 0, relative 0.01 m / 0.00175 rad
+  RA2  gate 0, relative 0.02 m / 0.0035 rad
+  RA5  gate 0, relative 0.05 m / 0.0087 rad (the 11-17 RA)
+  RA10 gate 0, relative 0.10 m / 0.0175 rad
+  RA2G gate on (default), relative 0.02 m / 0.0035 rad
+Each RA* and DEF also with submap_cloud_max_error_m 1e-6 (1 um sensitivity run).
+
+Metric: ATE = RMS position error of trajectory_refined.tum interpolated at the reference stamps,
+SE(3)-aligned (p1_grandtour_ate.py align_se3), as the 11-17 score.py. Sensitivity = max position
+difference of trajectory_refined between a run and its 1 um run.
+
+Decision (dev screen; the grid is chosen on CON-1/2 themselves, so a pass is a candidate, not a
+confirmed improvement):
+  V "helps" iff on BOTH CON-1 and CON-2: ATE(V) <= 0.98 x ATE(PG) and sensitivity <= 0.10 m.
+  Among those, the candidate is the lowest mean ATE(V)/ATE(PG). If none helps: report that the
+  refinement does not improve on the pose graph on these missions with relative factors, and that
+  the gate (current default) remains the right choice there.
+  No default changes in this step. A candidate would need a no-loss check on other datasets
+  (MapsHD calibration room, Stadtgarten, as in the 11-17 screen; not in this container) and the
+  maintainer's decision before any default changes.

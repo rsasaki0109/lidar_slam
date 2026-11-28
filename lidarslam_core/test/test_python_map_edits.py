@@ -52,7 +52,7 @@ def store(tmp_path: Path) -> Store:
         evidence.observe([.75 * (frame % 2), 0., 0.], rays)
     rows = np.asarray(evidence.snapshot(), dtype=np.int64)
     update = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update', store=path,
-                         initial_pose=prior, detect_changes=True)
+                         initial_pose=prior, detect_changes=True, height_profile=False)
     updated = Store.open(path)
     np.savez_compressed(updated.session_dir(update['store_session']) / EVIDENCE_FILE,
                         references=['0000'], rows=rows)

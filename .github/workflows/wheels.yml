@@ -234,7 +234,7 @@ jobs:
           python3 --version
           python3 -c "import sys; assert sys.version.startswith('${{ matrix.python }}.'), sys.version"
           python3 -m venv "${RUNNER_TEMP}/venv"
-          "${RUNNER_TEMP}/venv/bin/pip" install --only-binary=:all: --find-links wheelhouse lidarslam pytest
+          "${RUNNER_TEMP}/venv/bin/pip" install --only-binary=:all: --find-links wheelhouse "lidarslam[gsplat]" pytest
           cd "${RUNNER_TEMP}"
           "${RUNNER_TEMP}/venv/bin/python" -m pytest -q -p no:cacheprovider "${GITHUB_WORKSPACE}/lidarslam_core/test"
           "${RUNNER_TEMP}/venv/bin/lidarslam-map" --version

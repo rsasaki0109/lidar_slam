@@ -119,7 +119,7 @@ def test_store_startup_registration_and_island(tmp_path: Path, track_store: bool
 
     aligned = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'aligned',
                           store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
-                          track_store=track_store)
+                          track_store=track_store, height_profile=False)
     assert aligned['store_anchor_stamp_sec'] is not None
     store = Store.open(store_path)
     assert 'store_from_session' in store.sessions[1]
@@ -214,6 +214,10 @@ def test_change_evidence_removal_and_rollback(tmp_path: Path) -> None:
     rows = np.asarray(evidence.snapshot(), dtype=np.int64)
     assert np.any(rows[:, 8] == 2)
     assert np.all(rows[:, 6] <= 10)
+    # rows() is the sorted snapshot as one array, as MapChanges.rows() used to build it.
+    sorted_rows = evidence.rows()
+    assert sorted_rows.dtype == np.int64 and sorted_rows.shape == rows.shape
+    assert sorted_rows.tolist() == sorted(rows.tolist())
 
     update = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
                          store=store_path, initial_pose=prior, detect_changes=True)
@@ -333,3 +337,213 @@ def test_refined_visibility_counts_free_space_before_first_hit(tmp_path: Path) -
 
     assert store.rollback()['id'] == '0001'
     assert _bundle_files(path / 'export') == original
+
+
+def test_height_differences_compare_overlapping_paths() -> None:
+    from lidarslam.height_check import height_differences
+    reference = np.array([[x, 0., 0.] for x in np.arange(0., 10., .5)])
+    # The update follows the same line, 2 m higher after x = 5, and leaves it at x = 20.
+    update = np.array([[x, .1, 2. if x >= 5. else 0.] for x in np.arange(0., 25., 1.)])
+    differences = height_differences(reference, update)
+    assert len(differences) == 10  # x = 0..9; the reference ends at 9.5
+    assert np.allclose(differences, [0.] * 5 + [2.] * 5)
+
+
+def test_fit_tilt_recovers_a_tilted_session() -> None:
+    from lidarslam.height_check import fit_tilt, tilt_matrix
+    xs, ys = np.meshgrid(np.arange(0.0, 34.0, 1.0), np.arange(0.0, 34.0, 1.0))
+    reference = np.c_[xs.ravel(), ys.ravel(), np.zeros(xs.size)]
+    xs, ys = np.meshgrid(np.arange(0.5, 33.0, 3.0), np.arange(0.5, 33.0, 3.0))
+    flat = np.c_[xs.ravel(), ys.ravel(), np.zeros(xs.size)]
+    tilt = tilt_matrix(np.radians(0.5), np.radians(-1.0), -0.4, flat[0])
+    update = flat @ tilt[:3, :3].T + tilt[:3, 3]
+    fit = fit_tilt(reference, update)
+    assert fit['p95_abs_dz_before_m'] > 0.5
+    assert abs(fit['roll_deg'] + 0.5) <= 0.25 and abs(fit['pitch_deg'] - 1.0) <= 0.25
+    assert fit['p95_abs_dz_after_m'] < 0.1
+    corrected = update @ fit['correction'][:3, :3].T + fit['correction'][:3, 3]
+    assert np.abs(corrected[:, 2]).max() < 0.15
+    # Too little overlap: no fit.
+    assert fit_tilt(reference, update[:10]) is None
+
+
+def test_fit_profile_removes_drift_that_grows_inside_a_session() -> None:
+    from lidarslam.height_check import fit_profile
+    reference = np.array([[x, y, 0.] for x in np.arange(0., 200., .5) for y in (-.5, 0., .5)])
+    # A drive along the reference that climbs 3 m over its last 50 submaps.
+    xs = np.arange(0., 200., 1.)
+    update = np.c_[xs, np.zeros_like(xs), np.clip((xs - 150.) * .06, 0., None)]
+    fit = fit_profile(reference, update)
+    assert fit['p95_abs_dz_before_m'] > 2.
+    assert fit['p95_abs_dz_after_m'] < .3
+    assert abs(fit['offsets'][-1] - update[-1, 2]) < .5 and abs(fit['offsets'][0]) < .05
+    # Beyond the overlap the outer knot's offset holds; too little overlap: no fit.
+    longer = fit_profile(reference, np.r_[update, [[x, 50., 0.] for x in range(10)]])['offsets']
+    assert np.allclose(longer[-10:], longer[len(update) - 1])
+    assert fit_profile(reference, update[:10]) is None
+
+
+def test_height_profile_writes_lowered_submap_poses(tmp_path: Path, monkeypatch) -> None:
+    from lidarslam import height_check
+    log = tmp_path / 'log'
+    _write_log(log)
+    store_path = tmp_path / 'store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=store_path)
+    fits = []
+
+    def lowering(reference, update):
+        fits.append(len(update))
+        return {'knots': 1, 'compared_submaps': len(update), 'max_abs_offset_m': .2,
+                'p95_abs_dz_before_m': .2, 'p95_abs_dz_after_m': 0.,
+                'offsets': np.full(len(update), .2)}
+
+    monkeypatch.setattr(height_check, 'fit_profile', lowering)
+    monkeypatch.setattr(height_check, 'MIN_COMPARED', 10 ** 6)  # no tilt fit
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          height_profile=True)
+    entry = Store.open(store_path).sessions[1]
+    assert entry['store_height_profile']['max_abs_offset_m'] == .2
+    assert summary['store_height_profile']['corrected']
+    directory = store_path / 'sessions' / '0001'
+    lowered = np.load(directory / 'store_submap_poses.npy')
+    assert fits == [len(lowered)]
+    # The committed poses are the rigid ones 0.2 m lower.
+    (directory / 'store_submap_poses.npy').unlink()
+    rigid = height_check.submap_poses([directory], [entry['store_from_session']])[0]
+    assert np.allclose(lowered[:, 2, 3], rigid[:, 2, 3] - .2)
+    assert np.allclose(lowered[:, :2, 3], rigid[:, :2, 3])
+
+    # Turned off, no submap poses are written.
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          height_profile=False)
+    assert 'store_height_profile' not in summary
+    assert not (store_path / 'sessions' / '0002' / 'store_submap_poses.npy').exists()
+
+
+def test_change_evidence_is_traced_where_the_session_is_committed(tmp_path: Path,
+                                                                  monkeypatch) -> None:
+    import shutil
+
+    from lidarslam import height_check
+    from lidarslam.map_changes import EVIDENCE_FILE, MapChanges
+    log = tmp_path / 'log'
+    _write_log(log)
+    base = tmp_path / 'base_store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=base,
+                detect_changes=True)
+    traced = []
+    trace = MapChanges._trace
+
+    def recording(self, world_from_base, submap, sample, endpoints):
+        traced[-1].append(np.array(world_from_base))
+        trace(self, world_from_base, submap, sample, endpoints)
+
+    monkeypatch.setattr(MapChanges, '_trace', recording)
+
+    def update(name, **options):
+        store_path = tmp_path / name
+        shutil.copytree(base, store_path)
+        traced.append([])
+        live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / f'{name}_run',
+                    store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                    detect_changes=True, **options)
+        with np.load(store_path / 'sessions' / '0001' / EVIDENCE_FILE) as evidence:
+            return evidence['rows']
+
+    immediate = update('immediate', correct_tilt=False, height_profile=False)
+    assert traced[-1]
+    # Deferred, without a correction to apply, the evidence is that of the immediate trace.
+    monkeypatch.setattr(height_check, 'MIN_COMPARED', 10 ** 6)
+    deferred = update('deferred')
+    assert np.array_equal(deferred, immediate)
+    assert all(np.array_equal(a, b) for a, b in zip(traced[-1], traced[0]))
+
+    # With a correction, every scan is traced where the corrected session places it.
+    lowered = np.eye(4)
+    lowered[2, 3] = -0.6
+    monkeypatch.setattr(height_check, 'correct', lambda aligned, directory, transform: {
+        'corrected': True, 'roll_deg': 0.0, 'pitch_deg': 0.0, 'offset_m': 0.6,
+        'store_from_session': (lowered @ np.asarray(transform)).tolist()})
+    corrected = update('corrected', height_profile=False)
+    assert len(traced[-1]) == len(traced[0])
+    assert all(np.allclose(a, lowered @ b) for a, b in zip(traced[-1], traced[0]))
+    assert not np.array_equal(corrected, immediate)
+
+
+def test_tilt_correction_replaces_the_committed_transform(tmp_path: Path, monkeypatch) -> None:
+    from lidarslam import height_check
+    log = tmp_path / 'log'
+    _write_log(log)
+    store_path = tmp_path / 'store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=store_path)
+
+    lowered = np.eye(4)
+    lowered[2, 3] = -0.3
+    checked = []
+
+    def corrected(aligned, directory, transform):
+        return {'corrected': True, 'roll_deg': 0.0, 'pitch_deg': 0.0, 'offset_m': 0.3,
+                'store_from_session': (lowered @ np.asarray(transform)).tolist()}
+
+    def passing(aligned, directory, transform, limit):
+        checked.append(np.asarray(transform))
+        return {'compared_submaps': 30, 'limit_m': limit, 'refused': False}
+
+    monkeypatch.setattr(height_check, 'correct', corrected)
+    monkeypatch.setattr(height_check, 'check', passing)
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          height_profile=False)
+    entry = Store.open(store_path).sessions[1]
+    anchor = np.asarray(entry['store_from_session_uncorrected'])
+    assert np.allclose(entry['store_from_session'], lowered @ anchor)
+    assert np.allclose(summary['store_from_session'], entry['store_from_session'])
+    assert summary['store_tilt_correction']['offset_m'] == 0.3
+    assert len(checked) == 1 and np.allclose(checked[0], entry['store_from_session'])
+    session = json.loads((store_path / 'sessions' / '0001' / 'session.json').read_text())
+    assert np.allclose(session['store_from_session'], entry['store_from_session'])
+
+    # Turned off, the anchor transform is committed.
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2', store=store_path,
+                initial_pose=[0.05, 0, 0, 0, 0, 0, 1], correct_tilt=False, height_profile=False)
+    entry = Store.open(store_path).sessions[2]
+    assert 'store_from_session_uncorrected' not in entry
+    assert np.allclose(np.asarray(entry['store_from_session'])[:3, 3], anchor[:3, 3])
+
+
+def test_height_check_keeps_a_drifting_session_out(tmp_path: Path, monkeypatch) -> None:
+    from lidarslam import height_check
+    log = tmp_path / 'log'
+    _write_log(log)
+    store_path = tmp_path / 'store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=store_path)
+    export = _bundle_files(store_path / 'export')
+
+    checked = []
+
+    def drifting(aligned, directory, transform, limit):
+        checked.append((len(aligned), Path(directory).name, limit))
+        return {'compared_submaps': 30, 'limit_m': limit, 'refused': True,
+                'median_dz_m': 1.0, 'p95_abs_dz_m': 3.0}
+
+    monkeypatch.setattr(height_check, 'check', drifting)
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          detect_changes=True)
+    assert checked == [(1, '0001', live.MAX_HEIGHT_DRIFT_M)]
+    assert '3.0 m height difference' in summary['store_refused']
+    assert 'store_session' not in summary
+    store = Store.open(store_path)
+    assert len(store.sessions) == 1
+    assert (store.session_dir('0001') / 'submaps.bin').is_file()  # written, not committed
+    assert (tmp_path / 'update' / 'odometry_tum.txt').stat().st_size > 0
+    assert _bundle_files(store_path / 'export') == export
+
+    # Turned off, the same update joins the store.
+    summary = live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'update2',
+                          store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                          detect_changes=True, max_height_drift=0)
+    assert len(checked) == 1 and 'store_refused' not in summary
+    assert len(Store.open(store_path).sessions) == 2

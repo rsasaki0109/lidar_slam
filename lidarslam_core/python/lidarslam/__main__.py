@@ -15,6 +15,12 @@
                                         a long-term map store (lidarslam.store): list its
                                         sessions, export its Autoware bundle, take the latest
                                         session off the map
+  colmap <log> --run DIR --image-topic T --out OUT
+                                        a COLMAP scene for 3D Gaussian Splatting: the log's
+                                        camera posed by a lidar_slam run, its map as the
+                                        initial points, --depth-lidar-topic for a LiDAR
+                                        depth per image (lidarslam.gsplat_export; needs
+                                        pip install "lidarslam[gsplat]")
   mcp STORE [--propose-only] [--author agent:NAME]
                                         an MCP server (stdio) for an agent to review the
                                         store's changes (lidarslam.mcp_server; needs
@@ -134,6 +140,16 @@ def main(argv: list[str] | None = None) -> int:
                       help='trace anchored keyframe scans and remove stale voxels from store exports')
     live.add_argument('--filter-new-points', action='store_true',
                       help='detect changes and filter new points without repeated scan support')
+    live.add_argument('--max-height-drift', type=float, default=1.5, metavar='M',
+                      help='do not add an anchored session whose submaps differ in height from '
+                           'the stored sessions by more than M m (95th percentile where the '
+                           'paths overlap; 0 turns the check off)')
+    live.add_argument('--no-tilt-correction', dest='correct_tilt', action='store_false',
+                      help='add an anchored session at its anchor transform, without fitting its '
+                           'roll, pitch and height to the stored sessions where the paths overlap')
+    live.add_argument('--no-height-profile', dest='height_profile', action='store_false',
+                      help='do not lower the submaps of an anchored session by a height offset '
+                           'fitted along the session to the stored sessions')
     live.add_argument('--refine-visibility', action='store_true',
                       help='detect changes and filter new points with complete ray evidence '
                            '(recommended change mode; experimental)')
@@ -172,6 +188,40 @@ def main(argv: list[str] | None = None) -> int:
     store.add_argument('--file', help='apply-edit: the edit file (JSON)')
     store.add_argument('--force', action='store_true',
                        help='apply-edit: apply an edit made on an older state of the store')
+    colmap = sub.add_parser(
+        'colmap', help='COLMAP scene for 3D Gaussian Splatting from a camera log and a run')
+    colmap.add_argument('log', help='rosbag2 directory or ROS 1 .bag file with the camera')
+    colmap.add_argument('--run', required=True,
+                        help='output of map/live on the same log (trajectory_optimized.tum, '
+                             'odometry_tum.txt, map.pcd)')
+    colmap.add_argument('--image-topic', required=True,
+                        help='sensor_msgs/msg/Image or CompressedImage topic')
+    colmap.add_argument('--out', required=True, help='output directory')
+    colmap.add_argument('--camera-info-topic',
+                        help='CameraInfo topic (default: the image topic\'s camera_info)')
+    colmap.add_argument('--base-frame', default='base_link',
+                        help='frame the run tracks (the odometry base_frame)')
+    colmap.add_argument('--camera-frame',
+                        help='camera optical frame in /tf_static (default: CameraInfo frame_id)')
+    colmap.add_argument('--extrinsic', type=float, nargs=7,
+                        metavar=('X', 'Y', 'Z', 'QX', 'QY', 'QZ', 'QW'),
+                        help='camera optical frame in the base frame, instead of /tf_static')
+    colmap.add_argument('--every', type=int, default=1, help='keep every N-th image')
+    colmap.add_argument('--scale', type=float, default=1.0, help='resize images by this factor')
+    colmap.add_argument('--points', type=int, default=400000,
+                        help='at most this many initial points')
+    colmap.add_argument('--max-depth', type=float, default=40.0,
+                        help='initial points within this range of a camera')
+    colmap.add_argument('--depth-lidar-topic',
+                        help='PointCloud2 topic: also write OUT/depth_priors/<image>.bin, the '
+                             'nearest scan projected into each image (depth-supervised 3DGS)')
+    colmap.add_argument('--lidar-frame',
+                        help='LiDAR frame in /tf_static (default: the scans\' frame_id)')
+    colmap.add_argument('--lidar-extrinsic', type=float, nargs=7,
+                        metavar=('X', 'Y', 'Z', 'QX', 'QY', 'QZ', 'QW'),
+                        help='LiDAR frame in the base frame, instead of /tf_static')
+    colmap.add_argument('--depth-max', type=float, default=80.0,
+                        help='LiDAR depths beyond this are dropped (m)')
     join = sub.add_parser(
         'join', help='multi-session join of backend inputs and their offline runs (no ROS 2)')
     join.add_argument('--params', action='append', default=[],
@@ -231,8 +281,26 @@ def main(argv: list[str] | None = None) -> int:
                                      detect_changes=args.detect_changes,
                                      filter_new_points=args.filter_new_points,
                                      start_near_first_submap=args.start_near_first_submap,
-                                     refine_visibility=args.refine_visibility)
+                                     refine_visibility=args.refine_visibility,
+                                     max_height_drift=args.max_height_drift,
+                                     correct_tilt=args.correct_tilt,
+                                     height_profile=args.height_profile)
         print(json.dumps(summary, indent=2))
+    elif args.command == 'colmap':
+        from lidarslam.gsplat_export import export
+        summary = export(args.log, args.run, args.out, args.image_topic,
+                         camera_info_topic=args.camera_info_topic, base_frame=args.base_frame,
+                         camera_frame=args.camera_frame, extrinsic=args.extrinsic,
+                         every=args.every, scale=args.scale, points=args.points,
+                         max_depth=args.max_depth, depth_lidar_topic=args.depth_lidar_topic,
+                         lidar_frame=args.lidar_frame, lidar_extrinsic=args.lidar_extrinsic,
+                         depth_max=args.depth_max)
+        report = {'images': summary.images, 'points': summary.points,
+                  'camera': summary.camera.line(), 'out': str(summary.out)}
+        if args.depth_lidar_topic:
+            report['depth_priors'] = summary.depth_priors
+            report['depth_coverage'] = round(summary.depth_coverage, 4)
+        print(json.dumps(report, indent=2))
     elif args.command == 'mcp':
         from lidarslam.mcp_server import build_server
         build_server(args.store, args.author, args.propose_only, args.min_voxels).run('stdio')

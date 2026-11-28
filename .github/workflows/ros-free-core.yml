@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           python3 -m venv "${RUNNER_TEMP}/venv"
-          "${RUNNER_TEMP}/venv/bin/pip" install ./lidarslam_core pytest
+          "${RUNNER_TEMP}/venv/bin/pip" install "./lidarslam_core[gsplat]" pytest
           cd "${RUNNER_TEMP}"
           "${RUNNER_TEMP}/venv/bin/python" -m pytest -q -p no:cacheprovider "${GITHUB_WORKSPACE}/lidarslam_core/test"
           "${RUNNER_TEMP}/venv/bin/python" -m lidarslam --help

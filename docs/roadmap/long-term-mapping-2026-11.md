@@ -1711,3 +1711,665 @@ peak instead (two copies at once: 7.3 and 7.4 GB).
 
 The outputs are byte-identical again (the rows are sorted when they are written, so the new
 order of the states does not show). The process peak is now the export of the merged map.
+
+#### Evidence rows sorted in C++ (development, 2026-11-26)
+
+The memory figures above sampled the resident size every 0.2 s from a Python thread, which
+misses short peaks while native code holds the interpreter. Read from the kernel's high-water
+mark (`VmHWM`, reset with `/proc/self/clear_refs` between phases) instead, the 2013-02-23 session
+peaked at 7.9 GB, at its end: `MapChanges.rows()` turned each of the 14.7 million evidence rows
+into a Python list of nine ints, sorted the lists, then made an array of them. The rows now come
+sorted from C++ as one int64 array (`MapChangeEvidence.rows()`, the same order as Python sorts
+the lists).
+
+| 2013-02-23 again (high-water mark) | Session | Store entry | Export |
+| --- | ---: | ---: | ---: |
+| Compact change evidence | 7.9 GB | 5.1 GB | 5.1 GB |
+| and rows sorted in C++ | 5.1 GB | 5.1 GB | 5.0 GB |
+
+The outputs are byte-identical again. The peak is now the change evidence held during the session
+(about 4 GB of it) and, about as high, the export.
+
+### Vertical drift in the lifelong store (development, 2026-11-26)
+
+An audit of the lifelong NCLT store (`lifelong/transient_audit.py`, descriptive) found 4.1% of
+the exported points, in cells that at least five sessions passed within 15 m, seen by one
+session alone; at 0.3–2.2 m above the ground, where people and cars are, 2.1%. Most of it came
+from five sessions whose map sits above or below the others'. Their committed submap positions,
+compared with those of the other sessions within 1.5 m (XY), drift in height along the session:
+2012-03-31 goes from −0.8 m in its first quarter to +3.8 m in its last, 2012-11-16 from −0.1 m
+to −1.3 m, while the steadiest sessions stay within ±0.2 m. A session is placed by one rigid
+transform from its anchor, so drift inside it reaches the map. `--track-store` and
+`--track-shared-surfaces` add store factors along the session but were only tried on LUH.
+
+#### Check of store tracking against vertical drift (preregistered 2026-11-26, before the runs)
+
+- **Update:** 2012-03-31 (`bags/2012-03-31_live2in`, development), appended to the lifelong
+  store as it was before it (its first seven sessions, 2012-01-15 to 2012-03-25).
+- **Arms:** baseline, the lifelong chain's own run (`--relocalize-anywhere --detect-changes`,
+  session 0007 of the store); T, the same plus `--track-store`; S, the same plus
+  `--track-shared-surfaces`.
+- **Measure, no ground truth:** for each committed submap of the update with at least three
+  submap positions of the first seven sessions within 1.5 m (XY), dz is its height minus their
+  median height. Reported: the number of such submaps, the median dz, the 95th percentile of
+  |dz| and the median dz of the last quarter of them in session order.
+- **Rule:** an arm **reduces the drift** when it anchors and commits, keeps at least 80% of the
+  baseline's number of compared submaps, and its 95th percentile of |dz| is at most half the
+  baseline's. If both do, the one with the lower 95th percentile is preferred. The result is
+  reported whatever it is; it does not by itself change the chain's defaults.
+
+#### Results of the store-tracking check (2026-11-26)
+
+| Arm | Store factors | Compared submaps | Median dz | 95th pct. of \|dz\| | Last quarter | Rule |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| baseline (lifelong session 0007) | — | 185 | −0.41 m | 3.44 m | +2.57 m | — |
+| T, `--track-store` | 10 | 213 | −0.09 m | 5.12 m | +4.25 m | fails |
+| S, `--track-shared-surfaces` | 73 | 220 | −0.02 m | 9.16 m | +7.70 m | fails |
+
+Neither arm reduces the drift; both raise it at the end of the session. S also peaked at
+13.9 GB during the session: the shared-surface target still loads every stored keyframe window.
+
+The drift is already in the odometry. The update's odometry, placed by its store transform,
+stays about 0.7 m below the earlier sessions' submaps until about 320 s, then climbs to +5 m
+over the last 100 s, where only three or four earlier submap positions lie within 1.5 m; the
+committed submaps follow it (first and last heights −1.05 and 7.55 m against −1.05 and 7.53 m
+in the odometry). Store factors along the path have little to hold on to there.
+
+#### Keeping a drifting session out of the store (development, 2026-11-26)
+
+Until the drift itself is corrected, `live` now checks an anchored session before it joins the
+store (`lidarslam.height_check`, `--max-height-drift M`, default 1.5 m, 0 turns it off). Its
+written submaps, placed as the export would place them, are compared with the stored sessions'
+submap positions: for each submap with at least three stored positions within 1.5 m (XY), the
+height difference to their median. When at least 20 submaps overlap and the 95th percentile of
+|difference| exceeds the limit, the session is not committed (`Store.add_session(...,
+before_commit=...)` raising `SessionRefused`): its directory stays uncommitted, its outputs stay
+in `--out`, the export is unchanged and the summary gives `store_refused` and
+`store_height_check`.
+
+The limit was set on the lifelong chain itself, by the 95th percentile of each session against
+the sessions before it (development):
+
+| Sessions | 95th percentile of \|dz\| |
+| --- | --- |
+| 2012-01-22 … 02-18, 06-15 … 08-20, 10-28, 11-04, 12-01, 2013-02-23 | 0.04–0.66 m |
+| 2012-03-17, 03-25, 05-26, 09-28, 11-17 | 0.82–1.18 m |
+| 2012-05-11 | 1.44 m |
+| 2012-11-16 | 1.62 m (refused) |
+| 2012-03-31 | 3.44 m (refused) |
+
+The check takes 1–2.5 s on this store. It keeps a drifted session from spoiling the map; it does
+not repair the session.
+
+#### Odometry settings against the 2012-03-31 climb (exploratory, development, 2026-11-26)
+
+`python -m lidarslam odometry` on `bags/2012-03-31_live2in` with one RKO-LIO setting changed at a
+time, placed by the lifelong store transform of session 0007, against the first seven sessions'
+submaps within 1.5 m (every 5th pose; no ground truth):
+
+| Setting | 95th pct. \|dz\| | Median dz after 320 s | End minus start height |
+| --- | ---: | ---: | ---: |
+| `rko_lio_nclt.yaml` | 3.44 m | +1.98 m | +8.58 m |
+| `inertial_window: true` | 5.91 m | −4.19 m | −6.88 m |
+| `degeneracy_aware_solve: true` | 2.77 m | +1.38 m | +5.31 m |
+| `icp_levenberg_marquardt: true` | 3.06 m | +2.42 m | +5.81 m |
+| `voxel_size: 0.3` | 5.07 m | +3.57 m | +9.93 m |
+| `max_range: 120` | 2.19 m | +1.24 m | +6.96 m |
+
+Every setting drifts by metres in the same stretch, with signs and sizes that change with the
+setting: height is barely observed there, so no single setting fixes it. One session only; no
+setting was changed.
+
+What the stretch looks like (every 10th scan in the base frame): until 200 s the scans reach
+15–22 m and 14–43% of their points lie within 0.3 m of the ground; from 200 to 320 s the median
+range drops to 3.3 m, with 6% near the ground and 2% above 3 m (a confined passage); after
+320 s the view opens again. The odometry pitch changes by about 16 degrees across the passage
+(median −1.0 degree before 320 s, −17.1 degrees from 320 to 370 s) and the path climbs from
+there: an attitude error picked up in the passage, not a slow drift in height.
+
+The bag starts while moving (RKO-LIO: "Moving start ... IMU biases left at zero"), and its
+world frame comes from 5 IMU samples. Re-estimating gravity from the first seconds of motion
+(`moving_start_gravity_window_sec`, used on GrandTour) finds it 15.3–15.4 degrees from that
+initial world z. With the window set to 5 s the drift is unchanged (95th percentile 3.40 m); with
+10 s it falls to 2.20 m (last part +1.40 m against +1.98 m). One session; no setting was changed.
+
+#### Check of moving-start gravity on every lifelong update (preregistered 2026-11-26, before the runs)
+
+- **Sessions:** the 19 updates of the lifelong chain (`lifelong_chain.sh`, 2012-01-22 to
+  2013-02-23), each from the bag the chain used.
+- **Arms:** `python -m lidarslam odometry` with `rko_lio_nclt.yaml` (A) and with
+  `moving_start_gravity_window_sec: 10.0` added (G).
+- **Measure, no ground truth:** each arm's odometry is placed by the store transform the session
+  committed in the lifelong store, and every 5th pose with at least three submap positions of the
+  other 19 sessions within 1.5 m (XY) gives dz, its height minus their median height. Per session:
+  the 95th percentile of |dz|.
+- **Rule:** G **reduces the height drift** when, over the 19 sessions, the median of the per-session
+  95th percentile falls by at least 20% from A, no more sessions are above 1.5 m than with A, and no
+  session rises by more than 0.5 m. Then `rko_lio_nclt.yaml` takes the window; otherwise it stays.
+  The result is reported whatever it is.
+
+#### Results of the moving-start gravity check (2026-11-26)
+
+All 19 updates start while moving; with the 10 s window RKO-LIO re-estimated gravity 1.1–15.3
+degrees from the initial world z (median 4.8). Per-session 95th percentile of |dz| (m):
+
+| Update | A | G | | Update | A | G |
+| --- | ---: | ---: | --- | --- | ---: | ---: |
+| 2012-01-22 | 1.10 | 1.38 | | 2012-08-04 | 0.60 | 0.61 |
+| 2012-02-02 | 0.76 | 0.79 | | 2012-08-20 | 2.34 | 1.25 |
+| 2012-02-05 | 2.79 | 1.63 | | 2012-09-28 | 0.96 | 0.94 |
+| 2012-02-18 | 0.78 | 1.09 | | 2012-10-28 | 0.45 | 0.46 |
+| 2012-03-17 | 0.91 | 1.11 | | 2012-11-04 | 0.80 | 0.86 |
+| 2012-03-25 | 1.66 | 1.61 | | 2012-11-16 | 1.65 | 0.48 |
+| 2012-03-31 | 4.24 | 2.72 | | 2012-11-17 | 3.29 | 3.52 |
+| 2012-05-11 | 3.18 | 2.55 | | 2012-12-01 | 2.16 | 1.03 |
+| 2012-05-26 | 0.64 | 0.68 | | 2013-02-23 | 0.66 | 0.63 |
+| 2012-06-15 | 3.08 | 0.78 | | | | |
+
+| Over 19 updates | A | G | Rule |
+| --- | ---: | ---: | --- |
+| median of the 95th percentiles | 1.10 m | 1.03 m (−6.6%) | needs −20%: **fails** |
+| sessions above 1.5 m | 9 | 5 | met |
+| largest rise | — | +0.31 m | met (≤ 0.5 m) |
+
+Under the preregistered rule G does **not** reduce the height drift, and `rko_lio_nclt.yaml`
+stays as it is. What the rule did not capture: the window mostly acts on the worst sessions
+(2012-06-15 3.08 → 0.78 m, 2012-11-16 1.65 → 0.48 m, 2012-02-05, 08-20 and 12-01 by about 1.1 m
+each) while the well-behaved ones move by a few tenths either way, so the median barely changes.
+A rule on the tail would have to be set before another run on other sessions.
+
+#### Second check of moving-start gravity, on the gate area (preregistered 2026-11-26, before the runs)
+
+The first check's rule looked at the median and missed the tail. Sessions not used there: the
+gate area of the Scan Context check (base `bags/gate_base`, store `stores/gate_store`) and its
+four updates that anchored (`2012-02-04_gatein`, `2012-02-19_gatein`, `2013-01-10_gatein`,
+`2013-04-05_gatein`, each with the store transform it committed in `stores/any_gate_DAY_in`).
+
+- **Arms:** as before, A (`rko_lio_nclt.yaml`) and G (`moving_start_gravity_window_sec: 10.0`).
+- **Measure:** as before (`odometry_height.py`), against the base session's submaps only.
+- **Rule:** G **reduces the height drift** when its 95th percentile of |dz| is lower than A's in at
+  least three of the four updates and no update rises by more than 0.5 m. Then
+  `rko_lio_nclt.yaml` takes the window. Four sessions against one reference make this a small
+  check; the result is reported whatever it is.
+
+#### Results of the second check (2026-11-26)
+
+| Update | Gravity re-estimated | Compared poses (A / G) | A | G |
+| --- | ---: | ---: | ---: | ---: |
+| 2012-02-04 | 1.4 deg | 41 / 38 | 0.28 m | 0.96 m |
+| 2012-02-19 | 6.0 deg | 26 / 27 | 0.37 m | 0.42 m |
+| 2013-01-10 | 5.4 deg | 0 / 0 | — | — |
+| 2013-04-05 | 5.3 deg | 0 / 0 | — | — |
+
+The two 2013 updates place no odometry pose within 1.5 m of three base submaps, so only two
+updates are measured; G is higher on both, by 0.68 m on 2012-02-04. G **fails** the rule, and
+`rko_lio_nclt.yaml` keeps no gravity window. Together with the first check: the window helps
+sessions that start far from level but can cost several tenths of a metre on sessions that start
+near it, so it is not a setting to turn on for every session.
+
+### Transient objects in the lifelong store (development, 2026-11-27)
+
+Without the six sessions whose height drifted, the cells that one session alone saw hold about
+82,000 points at 0.3–2.2 m above the ground (0.3% of the store's points). Grouped into connected
+0.25 m columns of at least 30 points: 98 person-sized groups along the paths, 6 car-sized ones,
+and 116 larger ones, most of them parallel strips in one parking area (x 15–95 m, y 45–135 m)
+seen by 2012-12-01, 2013-02-23 and 2012-02-05. The chain ran with `--detect-changes` only,
+which removes old points a later session sees through; nothing removes a session's own
+briefly seen points. `--refine-visibility` masks those (the change mode the NCLT holdout check
+preferred, above).
+
+#### Check of `--refine-visibility` on the lifelong store (preregistered 2026-11-27, before the runs)
+
+- **Updates:** 2012-12-01 and 2013-02-23 (the two sessions with the most parking-area points),
+  each appended again with `--relocalize-anywhere --refine-visibility` to the lifelong store as it
+  was before it (its first 18 and 19 sessions), against the chain's own commit of the same session
+  (`--detect-changes`).
+- **Cells:** the lifelong store's exported points in 0.75 m cells, each with the number of
+  sessions that have points in it; heights above the lowest exported point of the 2 m column.
+- **T (transients removed):** of the update's points at 0.3–2.2 m in cells only the update has
+  points in, the share the rerun's export leaves out.
+- **S (structure kept):** of the update's points in cells at least three sessions have points in,
+  the share the rerun's export keeps.
+- **Rule:** `--refine-visibility` **cleans the lifelong map** when, for both updates, T ≥ 50% and
+  S ≥ 95%. Then the lifelong chain takes it. The result is reported whatever it is.
+
+#### Results of the refine-visibility check (2026-11-27)
+
+| Update | Points | Masked new voxels | T (transients removed) | S (structure kept) | Rule |
+| --- | ---: | ---: | ---: | ---: | --- |
+| chain's commit of 2012-12-01 (`--detect-changes`) | 2,077,962 | — | 0.0% | 100.0% | — |
+| 2012-12-01, `--refine-visibility` | 2,077,962 | 606,568 | 47.1% | 64.6% | fails |
+| 2013-02-23, `--refine-visibility` | 2,172,025 | 497,305 | 40.2% | 74.3% | fails |
+
+`--refine-visibility` does **not** clean the lifelong map under the preregistered rule: it removes
+less than half of the single-session points at people and car height, and it drops a quarter to
+a third of the update's points in cells that three or more sessions confirm. The lifelong chain
+keeps `--detect-changes`.
+
+Post hoc (not preregistered): most of what S counts as lost is redundant. Of the 0.75 m cells the
+update has points in, 96.2% and 96.1% still hold a kept point of some session after the rerun
+(98.9% and 100% with the chain's commit), and the store's exported cells fall by 0.2% and 1.2%.
+The filter judges a voxel only by the update's own scans, so it masks structure the store
+already confirms and keeps transients the update saw from several scans (a parked car seen
+while walking past). A filter for a long-term store would have to weigh the stored sessions'
+support as well. Peak memory stayed at 5.5–5.8 GB (high-water mark).
+
+### Most of the height drift is the anchor's tilt (development, 2026-11-27)
+
+Re-read of the 2012-03-31 attitude: the base z axis stays 15.6–17.6 degrees from the odometry
+world z over the whole session (the moving start's world frame is tilted); the "pitch" change
+reported above was the Euler decomposition mixing in the heading, not an attitude jump.
+
+One rigid correction per session, a tilt (roll, pitch, on a 0.25 degree grid within ±4 degrees,
+about its first submap) and a height offset, fitted to minimise the 95th percentile of |dz| of
+its committed submaps against the sessions before it (descriptive, in-sample):
+
+| Update | 95th pct. \|dz\| | after the fit | Tilt (roll, pitch) |
+| --- | ---: | ---: | --- |
+| 2012-02-02 | 0.44 m | 0.15 m | 0, 0 |
+| 2012-03-17 | 1.11 m | 0.25 m | −0.25, +0.50 |
+| 2012-03-25 | 1.18 m | 0.44 m | 0, +0.50 |
+| 2012-03-31 | 3.44 m | 1.13 m | +0.50, +1.75 |
+| 2012-05-11 | 1.44 m | 0.91 m | +0.75, +0.25 |
+| 2012-05-26 | 1.18 m | 0.63 m | +0.25, −0.50 |
+| 2012-09-28 | 0.82 m | 0.36 m | +0.25, +0.25 |
+| 2012-11-16 | 1.62 m | 0.57 m | 0, −0.75 |
+| 2012-11-17 | 1.18 m | 0.48 m | −0.50, −0.25 |
+| the other nine | 0.32–0.66 m | 0.23–0.55 m | within 0.25 |
+
+A tilt of 0.25–1.75 degrees with a height offset accounts for most of the drift: the anchor is
+registered over the first few keyframes, where tilt is weakly constrained, and 1.75 degrees
+amount to 3 m over 100 m. Correcting the store transform's roll, pitch and height from the
+overlap of the whole session before it is committed is the candidate fix; an in-sample fit
+flatters it, so its check has to score the correction on data the fit did not use.
+
+#### Out-of-sample check of a tilt and height correction (preregistered 2026-11-27, before the run)
+
+- **Correction (C):** for update k of the lifelong store with at least 20 committed submaps
+  within reach of sessions 0..k−1 (the `height_check` comparison), a rotation about its first
+  submap position (roll and pitch on a 0.25 degree grid within ±4 degrees, keeping at least 80%
+  of the compared submaps) followed by a height offset, chosen to minimise the 95th percentile of
+  |dz − median dz| against sessions 0..k−1, the offset being that median. Sessions 0..k−1 only.
+- **Score, data the fit did not use:** the update's submap positions, before (A) and after (C) the
+  correction, against the later sessions k+1..19 (`height_differences`, 1.5 m, three neighbours):
+  the 95th percentile of |dz| per update, for updates with at least 20 compared submaps.
+- **Rule:** the correction **reduces the drift** when the median of these per-update values falls
+  by at least 20% from A to C, no more updates are above 1.5 m with C than with A, and no update
+  rises by more than 0.3 m. Then a pre-commit correction is implemented in `live`. Reported
+  whatever it is. The later sessions carry their own drift, which both arms share.
+
+#### Results of the out-of-sample check (2026-11-27)
+
+Sixteen updates have at least 20 submaps within reach of later sessions (the last two have
+none, 2012-01-22 too little overlap to fit). Per-update 95th percentile of |dz| against the later
+sessions (`tilt_check.jsonl`):
+
+| Over 16 updates | A (as committed) | C (corrected) | Rule |
+| --- | ---: | ---: | --- |
+| median | 0.78 m | 0.74 m (−4.9%) | needs −20%: **fails** |
+| updates above 1.5 m | 3 | 1 | met |
+| largest rise | — | +0.28 m (2012-03-17) | met (≤ 0.3 m) |
+
+The correction does **not** pass, and nothing is implemented. As with moving-start gravity, it
+acts on the worst sessions (2012-03-31 3.99 → 1.80 m, 2012-11-16 1.78 → 0.75 m, 2012-11-17
+1.41 → 0.75 m, 2012-09-28 1.08 → 0.39 m) while the median sits on sessions whose later
+comparison is bounded by the later sessions' own drift (0.6–0.8 m). Two preregistered rules on
+the median have now failed for corrections that mostly act on the tail; a rule on the tail has to
+be set before a run on sessions this chain has not used.
+
+#### Check of the tilt and height correction on sessions the chain has not used (preregistered 2026-11-27, before any data of these sessions is read)
+
+- **Updates:** the seven NCLT sessions outside the lifelong chain (2012-01-08, 02-04, 02-12, 02-19,
+  04-29, 2013-01-10, 2013-04-05). For each, its 1 Hz ground-truth positions are read only to pick
+  its longest pass through the lifelong square (x −180…−30 m, y −585…−435 m, ±10 s, as for
+  `windows.json`); the pass is converted (`convert_nclt_session.py --point-step 6`) and appended to
+  its own copy of the 20-session lifelong store with `--relocalize-anywhere --detect-changes
+  --max-height-drift 0`. Ground truth is not used to score.
+- **Correction (C):** as in the out-of-sample check above, fitted against the store's even
+  sessions (0, 2, …, 18) only.
+- **Score:** the update's committed submap positions, as committed (A) and corrected (C), against
+  the odd sessions (1, 3, …, 19): the 95th percentile of |dz| (1.5 m, three neighbours), for
+  updates with at least 20 compared submaps.
+- **Rule (on the tail):** C **reduces the drift** when fewer scored updates are above 1.0 m with C
+  than with A and no scored update rises by more than 0.3 m. With fewer than four scored updates
+  the check is inconclusive. If C passes, a pre-commit correction is implemented in `live`.
+  Reported whatever it is.
+
+#### Results of the check on sessions the chain has not used (2026-11-27)
+
+Six of the seven sessions pass through the square (2013-01-10 does not); all six were appended
+(`live` exit 0). 2012-04-29 passes for 23 s and has 14 submaps within reach of the even sessions,
+too few to fit, so five updates are scored (`lifelong/fresh_tilt_score.jsonl`). The 95th
+percentile of |dz| against the odd sessions:
+
+| Update | Compared | A (as committed) | C (corrected) | Tilt (roll, pitch), offset |
+| --- | ---: | ---: | ---: | --- |
+| 2012-01-08 | 246 | 2.51 m | 2.12 m | +0.25, 0; +0.24 m |
+| 2012-02-04 | 283 | 0.59 m | 0.70 m | 0, 0; +0.11 m |
+| 2012-02-12 | 225 | 2.36 m | 0.84 m | +0.25, +0.50; +0.92 m |
+| 2012-02-19 | 238 | 1.43 m | 0.79 m | −0.50, −0.25; −0.37 m |
+| 2013-04-05 | 199 | 0.52 m | 0.56 m | +0.25, 0; +0.19 m |
+
+| Rule | A | C | |
+| --- | ---: | ---: | --- |
+| scored updates above 1.0 m | 3 | 1 | fewer: met |
+| largest rise | — | +0.11 m (2012-02-04) | ≤ 0.3 m: met |
+| scored updates | 5 | | ≥ 4: conclusive |
+
+The correction **reduces the drift** on sessions the chain has not used, and by the preregistered
+rule a pre-commit correction is implemented in `live`. 2012-01-08 stays above 1.0 m: its drift is
+not a rigid tilt of the whole session. The two sessions that were already flat rise by 0.04 and
+0.11 m, the cost of fitting against half the store.
+
+#### Tilt correction before the commit (`live`, on by default)
+
+`live` now fits the correction before an anchored session is committed
+(`lidarslam.height_check.correct`): the same grid fit as in the check, against every stored
+session, applied to `store_from_session` (the anchor transform is kept as
+`store_from_session_uncorrected`, the fit as `store_tilt_correction`). The height check then runs
+on the corrected transform. Sessions with fewer than 20 overlapping submaps, and store tracking
+(whose submap poses are stored as tracked), keep the anchor transform; `--no-tilt-correction`
+turns it off. The fit takes 14–16 s on a 20-session NCLT store. On the fresh stores it brings
+2012-02-12 from 2.48 to 0.58 m and 2012-02-04 from 0.41 to 0.30 m (in-sample, against all twenty
+sessions). The change evidence is still traced with the anchor transform and is not traced again
+after the correction, which moves a session by up to about a metre at its far end (2012-02-12).
+
+#### Re-running the two refused sessions with the tilt correction (preregistered 2026-11-27, before the run)
+
+- **Updates:** 2012-03-31 (`bags/2012-03-31_live2in`) and 2012-11-16 (`bags/2012-11-16`), the
+  two sessions the height check refuses, each appended with `live --relocalize-anywhere
+  --detect-changes` (tilt correction and the 1.5 m height check on, the defaults) to a copy of the
+  lifelong store holding only the sessions before it (0–6 and 0–15).
+- **Rule:** the correction **admits** a session when it is committed (not refused) with a 95th
+  percentile of |dz| against the sessions before it of at most 1.5 m after the correction. Its
+  95th percentile against the later lifelong sessions (k+1..19), anchor transform (A) and
+  corrected (C), is reported alongside; C should not be above A there. Reported whatever it is.
+
+#### Results of the re-run of the refused sessions (2026-11-27)
+
+Both runs exit 0, and both anchor where the chain anchored them: before the correction their
+95th percentiles (3.44 and 1.62 m) are the chain's. `lifelong/refused_rerun_score.jsonl`:
+
+| Update | Before the correction | After (height check) | Tilt (roll, pitch), offset | Later sessions, A → C | Committed |
+| --- | ---: | ---: | --- | ---: | --- |
+| 2012-03-31 | 3.44 m | 1.13 m | +0.50, +1.75; −0.28 m | 3.99 → 1.80 m | yes |
+| 2012-11-16 | 1.62 m | 0.57 m | 0, −0.75; −0.87 m | 1.78 → 0.75 m | yes |
+
+The correction **admits** both sessions, and against the later sessions, which the fit did not
+use, C is below A for both. 2012-03-31 remains the worst session in the store (1.80 m against
+the later sessions): its climb is not all tilt.
+
+#### Rebuilding the lifelong chain with the tilt correction (preregistered 2026-11-27, before the run)
+
+- **Chains:** A is the lifelong store as built (no correction). C is built again from the same
+  base session (`stores/d_store`) with the same 19 updates, bags, order and options
+  (`lifelong_chain.sh`), with the `live` defaults now in place: tilt correction and the 1.5 m
+  height check. No ground truth is read.
+- **Score (map consistency, not an out-of-sample test):** for every session of a store, the 95th
+  percentile of |dz| of its submap positions against those of all the other sessions of the same
+  store (1.5 m, three neighbours), for sessions with at least 20 compared submaps.
+- **Rule:** C makes the store **more consistent** when, over the sessions committed in both
+  stores, fewer are above 1.0 m in C than in A, the median does not rise, and no session rises by
+  more than 0.3 m. A session C refuses is reported and does not count for C. Reported whatever it
+  is.
+
+#### Results of the rebuilt chain (2026-11-27)
+
+**PASS: C is more consistent.** All 19 updates ran (exit 0) and were committed; the height check
+refused none. Total wall time was 5618 s, against 5622 s for A, so the 14-16 s fit per session
+does not show in the total. Eighteen updates were corrected. 2012-01-22 overlapped the base in only
+4 submaps, so it was committed as registered. The fits stayed within ±1° roll and ±1.75° pitch,
+with offsets of -1.14 to +0.95 m.
+
+| | A (as built) | C (corrected) |
+|---|---:|---:|
+| sessions committed | 20 | 20 |
+| sessions above 1.0 m | 4 | 1 |
+| median p95 \|dz\| | 0.657 m | 0.219 m |
+| largest rise per session | | -0.124 m (every session fell) |
+
+Per session (p95 |dz| against all the other sessions of the same store, A → C):
+
+- 2012-03-31 5.23 → 2.53
+- 2012-11-16 1.65 → 0.50
+- 2012-05-11 1.59 → 0.95
+- 2012-11-17 1.15 → 0.23
+- every other session was below 1.0 m in both stores and fell by 0.12-0.72 m
+
+2012-03-31 is the one session still above 1.0 m. Its fit took it from 5.17 to 0.89 m against the
+store at the time of its commit. Against the whole store it is still 2.53 m, because a rigid
+correction cannot remove the climb inside the session (the 5 m in its last 100 s).
+
+Files (`bench_report/data/long_term_2026-11/lifelong/`):
+
+- `tilt_chain.jsonl`: per update, its exit code, wall time, the fit and the height check.
+- `consistency_A.jsonl` and `consistency_C.jsonl`: the scores, from `consistency_score.py`.
+
+Day names follow the chain, so the 2012-05-26 update appears as 2012-05-27 (UTC) in the scores.
+
+#### Height profile along the session (`live`, on by default after the rebuild below)
+
+A rigid correction leaves drift that grows inside a session. In the rebuilt chain, 2012-03-31
+stayed at 2.53 m against the whole store. `lidarslam.height_check.profile` runs after the tilt
+correction and lowers each submap by a height offset that is piecewise linear in submap order:
+
+- Knots are placed every 30 submaps, kept within the compared stretch. A knot needs at least 10
+  compared submaps within 30 submaps of it.
+- The knot values are fitted to the compared height differences by least squares, with Huber
+  weights beyond 0.3 m.
+- Beyond the outer knots the offset is held constant.
+
+The lowered poses are written to the session's `store_submap_poses.npy`, which export,
+relocalization and later height checks already read in place of the rigid transform. The
+session's `store_from_session` is unchanged, and the fit is recorded as `store_height_profile`.
+Only the position changes: a submap's rotation, and so the local slope of its scans, is not
+corrected. The height check then runs on the lowered poses.
+
+Applied, without writing, to the stored sessions of the rebuilt store against the sessions
+before them, the fit ran as follows. This was a smoke test of the code, and the parameters
+above were fixed before it ran:
+
+| session | before | after | largest offset |
+|---|---:|---:|---:|
+| 2012-03-31 | 0.89 m | 0.28 m | 2.70 m |
+| 2012-05-11 | 0.97 m | 0.18 m | 1.22 m |
+| 2012-11-16 | 0.49 m | 0.13 m | 0.56 m |
+
+#### Rebuilding the lifelong chain with the height profile (preregistered 2026-11-27, before the run)
+
+- **Chains:** C is the store rebuilt with the tilt correction (above). D is built again from the
+  same base session with the same 19 updates, bags, order and options, adding `--height-profile`
+  (`profile_chain.sh`). No ground truth is read.
+- **Score:** as for C: per session, the p95 |dz| of its submap positions against all the other
+  sessions of the same store (`consistency_score.py`). This score is partly circular: the
+  profile fits each update to the sessions before it, and the score compares it with those
+  sessions as well as with the later ones.
+- **Rule:** D makes the store **more consistent** than C when, over the sessions committed in
+  both stores, all of the following hold:
+  - fewer sessions are above 1.0 m in D than in C;
+  - the median does not rise;
+  - no session rises by more than 0.1 m.
+  A session D refuses is reported and does not count for D. The result is reported whatever it
+  is, together with the wall time and whether the store exports.
+- **Default:** `--height-profile` becomes the `live` default only if D passes.
+
+#### Results of the chain rebuilt with the height profile (2026-11-27)
+
+**PASS: D is more consistent than C.** All 19 updates ran (exit 0) and were committed; the height
+check refused none.
+
+- **Profiles:** 18 updates were profiled with 8-15 knots. 2012-01-22 overlapped the base in only
+  4 submaps, so it got neither the tilt correction nor the profile.
+- **Largest offsets:**
+  - 2012-03-31: 2.05 m. Against the store at its commit, it went from 1.23 to 0.37 m.
+  - 2012-05-11: 1.22 m.
+  - Every other session: at most 0.58 m.
+- **Wall time:** 4641 s, against 5618 s for C. No component of the profile is that fast; the
+  difference is in the replay itself, and the machine's load varied between the runs.
+- **Export:** the store exported (`lidarslam store export`, 154 s, 316 MB).
+
+| | C (tilt) | D (tilt + profile) |
+|---|---:|---:|
+| sessions committed | 20 | 20 |
+| sessions above 1.0 m | 1 | 0 |
+| median p95 \|dz\| | 0.219 m | 0.111 m |
+| largest rise per session | | +0.020 m (2012-08-04) |
+
+Largest changes per session (C → D):
+
+- 2012-03-31: 2.53 → 0.39 m
+- 2012-05-11: 0.95 → 0.16 m
+- 2012-11-16: 0.50 → 0.12 m
+- 2013-02-23: 0.40 → 0.07 m
+
+Two sessions rose:
+
+- the base session 2012-01-15: 0.178 → 0.185 m
+- 2012-08-04: 0.141 → 0.161 m
+
+As preregistered, `--height-profile` is now the `live` default. `--no-height-profile` turns it
+off. Tests whose subject is the rigid placement (startup registration, the tilt-correction
+switch, map-edit export) now turn it off explicitly.
+
+The score is partly circular (see the preregistration), so the improvement over C is an upper
+bound on what the profile does for the map. It is not an accuracy result: no ground truth was
+read.
+
+Files (`bench_report/data/long_term_2026-11/lifelong/`):
+
+- `profile_chain.jsonl`: per update, its exit code, wall time, the tilt fit, the profile and the
+  height check.
+- `consistency_D.jsonl`: the scores.
+
+#### Check of the height profile on sessions the chain has not used (preregistered 2026-11-27, before the run)
+
+- **Updates:** the sessions and windows of the earlier check (`nclt/fresh_windows.json`). The
+  windows were chosen with ground truth (only for choosing them). Each pass is converted again
+  and appended to its own copy of the store rebuilt with the profile (D), at its anchor
+  transform: `--no-tilt-correction --no-height-profile --max-height-drift 0`
+  (`lifelong/fresh_profile_run.sh`). Ground truth is not used to score.
+- **Variants (`lifelong/fresh_profile_score.py`):** both fitted with the `live` code against the
+  store's even sessions (0, 2, …, 18) only:
+  - T: the tilt correction alone;
+  - P: the tilt correction, then the profile;
+  - A, the update as committed, is reported as well.
+- **Score:** against the odd sessions (1, 3, …, 19), the 95th percentile of |dz| (1.5 m, three
+  neighbours), for updates with at least 20 compared submaps in every variant. The fit never
+  sees the sessions it is scored against.
+- **Rule:** P **adds to the tilt correction** when, over the scored updates, all of the following
+  hold:
+  - no more of them are above 1.0 m with P than with T;
+  - the median falls;
+  - no update rises by more than 0.1 m.
+  With fewer than four scored updates the check is inconclusive. If P fails, the profile is
+  turned back off by default. Reported whatever it is.
+
+#### Results of the height-profile check on sessions the chain has not used (2026-11-27)
+
+**PASS: P adds to the tilt correction.** All six passes were appended (`live` exit 0). As in the
+earlier check, 2012-04-29 has too little overlap with the even sessions to fit, so five updates
+are scored (`lifelong/fresh_profile_score.jsonl`). The 95th percentile of |dz| against the odd
+sessions:
+
+| Update | Compared | A (as committed) | T (tilt) | P (tilt + profile) | Profile knots, largest offset |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 2012-01-08 | 233 | 1.15 m | 0.15 m | 0.11 m | 11; 0.25 m |
+| 2012-02-04 | 285 | 0.47 m | 0.10 m | 0.09 m | 12; 0.12 m |
+| 2012-02-12 | 223 | 2.28 m | 0.36 m | 0.12 m | 9; 0.49 m |
+| 2012-02-19 | 237 | 0.85 m | 0.51 m | 0.13 m | 9; 0.96 m |
+| 2013-04-05 | 206 | 0.53 m | 0.21 m | 0.10 m | 9; 0.35 m |
+
+| Rule | T | P | |
+| --- | ---: | ---: | --- |
+| scored updates above 1.0 m | 0 | 0 | no more: met |
+| median | 0.214 m | 0.111 m | falls: met |
+| largest rise | | −0.009 m (every update fell) | ≤ 0.1 m: met |
+| scored updates | 5 | | ≥ 4: conclusive |
+
+The profile stays the `live` default. The figures are not comparable with the earlier check: the
+store is now D, whose odd sessions were themselves corrected, so A and T are lower here
+(2012-01-08 against the odd sessions of the uncorrected store was 2.51 m as committed). The
+largest gain is on 2012-02-19 (0.51 → 0.13 m), whose drift grows along the pass. No ground truth
+was read to score.
+
+### The change evidence of a corrected session (development, 2026-11-28)
+
+`--detect-changes` traced each keyframe scan into the stored sessions while the session ran,
+where its anchor transform placed it. The height corrections then move the session before it is
+committed, so its removals were decided from rays that the map no longer contains. In the store
+rebuilt with the profile (D), the corrections move 17 of the 19 updates by more than the 0.3 m
+ray margin of the evidence (0.15 m voxels) somewhere along the session. 2012-03-31 is moved by up
+to 6.9 m, and 2012-05-11, 2012-06-15 and 2012-11-04 by 1.5-3.1 m. Placed too low, a session
+sees through the stored ground and walls, which the evidence can take for a removal.
+
+With the tilt correction or the height profile on, `live` now keeps the anchored scans and traces
+them only before the commit (`MapChanges.trace`). The scans taken while submap k is the newest
+are moved by the correction of submap k (its committed pose times the inverse of its anchored
+pose), so the evidence is traced where the session is committed. Without a correction to apply,
+the evidence is that of the trace during the run, byte for byte (test). The scans are held until
+the commit, about 50 MB for an NCLT session.
+
+#### Tracing the change evidence where the session is committed (preregistered 2026-11-28, before the run)
+
+- **Chains:** D is the store rebuilt with the profile (`stores/lifelong_profile`), with the
+  evidence traced at the anchor. E is built again from the same base session with the same 19
+  updates, bags, order and options (`lifelong/trace_chain.sh`), with the evidence traced after
+  the corrections. No ground truth is read.
+- **Audit (`lifelong/trace_audit_run.sh`, `lifelong/trace_audit_score.py`):** the sessions
+  outside the chain (`nclt/fresh_windows.json`, the passes of the earlier checks) never decide a
+  removal of D or E. Each is appended with the `live` defaults (`--relocalize-anywhere
+  --detect-changes --max-height-drift 0`) to its own copy of D and of E. Its evidence then
+  decides each stored voxel it saw: kept (hit at least twice, and at least as often as seen
+  through), removed, or undecided. A voxel the store has removed (the removal masks of its 20
+  sessions) that the audit session keeps is **contradicted**.
+- **Score:** per audit session and store, the contradicted share: contradicted removed voxels
+  over removed voxels the audit session decided. An audit session is scored when it is committed
+  to both copies and has decided at least 1000 removed voxels in each.
+- **Rule:** tracing after the corrections **removes fewer standing voxels** when all of the
+  following hold:
+  - the pooled contradicted share is lower for E than for D;
+  - the share is lower for E in more than half of the scored audit sessions;
+  - all 19 updates of E are committed;
+  - the median height consistency of E (`consistency_score.py`) is at most 0.01 m above D's;
+  - E exports.
+  With fewer than three scored audit sessions the check is inconclusive. If the rule fails, the
+  change is not merged. The number of removals of each store, and the kept voxels the audit
+  session removes, are reported alongside. The result is reported whatever it is.
+
+#### Results of tracing the change evidence where the session is committed (2026-11-28)
+
+E was built with all 19 updates committed (`lifelong/trace_chain.jsonl`; the record of 2012-03-17
+was rebuilt from the store after the container restarted during its export, and the export of
+the whole store succeeded). The first update has no correction, and E removed the same 21,527
+voxels as D there. The height consistency of E is that of D (median 0.1105 m for both,
+`lifelong/consistency_E.jsonl`), as the evidence does not move any pose. After the removal
+masks of the 20 sessions, D has removed 11.06 M voxels and E 9.26 M.
+
+All six audit sessions were committed to both copies and scored (`lifelong/trace_audit_score.jsonl`):
+
+| Audit session | D decided / contradicted | D share | E decided / contradicted | E share |
+| --- | ---: | ---: | ---: | ---: |
+| 2012-01-08 | 1,847,034 / 470,192 | 0.255 | 1,661,378 / 295,711 | 0.178 |
+| 2012-02-04 | 1,727,310 / 414,684 | 0.240 | 1,659,211 / 375,173 | 0.226 |
+| 2012-02-12 | 1,936,119 / 393,059 | 0.203 | 1,820,659 / 288,380 | 0.158 |
+| 2012-02-19 | 1,221,654 / 323,818 | 0.265 | 1,113,289 / 241,303 | 0.217 |
+| 2012-04-29 | 29,032 / 24,860 | 0.856 | 29,776 / 25,207 | 0.847 |
+| 2013-04-05 | 2,253,132 / 374,612 | 0.166 | 2,187,335 / 187,539 | 0.086 |
+| pooled | 9,014,281 / 2,001,225 | 0.222 | 8,471,648 / 1,413,313 | 0.167 |
+
+| Rule | | |
+| --- | --- | --- |
+| pooled share lower for E | 0.222 → 0.167 | met |
+| lower for E in more than half of the scored sessions | 6 of 6 | met |
+| all 19 updates of E committed | 19 | met |
+| median consistency at most 0.01 m above D's | 0.1105 m for both | met |
+| E exports | yes | met |
+| scored audit sessions | 6 | ≥ 3: conclusive |
+
+**PASS:** tracing after the corrections removes fewer standing voxels. E has 29% fewer removed voxels
+that a later session sees standing (1.41 M against 2.00 M), while the audit sessions decided
+8.47 M of its removed voxels against 9.01 M for D. The kept voxels that the audit sessions would remove are
+reported alongside: from 2,951 to 778,928 per session for both stores, slightly more for E in
+four sessions (by 2-8%) and fewer in the other two (2012-04-29 by 13%, 2013-04-05 by 17%).
+2012-04-29 overlaps the store little, and most of what it decides is contradicted in both. The
+deferred trace stays on whenever a correction is on. No ground truth was read.
