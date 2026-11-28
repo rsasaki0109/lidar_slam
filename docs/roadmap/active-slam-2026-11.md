@@ -60,8 +60,9 @@ What was learned:
 What would be needed to claim the method: a world class where, with the fixed frontend, error
 is drift that loops observe and `frontier_info` leaves uncorrected (none of the development
 worlds is such a place now), shown in development first, then a fresh holdout of several
-worlds. The translation-only blend is itself a result worth checking on real data (it is off by
-default in the fork and absent from the product presets). No closed-loop result is claimed, in simulation or on real
+worlds. The translation-only blend, checked on real data (HILTI exp07, long corridor) with its
+simulated settings, made the raw odometry worse (0.254 -> 0.289 m): it does not transfer as is;
+it stays off by default in the fork and absent from the product presets. No closed-loop result is claimed, in simulation or on real
 data; the speed effect in particular is untested on real scans.
 
 Decisions (maintainer, 2026-11-26):
@@ -1366,6 +1367,21 @@ the sequences already used for this question in `docs/roadmap/v0.8.md`.
   not a release gate. A pass makes the option a candidate for the HILTI and MID-360 benchmark
   gates (`evaluate_slam_candidate_regression.py`); a fail on exp07 means the simulated result
   does not transfer to this sensor, and is recorded as such.
+
+### Translation-only frontend on real data: result (2026-11-28): fails on exp07, does not transfer
+
+exp07 (long corridor), raw odometry APE against the 6 control points (SE(3) Umeyama,
+interpolated): OFF 0.254 m, ON 0.289 m (+14 %). Both arms ran twice; each arm's two
+`traj_raw.tum` are byte-identical, and ON differs from OFF, so the blend did intervene. OFF is
+below the older 0.318 m reference (newer code). The rule needs exp07 at least 15 % lower; it is
+higher, so the rule fails and exp01 was not run (it cannot change the verdict).
+
+Reading: the threshold and weight picked on the simulated Mid-360 do not help this sensor and
+handheld motion; with 6 control points the comparison is coarse, but its sign is against the
+blend. The option stays in the fork (off by default), the harness keeps it (it is what the
+simulated results above were measured with), and nothing in the product changes. Making it work
+on real data would mean tuning on real sequences under a new rule with separate holdout
+sequences; that is not started.
 
 ### To build before the runs
 
