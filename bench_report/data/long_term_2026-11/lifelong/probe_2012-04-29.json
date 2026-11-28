@@ -1,0 +1,247 @@
+{
+ "submaps": 14,
+ "height": {
+  "compared": 14,
+  "median_dz_m": -0.014,
+  "dz_m": [
+   -0.039,
+   0.055,
+   0.04,
+   0.007,
+   -0.018,
+   -0.052,
+   -0.055,
+   0.018,
+   -0.049,
+   0.023,
+   0.024,
+   -0.01,
+   -0.029,
+   -0.019
+  ]
+ },
+ "removed": {
+  "by_remover": {
+   "0003": {
+    "contradicted": 1,
+    "confirmed": 0
+   },
+   "0004": {
+    "contradicted": 23,
+    "confirmed": 1
+   },
+   "0005": {
+    "contradicted": 23,
+    "confirmed": 3
+   },
+   "0006": {
+    "contradicted": 9,
+    "confirmed": 17
+   },
+   "0008": {
+    "contradicted": 44,
+    "confirmed": 18
+   },
+   "0010": {
+    "contradicted": 121,
+    "confirmed": 14
+   },
+   "0011": {
+    "contradicted": 73,
+    "confirmed": 0
+   },
+   "0012": {
+    "contradicted": 407,
+    "confirmed": 159
+   },
+   "0013": {
+    "contradicted": 162,
+    "confirmed": 95
+   },
+   "0014": {
+    "contradicted": 108,
+    "confirmed": 54
+   },
+   "0015": {
+    "contradicted": 229,
+    "confirmed": 205
+   },
+   "0016": {
+    "contradicted": 874,
+    "confirmed": 2
+   },
+   "0018": {
+    "contradicted": 8644,
+    "confirmed": 842
+   },
+   "0019": {
+    "contradicted": 14489,
+    "confirmed": 3159
+   }
+  },
+  "by_remover_misses": {
+   "10": {
+    "contradicted": 3791,
+    "confirmed": 827
+   },
+   "11": {
+    "contradicted": 2835,
+    "confirmed": 579
+   },
+   "12": {
+    "contradicted": 2166,
+    "confirmed": 494
+   },
+   "13": {
+    "contradicted": 1803,
+    "confirmed": 327
+   },
+   "14": {
+    "contradicted": 881,
+    "confirmed": 136
+   },
+   "15": {
+    "contradicted": 779,
+    "confirmed": 188
+   },
+   "16": {
+    "contradicted": 1331,
+    "confirmed": 134
+   },
+   "8": {
+    "contradicted": 6691,
+    "confirmed": 976
+   },
+   "9": {
+    "contradicted": 4930,
+    "confirmed": 908
+   }
+  }
+ },
+ "hits_on_contradicted": {
+  "2": 15043,
+  "3": 6521,
+  "4": 2402,
+  "5": 913,
+  "6": 258,
+  "7": 63,
+  "8": 7
+ },
+ "breakdown": {
+  "height": {
+   "< -0.8 m": {
+    "decided": 0,
+    "contradicted": 0,
+    "share": null
+   },
+   "-0.8 to 0.5 m": {
+    "decided": 4564,
+    "contradicted": 4079,
+    "share": 0.8937
+   },
+   "0.5 to 3 m": {
+    "decided": 21399,
+    "contradicted": 17555,
+    "share": 0.8204
+   },
+   "> 3 m": {
+    "decided": 3670,
+    "contradicted": 3430,
+    "share": 0.9346
+   }
+  },
+  "range": {
+   "< 5 m": {
+    "decided": 27925,
+    "contradicted": 23372,
+    "share": 0.837
+   },
+   "5 to 15 m": {
+    "decided": 1834,
+    "contradicted": 1818,
+    "share": 0.9913
+   },
+   "15 to 30 m": {
+    "decided": 17,
+    "contradicted": 17,
+    "share": 1.0
+   },
+   "> 30 m": {
+    "decided": 0,
+    "contradicted": 0,
+    "share": null
+   }
+  },
+  "remover_misses_per_hit": {
+   "8 to 9": {
+    "decided": 13545,
+    "contradicted": 11660,
+    "share": 0.8608
+   },
+   "10 to 11": {
+    "decided": 8041,
+    "contradicted": 6634,
+    "share": 0.825
+   },
+   "12 to 15": {
+    "decided": 6774,
+    "contradicted": 5629,
+    "share": 0.831
+   },
+   "16 to 31": {
+    "decided": 1416,
+    "contradicted": 1284,
+    "share": 0.9068
+   },
+   "> 31": {
+    "decided": 0,
+    "contradicted": 0,
+    "share": null
+   }
+  },
+  "remover_hits": {
+   "0": {
+    "decided": 27044,
+    "contradicted": 22635,
+    "share": 0.837
+   },
+   "1": {
+    "decided": 2683,
+    "contradicted": 2525,
+    "share": 0.9411
+   },
+   "2 to 3": {
+    "decided": 49,
+    "contradicted": 47,
+    "share": 0.9592
+   },
+   "> 3": {
+    "decided": 0,
+    "contradicted": 0,
+    "share": null
+   }
+  },
+  "age_days": {
+   "< 30": {
+    "decided": 1243,
+    "contradicted": 1114,
+    "share": 0.8962
+   },
+   "30 to 120": {
+    "decided": 9034,
+    "contradicted": 7614,
+    "share": 0.8428
+   },
+   "120 to 365": {
+    "decided": 17707,
+    "contradicted": 15202,
+    "share": 0.8585
+   },
+   "> 365": {
+    "decided": 1792,
+    "contradicted": 1277,
+    "share": 0.7126
+   }
+  }
+ }
+}

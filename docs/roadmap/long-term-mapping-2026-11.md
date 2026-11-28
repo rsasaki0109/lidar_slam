@@ -2407,3 +2407,82 @@ hits, which are zero for 93% of them): the share falls steadily as the misses gr
 voxels above the sensor height are contradicted twice as often as those near it, and removals of
 voxels mapped more than a year earlier more often still. The range from the store's submap
 positions makes less difference (`removal_breakdown.json`). No ground truth was read.
+
+### The map quality of the corrected lifelong store (preregistered 2026-11-28, before the run)
+
+The height corrections (tilt and profile) and the change evidence traced where the session is
+committed were each judged by their own checks. This compares the maps a user gets.
+
+- **Maps:** the Autoware map exported from `stores/lifelong` (A: the 20-session chain as
+  first committed, without the height corrections, evidence traced at the anchor) and from
+  `stores/lifelong_trace` (E: the same base session, 19 updates, bags and order, with the
+  corrections on and the evidence traced after them). Both exports exist; neither is scored
+  before this is committed. The differences combine the corrections and the removals; the store
+  in between (D) is no longer kept, so they are not separated.
+- **Metrics (`lifelong/map_quality_run.sh`):** `map_quality_report` with its frozen metric
+  profile and a 0.1 m downsample, as `scripts/run_map_quality_check.sh`: the mean map entropy
+  (MME, nats; lower is sharper), the mean RMS thickness of the planar patches (m) and the planar
+  coverage. Each map is scored three times.
+- **Rule:** E is the **better map** when all of the following hold:
+  - the three reports of each map are byte-identical;
+  - E's MME is lower than A's;
+  - E's mean plane thickness is lower than A's;
+  - E's planar coverage is at most 0.02 below A's.
+  If the MME and the thickness disagree, the result is mixed. The p95 thickness, the patch count
+  and the point counts are reported alongside. No ground truth is read. The result is reported
+  whatever it is.
+
+#### Results of the map-quality comparison (2026-11-28)
+
+The three reports of each map are byte-identical (`lifelong/map_quality.jsonl`):
+
+| | A (as first committed) | E (corrected, evidence after) |
+| --- | ---: | ---: |
+| points (after the 0.1 m downsample) | 14,907,965 | 14,245,842 |
+| MME | −0.7356 nats | −0.7448 nats |
+| mean plane thickness | 0.0646 m | 0.0776 m |
+| p95 plane thickness | 0.1111 m | 0.1195 m |
+| planar patches | 136,386 | 95,474 |
+| planar coverage | 0.263 | 0.318 |
+| occupied root voxels | 226,438 | 201,978 |
+
+| Rule | | |
+| --- | --- | --- |
+| byte-identical reports | both | met |
+| MME lower for E | −0.7356 → −0.7448 | met |
+| mean plane thickness lower for E | 0.0646 → 0.0776 m | not met |
+| planar coverage at most 0.02 below A's | 0.263 → 0.318 | met |
+
+**Mixed:** the MME and the plane thickness disagree, so E is not shown to be the better map by
+these metrics. E is slightly sharper by the entropy, fills 11% fewer root voxels with 4% fewer
+points, and more of it is planar (0.318 against 0.263), but in fewer, thicker patches. The
+frozen extractor accepts a patch up to 0.15 m thick, so the thickness is the mean over different
+sets of patches: where A's sessions sit at different heights, the extractor can split a surface
+into thin patches per layer, or leave it unaccepted, while E's merged surface becomes one wider
+patch. These metrics cannot separate that from a thicker surface; the height consistency
+(0.1105 m in E) and the audits remain the evidence for the corrections. No ground truth was read.
+
+### Why 2012-04-29 contradicts the removals (development, 2026-11-28)
+
+In both audits, 2012-04-29 kept about 85% of the removed voxels it decided, against 9-23% for the
+other sessions. It was appended once more to a copy of E and kept
+(`lifelong/probe_session_run.sh`, `lifelong/probe_session.py`, `lifelong/probe_2012-04-29.json`).
+It anchored 3.3 s into its 15.6 s window and committed 14 submaps.
+
+- **It is not misplaced.** Its 14 submaps are compared with the store's: the median height
+  difference is −0.014 m and none is beyond ±0.06 m. With fewer than 20 compared submaps
+  neither height correction is fitted, but none is needed here.
+- **The removals it contradicts are recent.** 23,133 of its 25,207 contradicted voxels were
+  removed last by the two latest sessions of the chain, 2012-12-01 (8,644) and 2013-02-23
+  (14,489), seven and ten months after it. The contradiction holds at every height (0.89 near
+  the sensor height, 0.82 at 0.5-3 m, 0.93 above 3 m) and every range.
+- **Its keeps are weak.** 15,043 of the contradicted voxels (60%) are kept with exactly two hits,
+  the least the rule allows; a 16 s pass sees each surface only a few times.
+
+So 2012-04-29 describes the place as it was before the winter sessions that removed these voxels,
+from a brief pass. Some of what it keeps may well have gone by 2013 (the leaves of spring, for
+one), and without ground truth or images this cannot be separated from wrong removals. The same
+holds, less strongly, for every audit session older than the removing session: the audits' paired
+comparison of D and E is unaffected, but a contradicted share also counts real changes after the
+audit session. 2013-04-05, the only audit session after every session of the chain, has the
+lowest share (0.086 in E).
