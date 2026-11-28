@@ -35,7 +35,7 @@ def run_route(config: dict, world: str, seed: int, spacing: int, imu: float, out
             sys.executable, str(HERE / 'run_closed_loop.py'), '--route', '--world', world,
             '--seed', str(seed), '--out', str(out), '--max-seconds', '900',
             '--divergence-m', '1000', '--pilaster-spacing', str(spacing),
-            '--imu-noise-scale', str(imu),
+            '--imu-noise-scale', str(imu), '--speed', str(config.get('speed', 0.7)),
             '--rko-param', str(ROOT / config['rko_param']),
             '--lidarslam-param', str(ROOT / config['lidarslam_param']),
         ]

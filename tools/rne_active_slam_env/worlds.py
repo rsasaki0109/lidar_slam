@@ -6,8 +6,9 @@ floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``fre
 
 Development worlds (tuned on): ``ring``, ``grid``, and ``branches2``, ``long_loop2`` (the second
 holdout, run once on 2026-11-27 with a sensor bug, so seen). ``branches`` and ``big_loop`` were
-the first holdout, retired. ``dogleg_loop`` and ``mine_branches`` are the third holdout. All are
-built the same way: walls 2.5 m high, a floor box, and pilasters (0.3 m wide, 0.2 m deep) along
+the first holdout, retired. ``dogleg_loop`` and ``mine_branches`` the third (seen);
+``ladder_tunnels`` and ``serpentine`` are the fourth holdout. All are built the same way: walls
+2.5 m high, a floor box, and pilasters (0.3 m wide, 0.2 m deep) along
 the walls as door frames; flat walls alone leave a corridor's axis unobservable to the LiDAR.
 """
 
@@ -290,17 +291,52 @@ def world_mine_branches() -> dict[str, Any]:
     return rect_world(190, 60, free, starts, pilaster_spacing=6, seed=10)
 
 
+# ------------------------------------------------------------------- fourth holdout
+
+
+def world_ladder_tunnels() -> dict[str, Any]:
+    """Return two parallel 200 m tunnels joined by three rungs (x = 40, 110, 170), open ends.
+
+    4 m tunnels 44 m apart; three loops of ~236, ~216 and ~356 m and four dead-end stubs (the
+    tunnels' ends beyond the outer rungs).
+    """
+    free = [[0, 0, 200, 4], [0, 48, 200, 52], [40, 4, 44, 48], [110, 4, 114, 48],
+            [170, 4, 174, 48]]
+    starts = [[20.0, 2.0, 0.0], [75.0, 50.0, math.pi], [42.0, 26.0, math.pi / 2],
+              [140.0, 2.0, math.pi], [112.0, 20.0, -math.pi / 2], [185.0, 50.0, 0.0],
+              [172.0, 30.0, math.pi / 2], [5.0, 50.0, 0.0], [90.0, 2.0, 0.0],
+              [195.0, 2.0, math.pi]]
+    return rect_world(200, 52, free, starts, pilaster_spacing=6, seed=11)
+
+
+def world_serpentine() -> dict[str, Any]:
+    """Return a serpentine of three ~120 m legs and a return tunnel (one ~390 m loop).
+
+    Bottom leg 130 m, up 32 m, middle leg 116 m back, up 30 m, then the top leg (120 m, a dead
+    end to the east) and the return tunnel down the west side (70 m) to the start.
+    """
+    free = [[0, 0, 130, 4], [126, 4, 130, 36], [10, 32, 126, 36], [10, 36, 14, 66],
+            [10, 66, 130, 70], [4, 66, 10, 70], [0, 4, 4, 70]]
+    starts = [[2.0, 2.0, 0.0], [65.0, 2.0, 0.0], [128.0, 20.0, math.pi / 2],
+              [70.0, 34.0, math.pi], [12.0, 50.0, math.pi / 2], [70.0, 68.0, 0.0],
+              [125.0, 68.0, math.pi], [2.0, 35.0, -math.pi / 2], [100.0, 2.0, math.pi],
+              [30.0, 34.0, 0.0]]
+    return rect_world(130, 70, free, starts, pilaster_spacing=6, seed=12)
+
+
 # branches2 and long_loop2 were the second holdout (run once on 2026-11-27); seen, so tuned on now.
 DEVELOPMENT = {'ring': world_ring, 'grid': world_grid, 'branches2': world_branches2,
                'long_loop2': world_long_loop2, 'tunnel_loop': world_tunnel_loop,
                'long_tunnels': world_long_tunnels}
 # The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
 RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
-# The third holdout: built 2026-11-27 after the configuration was frozen; checked (reach, start
-# clearance, odometry drift on fixed routes, a 60 s check run from every start) and approved
-# before it is run once.
-HOLDOUT = {'dogleg_loop': world_dogleg_loop, 'mine_branches': world_mine_branches}
-WORLDS = {**DEVELOPMENT, **RETIRED, **HOLDOUT}
+# The third holdout (run once on 2026-11-27, failed; seen).
+SEEN_HOLDOUT = {'dogleg_loop': world_dogleg_loop, 'mine_branches': world_mine_branches}
+# The fourth holdout: built 2026-11-28 after the 1.0 m/s configuration was frozen; checked (reach,
+# start clearance, odometry drift on fixed routes, a 60 s check run from every start) and
+# approved before it is run once.
+HOLDOUT = {'ladder_tunnels': world_ladder_tunnels, 'serpentine': world_serpentine}
+WORLDS = {**DEVELOPMENT, **RETIRED, **SEEN_HOLDOUT, **HOLDOUT}
 
 
 def reachable_fractions(world: dict[str, Any], inflation: float = 0.8,
@@ -367,6 +403,10 @@ ROUTES = {
                     (2.0, 68.0), (2.0, 4.0)],
     'mine_branches': [(2.0, 30.0), (118.0, 30.0), (118.0, 58.0), (32.0, 58.0), (32.0, 30.0),
                       (188.0, 30.0)],
+    'ladder_tunnels': [(2.0, 2.0), (112.0, 2.0), (112.0, 50.0), (42.0, 50.0), (42.0, 2.0),
+                       (172.0, 2.0), (172.0, 50.0), (198.0, 50.0)],
+    'serpentine': [(2.0, 2.0), (128.0, 2.0), (128.0, 34.0), (12.0, 34.0), (12.0, 68.0),
+                   (2.0, 68.0), (2.0, 4.0)],
 }
 
 

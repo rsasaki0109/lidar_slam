@@ -122,13 +122,14 @@ def test_worlds_have_ten_free_starts_and_a_free_region() -> None:
         assert coverage.free.sum() > 1000, name
     assert set(worlds.HOLDOUT).isdisjoint(worlds.DEVELOPMENT)
     assert set(worlds.HOLDOUT).isdisjoint(worlds.RETIRED)
+    assert set(worlds.HOLDOUT).isdisjoint(worlds.SEEN_HOLDOUT)
     w = worlds.world_for('branches2', 103)
     assert w['start'] == worlds.world_branches2()['starts'][3] and w['seed'] == 103
 
 
 def test_development_worlds_are_fully_reachable_under_the_planner_inflation() -> None:
     # Every holdout world must pass this before it is run (the first holdout worlds did not).
-    for name, build in {**worlds.DEVELOPMENT, **worlds.HOLDOUT}.items():
+    for name, build in {**worlds.DEVELOPMENT, **worlds.SEEN_HOLDOUT, **worlds.HOLDOUT}.items():
         fractions = worlds.reachable_fractions(build())
         assert min(fractions) > 0.99, (name, fractions)
 
@@ -147,7 +148,7 @@ def test_odometry_drift_is_the_segment_error_per_metre() -> None:
 
 
 def test_thin_pilasters_keeps_multiples_and_routes_stay_on_the_floor() -> None:
-    for name in {**worlds.DEVELOPMENT, **worlds.HOLDOUT}:
+    for name in {**worlds.DEVELOPMENT, **worlds.SEEN_HOLDOUT, **worlds.HOLDOUT}:
         full = worlds.world_for(name, 1)
         thin = worlds.world_for(name, 1, pilaster_spacing_m=12)
         none = worlds.world_for(name, 1, pilaster_spacing_m=-1)

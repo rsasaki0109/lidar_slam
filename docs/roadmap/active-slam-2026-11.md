@@ -1054,6 +1054,28 @@ Next: the configuration is frozen as it is (the gated baseline's policy settings
 third holdout is seen, so a fourth is built the same way, calibrated at 1.0 m/s under the same
 rule (fixed routes, drift 0.3-1.0 %, closest to as built), checked, approved, and run once.
 
+### Fourth holdout: worlds and calibration rule (written before any run on them)
+
+Built 2026-11-28 after the 1.0 m/s configuration was frozen; no policy has run on them. 4 m
+tunnels, pilasters every 6 m as built, a layout unlike any earlier world:
+
+- `ladder_tunnels` (200 x 52 m): two parallel 200 m tunnels 44 m apart joined by three rungs
+  (x = 40, 110, 170); three loops (~216-356 m) and four dead-end stubs.
+- `serpentine` (130 x 70 m): three ~120 m legs in a serpentine, the top one a dead end, and a
+  70 m return tunnel to the start (one ~390 m loop).
+
+Static checks: `reachable_fractions` gives 1.0 from all ten starts (also with pilasters every
+48, 96 m and none); start clearance and routes in `test_active_slam_eval.py`.
+
+Difficulty, as for the third holdout but at the frozen speed (1.0 m/s; `calibrate_difficulty.py`
+now passes the config's `speed`): fixed routes (~480 m and ~380 m, on the true pose, no policy),
+odometry drift over 50 m, seeds 1-3, pilaster spacing 6 (as built), 24, 36, 48, 60, 72, 96 m
+and none. Rule: per world, the setting closest to as built whose median drift over the three
+seeds is in 0.3-1.0 % and none of whose routes has a live error of 5 m or more; a world with
+none is reported and not run. Budget 1500 s, divergence limit 10 m. Then a 60 s
+`nearest_frontier` check run from each start (ATE not looked at), the maintainer's approval,
+and one run of the set `holdout` with `--frozen` from a clean tree.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
