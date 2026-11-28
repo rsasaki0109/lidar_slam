@@ -2461,3 +2461,28 @@ sets of patches: where A's sessions sit at different heights, the extractor can 
 into thin patches per layer, or leave it unaccepted, while E's merged surface becomes one wider
 patch. These metrics cannot separate that from a thicker surface; the height consistency
 (0.1105 m in E) and the audits remain the evidence for the corrections. No ground truth was read.
+
+### Why 2012-04-29 contradicts the removals (development, 2026-11-28)
+
+In both audits, 2012-04-29 kept about 85% of the removed voxels it decided, against 9-23% for the
+other sessions. It was appended once more to a copy of E and kept
+(`lifelong/probe_session_run.sh`, `lifelong/probe_session.py`, `lifelong/probe_2012-04-29.json`).
+It anchored 3.3 s into its 15.6 s window and committed 14 submaps.
+
+- **It is not misplaced.** Its 14 submaps are compared with the store's: the median height
+  difference is −0.014 m and none is beyond ±0.06 m. With fewer than 20 compared submaps
+  neither height correction is fitted, but none is needed here.
+- **The removals it contradicts are recent.** 23,133 of its 25,207 contradicted voxels were
+  removed last by the two latest sessions of the chain, 2012-12-01 (8,644) and 2013-02-23
+  (14,489), seven and ten months after it. The contradiction holds at every height (0.89 near
+  the sensor height, 0.82 at 0.5-3 m, 0.93 above 3 m) and every range.
+- **Its keeps are weak.** 15,043 of the contradicted voxels (60%) are kept with exactly two hits,
+  the least the rule allows; a 16 s pass sees each surface only a few times.
+
+So 2012-04-29 describes the place as it was before the winter sessions that removed these voxels,
+from a brief pass. Some of what it keeps may well have gone by 2013 (the leaves of spring, for
+one), and without ground truth or images this cannot be separated from wrong removals. The same
+holds, less strongly, for every audit session older than the removing session: the audits' paired
+comparison of D and E is unaffected, but a contradicted share also counts real changes after the
+audit session. 2013-04-05, the only audit session after every session of the chain, has the
+lowest share (0.086 in E).
