@@ -12,7 +12,8 @@ existing navigation stack (Nav2). This repository gains no motion planner or con
 Status (2026-11-28): P1 done except the live topic; P2/P3 done (`active_exploration.hpp`); P5's
 closed-loop evaluation runs in the prototype harness `tools/rne_active_slam_env` (simulated
 Mid-360, RKO-LIO + graph_based_slam in process), not yet over ROS 2; P4 (the node) not started.
-Four holdouts have been run; none passed. A translation-only frontend fix (RKO-LIO fork)
+P4 (`lidarslam_active`, frontier exploration only) implemented 2026-11-28. Four holdouts have
+been run; none passed. A translation-only frontend fix (RKO-LIO fork)
 is adopted in the harness; with it, `active` no longer beats `frontier_info` even on the
 development worlds, and on real data (HILTI exp07) the fix with its simulated settings made
 the odometry worse. The work is paused here (maintainer, 2026-11-28); see the summary below.
@@ -63,7 +64,9 @@ is drift that loops observe and `frontier_info` leaves uncorrected (none of the 
 worlds is such a place now), shown in development first, then a fresh holdout of several
 worlds. The translation-only blend, checked on real data (HILTI exp07, long corridor) with its
 simulated settings, made the raw odometry worse (0.254 -> 0.289 m): it does not transfer as is;
-it stays off by default in the fork and absent from the product presets. No closed-loop result is claimed, in simulation or on real
+it stays off by default in the fork and absent from the product presets. Tuned on exp07 and
+exp04 under its own rule, its best grid point reached -10 % on exp07 (rule: -15 %), so no
+holdout was run. No closed-loop result is claimed, in simulation or on real
 data; the speed effect in particular is untested on real scans.
 
 Decisions (maintainer, 2026-11-26):
@@ -1428,6 +1431,32 @@ one run per arm (the previous runs were byte-identical per arm).
   APE change over the four at most -10 %, no sequence more than 10 % worse, no divergence.
 - A pass makes the setting a candidate for the product benchmark gates; presets stay unchanged
   either way. Bags are downloaded one at a time and deleted after their runs.
+
+### Translation-only frontend tuned on real data: result (2026-11-28): stops, no holdout
+
+Raw APE against the control points (one run per arm), change against OFF:
+
+| ratio / weight | exp07 [m] | exp04 [m] |
+| --- | --- | --- |
+| OFF | 0.254 | 0.052 |
+| 3e-2 / 0.5 | 0.227 (-10.3 %) | 0.052 (0.0 %) |
+| 1e-1 / 0.5 | 0.228 (-10.0 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.5 | 0.242 (-4.7 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.1 | 0.244 (-3.9 %) | 0.052 (0.0 %) |
+| 1e-1 / 0.1 | 0.259 (+2.2 %) | 0.050 (-2.1 %) |
+| 1e-1 / 0.25 | 0.269 (+5.9 %) | 0.051 (-0.9 %) |
+| 3e-2 / 0.25 | 0.282 (+11.2 %) | 0.052 (0.0 %) |
+| 3e-3 / 0.1, 0.25, 0.5 | 0.285, 0.294, 0.288 (+12.6 to +16.0 %) | 0.052 (0.0 %) |
+| 3e-2 / 0.1 | 0.286 (+13.0 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.25 | 0.289 (+14.1 %) | 0.052 (0.0 %) |
+
+No variant diverged or harmed exp04. The best (3e-2 / 0.5) is 10.3 % below OFF on exp07, short of
+the 15 % the rule asks, so the rule stops here and the four holdout sequences were not run.
+
+Reading: on this sensor the effect of the blend is not a smooth function of its two values (at
+three of four thresholds weight 0.25 is worse than both 0.1 and 0.5), and on exp04 it barely
+acts. With 6 control points, a 10 % difference is about 2.5 cm of RMSE. The translation-only
+blend is not shown to help on real data; it stays an off-by-default option of the fork.
 
 ### To build before the runs
 
