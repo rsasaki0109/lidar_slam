@@ -1341,6 +1341,32 @@ them. Under this frontend the uncertainty-driven revisits are not shown to help 
 the earlier `tunnels` gain (0.085 -> 0.045 m) was compensating for a frontend weakness that is now
 fixed more directly.
 
+### Translation-only frontend on real data: rule (written before its runs)
+
+Question: does the translation-only blend, adopted in the simulated harness, also reduce
+corridor error on real scans without harming a well-observed sequence? Substrate: HILTI 2022
+(handheld, PandarXT-32 + Alphasense IMU, millimetre control points; evaluation only, CC BY-NC-SA),
+the sequences already used for this question in `docs/roadmap/v0.8.md`.
+
+- Arms. OFF: `configs/hilti2022/rko_lio_hilti2022_pandar.yaml`. ON: the same file plus the four
+  lines of the harness preset, unchanged (`degeneracy_aware_solve: true`,
+  `degeneracy_translation_only: true`, `degeneracy_well_conditioned_ratio: 1.0e-2`,
+  `degeneracy_prior_weight: 0.25`). No value is tuned on these sequences.
+- Run: `scripts/run_rko_lio_graph_core.py` (the core engine, same build as the harness) on the
+  ROS 1 bag, `--lidarslam-param lidarslam/param/lidarslam_ntu_viral.yaml` (the benchmark
+  script's default; the backend is passthrough on these non-revisiting sweeps), topics
+  `/hesai/pandar`, `/alphasense/imu`. Each arm runs twice; if the two runs of an arm differ, the
+  mean is used and the spread is reported.
+- Metric: raw odometry APE against the control points, `scripts/ape_from_tum.py --interpolate
+  --max-time-diff 3.0` on `traj_raw.tum` (the v0.8 method; reference values 0.318 m exp07,
+  0.066 m exp01 at older code, so OFF is re-measured here).
+- Pass: exp07 (long corridor, 6 control points) ON at least 15 % below OFF, and exp01
+  (construction ground level, 13 points) ON no more than 10 % above OFF, neither diverging.
+- Either way the product presets stay unchanged: two sequences with 6 and 13 points are evidence,
+  not a release gate. A pass makes the option a candidate for the HILTI and MID-360 benchmark
+  gates (`evaluate_slam_candidate_regression.py`); a fail on exp07 means the simulated result
+  does not transfer to this sensor, and is recorded as such.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
