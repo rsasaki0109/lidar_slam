@@ -9,6 +9,8 @@ ATE: estimate positions interpolated at the reference stamps inside the estimate
 without scale, RMSE. Also the ATE without reference spikes (a single reference pose more than 1 m from both
 neighbours while the neighbours are no farther apart than 0.5 m + 5 m/s x their time gap; 5 m/s is above the
 Warthog's top speed), found from the reference alone, and the coverage of the reference's time span.
+--at FILE scores at the stamps of FILE instead (the reference interpolated there; for sparse keyframe
+trajectories, whose linear interpolation in time is wrong where the speed changes).
 Run with `python3 -I`: the reference is untrusted input.
 """
 import argparse
@@ -40,6 +42,8 @@ def main():
     ap.add_argument('--cov')
     ap.add_argument('--lever', type=float, nargs=3, default=[0.0, 0.0, 0.0])
     ap.add_argument('--json')
+    ap.add_argument('--at', help='score at these stamps (first column of a TUM file, e.g. the backend keyframes): the '
+                    'reference is interpolated there instead of the estimate at the reference stamps')
     a = ap.parse_args()
     est = np.loadtxt(a.est, ndmin=2)
     gt = np.loadtxt(a.gt, ndmin=2, comments='#')
@@ -51,6 +55,11 @@ def main():
     p = est[:, 1:4] + quat_rot(est[:, 4:8], np.array(a.lever))
     inside = (gt[:, 0] >= est[0, 0]) & (gt[:, 0] <= est[-1, 0])
     rt, rp = gt[inside, 0], gt[inside, 1:4]
+    if a.at:
+        st = np.loadtxt(a.at, ndmin=2)[:, 0]
+        st = st[(st >= max(est[0, 0], gt[0, 0])) & (st <= min(est[-1, 0], gt[-1, 0]))]
+        rp = np.stack([np.interp(st, gt[:, 0], gt[:, k]) for k in (1, 2, 3)], 1)
+        rt = st
     out['coverage'] = float((rt[-1] - rt[0]) / (gt[-1, 0] - gt[0, 0])) if inside.sum() > 1 else 0.0
     out['ref_poses'] = int(inside.sum())
     out['path_m'] = float(np.linalg.norm(np.diff(gt[:, 1:4], axis=0), axis=1).sum())

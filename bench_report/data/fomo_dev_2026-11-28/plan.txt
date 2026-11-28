@@ -95,3 +95,19 @@ Addendum 1 (2026-11-28, before any run; no gt.txt, IMU or LiDAR byte of the driv
   Frame check without a reference: with transforms.json read as T_from_to, the first IMU rows of both IMUs (mounted
   90 deg apart) map to base_link gravity (-0.24, -0.30, 9.68) and (-0.22, -0.30, 9.88): the same direction, so the
   convention holds. base_link <- vectornav: x -0.823, y 0.106, z -0.375 m, yaw -90 deg.
+
+Addendum 2 (2026-11-28, after phase A's first runs on the four red drives; before the backend replays below)
+  Seen (results.txt): G22's frontend is at or below upstream RKO-LIO on all four red drives (ATE 0.069-0.080 m vs
+  0.071-0.095 m). The score script interpolated sparse keyframe trajectories linearly in time at the reference stamps,
+  which is wrong where the speed changes (winter 2025-01-10: 0.288 m for keyframes equal to the odometry); it now has
+  --at, and backend trajectories are scored at their keyframe stamps with the odometry scored at the same stamps.
+  Then the loop closure makes all three drives that have a loop worse (one loop each, start to end), although the loop
+  edge is closer to the reference than the odometry on two of them (2025-03-10: relative position error 0.174 m in
+  the odometry, 0.036 m in the edge). Anchored at the start, the optimised trajectory moves only in its last ~30
+  keyframes; the middle of the route is unchanged. Adjacent-edge information is uniform (hop k: 1e4/k translation,
+  1e6/k rotation, hops 1-5); the loop edge has 200 / 1e5.
+  Diagnosis to run (no decision follows): record each red drive's backend input once (map --backend-input), then
+  replay the backend (python -m lidarslam backend) with one group changed at a time: the loop information (constant
+  translation 200 -> 2e3, 2e4), the adjacent rotation/translation ratio, and the optimiser iterations, to find why the
+  correction is not spread along the loop. A backend change to the default needs its own preregistered rule on all
+  development data of the walking preset; FoMo alone decides nothing.
