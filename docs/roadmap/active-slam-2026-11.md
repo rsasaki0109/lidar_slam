@@ -12,7 +12,8 @@ existing navigation stack (Nav2). This repository gains no motion planner or con
 Status (2026-11-28): P1 done except the live topic; P2/P3 done (`active_exploration.hpp`); P5's
 closed-loop evaluation runs in the prototype harness `tools/rne_active_slam_env` (simulated
 Mid-360, RKO-LIO + graph_based_slam in process), not yet over ROS 2; P4 (the node) not started.
-Four holdouts have been run; none passed. A translation-only frontend fix (RKO-LIO fork)
+P4 (`lidarslam_active`, frontier exploration only) implemented 2026-11-28. Four holdouts have
+been run; none passed. A translation-only frontend fix (RKO-LIO fork)
 is adopted in the harness; with it, `active` no longer beats `frontier_info` even on the
 development worlds, and on real data (HILTI exp07) the fix with its simulated settings made
 the odometry worse. The work is paused here (maintainer, 2026-11-28); see the summary below.
@@ -63,7 +64,9 @@ is drift that loops observe and `frontier_info` leaves uncorrected (none of the 
 worlds is such a place now), shown in development first, then a fresh holdout of several
 worlds. The translation-only blend, checked on real data (HILTI exp07, long corridor) with its
 simulated settings, made the raw odometry worse (0.254 -> 0.289 m): it does not transfer as is;
-it stays off by default in the fork and absent from the product presets. No closed-loop result is claimed, in simulation or on real
+it stays off by default in the fork and absent from the product presets. Tuned on exp07 and
+exp04 under its own rule, its best grid point reached -10 % on exp07 (rule: -15 %), so no
+holdout was run. No closed-loop result is claimed, in simulation or on real
 data; the speed effect in particular is untested on real scans.
 
 Decisions (maintainer, 2026-11-26):
@@ -247,10 +250,36 @@ Known limits of this version, next in P3:
 
 ### P4. `lidarslam_active` node
 
-- Subscribes to `SlamUncertainty` and `ActiveGoalCandidates`, asks Nav2 for path costs, sends
-  `NavigateToPose`, re-plans on goal reached / failed / timeout.
-- Opt-in launch file only. Humble and Jazzy builds in CI; no Nav2 dependency for any other
-  package.
+Specification (2026-11-28). What the evaluation supports is autonomous frontier exploration with
+an accurate map, not a map-accuracy gain from revisits; the node ships that and keeps `active`
+as a later option.
+
+- Package `lidarslam_active/` (C++17, ament_cmake), opt-in: its own launch file only, not in any
+  default launch file. No Nav2 dependency: goals go out as `geometry_msgs/PoseStamped` on
+  `goal_pose`, the topic Nav2's `bt_navigator` already listens to (any navigator that takes a
+  goal pose works).
+- Inputs: a point cloud topic (`cloud`, e.g. RKO-LIO's deskewed scan) and TF
+  (`global_frame` <- cloud frame at the cloud stamp, `global_frame` <- `robot_frame` now). The
+  live graph publishes its submaps only when it accepts a loop (`modified_map_array`), so the
+  node keeps its own coverage grid: a keyframe every `keyframe_distance` [m] or
+  `keyframe_angle` [rad] goes into `active_exploration::CoverageGrid`, as the offline pipeline
+  adds each submap's scan.
+- Decision, every `decision_period` [s]: frontiers and paths from `active_exploration.hpp`
+  (`findFrontiers`, `PathField`, `selectGoal`), with the same fallback through unknown cells as
+  `OfflinePipeline::decideExploration`. A new goal is chosen when there is none, when the robot is
+  within `goal_tolerance` of it, when it is no longer a reachable frontier goal, after
+  `goal_timeout` [s], or when the robot moved less than `stall_distance` in `stall_timeout` [s]
+  (the last three mark the goal rejected, as `rejectExplorationGoal`).
+- Policy: `frontier_info` (frontier information per path length, the harness policy of the same
+  name). `active` is refused at start-up until the graph's uncertainty is published live.
+- Outputs: `goal_pose`, `exploration_grid` (`nav_msgs/OccupancyGrid`), `exploration_path`
+  (`nav_msgs/Path`, the planned path), `exploration_status` (`std_msgs/String`: `exploring`,
+  `exploration_done`, `no_reachable_goal`, `waiting_for_data`).
+- Stop: on `exploration_done` the node publishes no further goal; it does not save the map
+  (`/map_save` stays the user's call).
+- Tests: the decision logic is a ROS-free class (`ExplorationPlanner`) with gtests on synthetic
+  scans (goal choice, reached / timeout / stall rejection, done). The node is built and linted in
+  the Humble and Jazzy CI. Driving it with Nav2 on a robot or in RNE is not part of this step.
 
 ### P5. Closed-loop evaluation in RNE
 
@@ -1383,6 +1412,51 @@ blend. The option stays in the fork (off by default), the harness keeps it (it i
 simulated results above were measured with), and nothing in the product changes. Making it work
 on real data would mean tuning on real sequences under a new rule with separate holdout
 sequences; that is not started.
+
+### Translation-only frontend tuned on real data: rule (written before its runs, 2026-11-28)
+
+The simulated setting failed on exp07. This tunes the two values on real sequences and tests the
+choice on sequences not used for tuning. Same runner, metric and OFF arm as the previous rule;
+one run per arm (the previous runs were byte-identical per arm).
+
+- Tuning sequences: exp07 (long corridor, 6 control points) and exp04 (construction upper level,
+  7 points). Grid: `degeneracy_well_conditioned_ratio` in {3e-3, 1e-2, 3e-2, 1e-1} x
+  `degeneracy_prior_weight` in {0.1, 0.25, 0.5}, with `degeneracy_aware_solve` and
+  `degeneracy_translation_only` true; 12 variants plus OFF on each.
+- Choice: among variants with exp04 APE no more than 10 % above OFF and no divergence, the lowest
+  exp07 APE. If that variant is not at least 15 % below OFF on exp07, stop: the option does not
+  help on real data at any grid point, and no holdout is run.
+- Holdout (run once, chosen variant vs OFF, after the choice is committed here): exp05, exp06
+  (construction), exp11 (lower gallery), exp15 (attic to upper gallery). Pass: median relative
+  APE change over the four at most -10 %, no sequence more than 10 % worse, no divergence.
+- A pass makes the setting a candidate for the product benchmark gates; presets stay unchanged
+  either way. Bags are downloaded one at a time and deleted after their runs.
+
+### Translation-only frontend tuned on real data: result (2026-11-28): stops, no holdout
+
+Raw APE against the control points (one run per arm), change against OFF:
+
+| ratio / weight | exp07 [m] | exp04 [m] |
+| --- | --- | --- |
+| OFF | 0.254 | 0.052 |
+| 3e-2 / 0.5 | 0.227 (-10.3 %) | 0.052 (0.0 %) |
+| 1e-1 / 0.5 | 0.228 (-10.0 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.5 | 0.242 (-4.7 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.1 | 0.244 (-3.9 %) | 0.052 (0.0 %) |
+| 1e-1 / 0.1 | 0.259 (+2.2 %) | 0.050 (-2.1 %) |
+| 1e-1 / 0.25 | 0.269 (+5.9 %) | 0.051 (-0.9 %) |
+| 3e-2 / 0.25 | 0.282 (+11.2 %) | 0.052 (0.0 %) |
+| 3e-3 / 0.1, 0.25, 0.5 | 0.285, 0.294, 0.288 (+12.6 to +16.0 %) | 0.052 (0.0 %) |
+| 3e-2 / 0.1 | 0.286 (+13.0 %) | 0.052 (0.0 %) |
+| 1e-2 / 0.25 | 0.289 (+14.1 %) | 0.052 (0.0 %) |
+
+No variant diverged or harmed exp04. The best (3e-2 / 0.5) is 10.3 % below OFF on exp07, short of
+the 15 % the rule asks, so the rule stops here and the four holdout sequences were not run.
+
+Reading: on this sensor the effect of the blend is not a smooth function of its two values (at
+three of four thresholds weight 0.25 is worse than both 0.1 and 0.5), and on exp04 it barely
+acts. With 6 control points, a 10 % difference is about 2.5 cm of RMSE. The translation-only
+blend is not shown to help on real data; it stays an off-by-default option of the fork.
 
 ### To build before the runs
 
