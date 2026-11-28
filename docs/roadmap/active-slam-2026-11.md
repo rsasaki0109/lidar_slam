@@ -1384,6 +1384,25 @@ simulated results above were measured with), and nothing in the product changes.
 on real data would mean tuning on real sequences under a new rule with separate holdout
 sequences; that is not started.
 
+### Translation-only frontend tuned on real data: rule (written before its runs, 2026-11-28)
+
+The simulated setting failed on exp07. This tunes the two values on real sequences and tests the
+choice on sequences not used for tuning. Same runner, metric and OFF arm as the previous rule;
+one run per arm (the previous runs were byte-identical per arm).
+
+- Tuning sequences: exp07 (long corridor, 6 control points) and exp04 (construction upper level,
+  7 points). Grid: `degeneracy_well_conditioned_ratio` in {3e-3, 1e-2, 3e-2, 1e-1} x
+  `degeneracy_prior_weight` in {0.1, 0.25, 0.5}, with `degeneracy_aware_solve` and
+  `degeneracy_translation_only` true; 12 variants plus OFF on each.
+- Choice: among variants with exp04 APE no more than 10 % above OFF and no divergence, the lowest
+  exp07 APE. If that variant is not at least 15 % below OFF on exp07, stop: the option does not
+  help on real data at any grid point, and no holdout is run.
+- Holdout (run once, chosen variant vs OFF, after the choice is committed here): exp05, exp06
+  (construction), exp11 (lower gallery), exp15 (attic to upper gallery). Pass: median relative
+  APE change over the four at most -10 %, no sequence more than 10 % worse, no divergence.
+- A pass makes the setting a candidate for the product benchmark gates; presets stay unchanged
+  either way. Bags are downloaded one at a time and deleted after their runs.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
