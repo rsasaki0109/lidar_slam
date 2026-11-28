@@ -1105,6 +1105,33 @@ and not run. The holdout set is `ladder_tunnels` alone (10 seeds x 3 policies), 
 largest live error 0.62 m. ATE not looked at. Approved by the maintainer (2026-11-28) with one
 world; the holdout set is run once next, and its result is read as one world's.
 
+### Fourth holdout: result (2026-11-28)
+
+`run_eval.py --set holdout --frozen` from commit 3cbeec7 (clean tree): `ladder_tunnels` x seeds
+101-110 x three policies, 30 runs. One world only, so this is one world's result, not a general one.
+
+| policy | failed | median final-map ATE [m] | median coverage | median distance [m] |
+| --- | --- | --- | --- | --- |
+| active | 1 | 0.188 | 0.999 | 1063 |
+| frontier_info | 1 | 0.264 | 0.998 | 913 |
+| nearest_frontier | 1 | 0.309 | 0.966 | 880 |
+
+Active vs frontier_info: median ATE reduction 10.5 % (rule: >= 15 %), active lower in 6 of 10
+seeds (rule: >= 7), coverage difference +0.12 points, failures 1 vs 1. **Fail.**
+
+- Seed 101 diverged (live error 10 m) under both active and frontier_info; seed 104 under
+  nearest_frontier.
+- Three seeds end with ATE above 1.5 m under at least two policies (105, 106, 109, 110 between them);
+  the calibration routes stayed under 0.78 m live error, so closed-loop runs here are harder than
+  the routes suggested.
+- Loops are not the cause: 484 loop edges, none off by more than 2 m, median measurement error
+  about 0.01 m, and the drift they see is about 0.05 m. As in the tunnels diagnosis, the large
+  errors are along the heading (54-99 %) with scale 0.97-1.05, i.e. corridor under- or
+  over-registration that loop closure does not see.
+- Active wins big where frontier_info has a corridor shrink (seed 106: 0.07 vs 2.21 m) and loses
+  where it adds one of its own (seed 101: 0.74 vs 0.39 m); the median gain is real but the
+  per-seed outcome depends on which corridors a run happens to stretch.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
