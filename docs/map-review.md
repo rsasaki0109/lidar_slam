@@ -1,6 +1,6 @@
 # Review Map Updates
 
-When a long-term map store takes a new session (`python -m lidarslam live ... --store STORE
+When a [long-term map store](long-term-maps.md) takes a new session (`python -m lidarslam live ... --store STORE
 --refine-visibility`), the change detection removes old points it saw through and holds back new
 points it saw only briefly. Of the change modes, `--refine-visibility` is the recommended one: on
 a held-out NCLT update it halved the points no later session confirms (0.65 of a plain append)
