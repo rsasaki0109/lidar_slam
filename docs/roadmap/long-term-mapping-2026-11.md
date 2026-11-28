@@ -2335,3 +2335,41 @@ the commit, about 50 MB for an NCLT session.
   With fewer than three scored audit sessions the check is inconclusive. If the rule fails, the
   change is not merged. The number of removals of each store, and the kept voxels the audit
   session removes, are reported alongside. The result is reported whatever it is.
+
+#### Results of tracing the change evidence where the session is committed (2026-11-28)
+
+E was built with all 19 updates committed (`lifelong/trace_chain.jsonl`; the record of 2012-03-17
+was rebuilt from the store after the container restarted during its export, and the export of
+the whole store succeeded). The first update has no correction, and E removed the same 21,527
+voxels as D there. The height consistency of E is that of D (median 0.1105 m for both,
+`lifelong/consistency_E.jsonl`), as the evidence does not move any pose. After the removal
+masks of the 20 sessions, D has removed 11.06 M voxels and E 9.26 M.
+
+All six audit sessions were committed to both copies and scored (`lifelong/trace_audit_score.jsonl`):
+
+| Audit session | D decided / contradicted | D share | E decided / contradicted | E share |
+| --- | ---: | ---: | ---: | ---: |
+| 2012-01-08 | 1,847,034 / 470,192 | 0.255 | 1,661,378 / 295,711 | 0.178 |
+| 2012-02-04 | 1,727,310 / 414,684 | 0.240 | 1,659,211 / 375,173 | 0.226 |
+| 2012-02-12 | 1,936,119 / 393,059 | 0.203 | 1,820,659 / 288,380 | 0.158 |
+| 2012-02-19 | 1,221,654 / 323,818 | 0.265 | 1,113,289 / 241,303 | 0.217 |
+| 2012-04-29 | 29,032 / 24,860 | 0.856 | 29,776 / 25,207 | 0.847 |
+| 2013-04-05 | 2,253,132 / 374,612 | 0.166 | 2,187,335 / 187,539 | 0.086 |
+| pooled | 9,014,281 / 2,001,225 | 0.222 | 8,471,648 / 1,413,313 | 0.167 |
+
+| Rule | | |
+| --- | --- | --- |
+| pooled share lower for E | 0.222 → 0.167 | met |
+| lower for E in more than half of the scored sessions | 6 of 6 | met |
+| all 19 updates of E committed | 19 | met |
+| median consistency at most 0.01 m above D's | 0.1105 m for both | met |
+| E exports | yes | met |
+| scored audit sessions | 6 | ≥ 3: conclusive |
+
+**PASS:** tracing after the corrections removes fewer standing voxels. E has 29% fewer removed voxels
+that a later session sees standing (1.41 M against 2.00 M), while the audit sessions decided
+8.47 M of its removed voxels against 9.01 M for D. The kept voxels that the audit sessions would remove are
+reported alongside: from 2,951 to 778,928 per session for both stores, slightly more for E in
+four sessions (by 2-8%) and fewer in the other two (2012-04-29 by 13%, 2013-04-05 by 17%).
+2012-04-29 overlaps the store little, and most of what it decides is contradicted in both. The
+deferred trace stays on whenever a correction is on. No ground truth was read.
