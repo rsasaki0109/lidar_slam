@@ -2407,3 +2407,27 @@ hits, which are zero for 93% of them): the share falls steadily as the misses gr
 voxels above the sensor height are contradicted twice as often as those near it, and removals of
 voxels mapped more than a year earlier more often still. The range from the store's submap
 positions makes less difference (`removal_breakdown.json`). No ground truth was read.
+
+### The map quality of the corrected lifelong store (preregistered 2026-11-28, before the run)
+
+The height corrections (tilt and profile) and the change evidence traced where the session is
+committed were each judged by their own checks. This compares the maps a user gets.
+
+- **Maps:** the Autoware map exported from `stores/lifelong` (A: the 20-session chain as
+  first committed, without the height corrections, evidence traced at the anchor) and from
+  `stores/lifelong_trace` (E: the same base session, 19 updates, bags and order, with the
+  corrections on and the evidence traced after them). Both exports exist; neither is scored
+  before this is committed. The differences combine the corrections and the removals; the store
+  in between (D) is no longer kept, so they are not separated.
+- **Metrics (`lifelong/map_quality_run.sh`):** `map_quality_report` with its frozen metric
+  profile and a 0.1 m downsample, as `scripts/run_map_quality_check.sh`: the mean map entropy
+  (MME, nats; lower is sharper), the mean RMS thickness of the planar patches (m) and the planar
+  coverage. Each map is scored three times.
+- **Rule:** E is the **better map** when all of the following hold:
+  - the three reports of each map are byte-identical;
+  - E's MME is lower than A's;
+  - E's mean plane thickness is lower than A's;
+  - E's planar coverage is at most 0.02 below A's.
+  If the MME and the thickness disagree, the result is mixed. The p95 thickness, the patch count
+  and the point counts are reported alongside. No ground truth is read. The result is reported
+  whatever it is.
