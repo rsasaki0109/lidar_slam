@@ -27,6 +27,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+# Pillow < 9.1 (Ubuntu 22.04 ships 9.0) has the module constants, not the enums.
+LANCZOS = getattr(Image, 'Resampling', Image).LANCZOS
+ADAPTIVE = getattr(Image, 'Palette', Image).ADAPTIVE
+NO_DITHER = getattr(Image, 'Dither', Image).NONE
+
 # Light chart surface, text inks and a one-hue (blue) sequential ramp, steps 250-700 of the
 # reference palette (the lightest steps are left out so a certain submap stays visible).
 SURFACE = (255, 255, 255)
@@ -240,7 +245,7 @@ class Frame:
 
     def result(self) -> Image.Image:
         return self.image.resize((self.image.width // self.s, self.image.height // self.s),
-                                 Image.Resampling.LANCZOS)
+                                 LANCZOS)
 
 
 @dataclass
@@ -480,8 +485,8 @@ def main() -> int:
         args.frames_dir.mkdir(parents=True, exist_ok=True)
         for i, frame in enumerate(frames):
             frame.save(args.frames_dir / f'frame_{i:04d}.png')
-    paletted = [frame.convert('P', palette=Image.Palette.ADAPTIVE, colors=96,
-                              dither=Image.Dither.NONE) for frame in frames]
+    paletted = [frame.convert('P', palette=ADAPTIVE, colors=96,
+                              dither=NO_DITHER) for frame in frames]
     paletted[0].save(args.out, save_all=True, append_images=paletted[1:], loop=0,
                      duration=frame_durations(states, args.frame_ms, args.hold_ms, frames_of),
                      optimize=True, disposal=1)
