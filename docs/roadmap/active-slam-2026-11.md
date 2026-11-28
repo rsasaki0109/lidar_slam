@@ -1102,7 +1102,8 @@ and not run. The holdout set is `ladder_tunnels` alone (10 seeds x 3 policies), 
 
 `ladder_tunnels`, `nearest_frontier`, 60 s at 1.0 m/s, seeds 101-110 (all ten starts): all move
 42-56 m and see 6-14 % of the floor, with no collision, no divergence and no rejected goal;
-largest live error 0.62 m. ATE not looked at. Ready for the maintainer's approval.
+largest live error 0.62 m. ATE not looked at. Approved by the maintainer (2026-11-28) with one
+world; the holdout set is run once next, and its result is read as one world's.
 
 ### To build before the runs
 
