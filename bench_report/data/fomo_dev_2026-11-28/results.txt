@@ -89,3 +89,30 @@ Reading (after 5 and 6)
     would take ~20 % off G22's ATE. Whether the RoboSense, the extrinsic or G22 causes it is not settled; voxel 1.0
     takes part of it away (0.99923).
   - The loop closure's harm is not a weighting or convergence problem of the backend.
+
+Correction to sections 6 and the reading after it (addendum 5): the reference is NAD83 / MTM zone 7, not UTM; a
+correct odometry shows a Sim(3) scale of ~0.99983 here (grid 0.999929 x height 0.999899). Against that, G22 is
+0.07-0.09 % long, upstream 0.03-0.07 % long, the Leishen run 0.04 % short. "0.12 %" and "1.00023" above are wrong.
+
+7. Scale diagnosis (addenda 4-5), ATE m / Sim(3) scale
+  Step 1, red 2025-09-24, G22 + one key:
+    G22 0.0688/0.99896 | vox05 0.0673/0.99907 | vox1 0.0663/0.99923 | kp15 0.0636/0.99912 | minr1 0.0684/0.99897
+    noinit 0.0735/0.99890 | noclose 0.0688/0.99896 | it100 0.0689/0.99896 | jerk3 0.0688/0.99896 | mcd1 0.0690/0.99896
+  Step 2, RoboSense points x 0.9988 (diagnostic): 0.0502/1.00016 (expected 1.00016).
+  Step 3 (vox1 by the rule; kp15 as the marked extra):
+                     G22              vox1             kp15             upstream
+    red 2025-01-10   0.0747/0.99912   0.0758/0.99933   0.0693/0.99929   0.0818/0.99955
+    red 2025-03-10   0.0791/0.99907   0.0967/0.99897   0.0678/0.99920   0.0947/0.99916
+    red 2025-08-20   0.0802/0.99891   0.0745/0.99924   0.0770/0.99909   0.0834/0.99943
+    red 2025-09-24   0.0688/0.99896   0.0663/0.99923   0.0636/0.99912   0.0705/0.99938
+    gmean winter     0.0769           0.0856           0.0685           0.0880
+    gmean summer     0.0743           0.0703           0.0700           0.0767
+  Reading by addendum 4's rule: vox1 does not bring G22 to upstream's scale within 0.0001 on all four (03-10: 0.99897
+  vs 0.99916), so the G22-specific part is not explained by one key; vox1 also makes winter worse (+11 %). No
+  algorithm key moves the part common to G22 and upstream (0.03-0.07 % long against 0.99983); a range scale passes
+  1:1 into the odometry, so the RoboSense's range scale is a hypothesis for it, not a finding (no reference-free check
+  was possible: the LiDAR-to-LiDAR Sim(3) ICP is not identifiable with the Leishen).
+  Not part of the rule, reported as seen: icp_keypoint_voxel_multiplier 1.5 (upstream's default; G22 has 2.25) lowers
+  G22's ATE on all four red drives (-4 % to -14 %; winter -11 %, summer -6 %) and moves the scale +0.00013 to
+  +0.00018. It is a candidate for a preregistered G screening (MapsHD 8, exp04, Odyssey 7, as G23 in chapter 65), not
+  a change: it was found on these four drives.
