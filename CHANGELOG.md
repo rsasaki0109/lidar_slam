@@ -4,6 +4,11 @@
 
 ### Added
 
+- `tools/gaussian_splatting/grandtour_camera_bag.py`: a window of a GrandTour
+  mission with a camera, the LiDAR and `/tf_static` as a rosbag2 for
+  `lidarslam colmap`, and a tutorial in `lidarslam_core/README.md` from a
+  GrandTour rosbag to depth-supervised 3DGS (`lidarslam map`, `colmap
+  --depth-lidar-topic`, visloc-rs `gsplat_train --depth-prior`).
 - `python -m lidarslam colmap` (`lidarslam.gsplat_export`): a COLMAP scene for
   3D Gaussian Splatting from any log with a camera (`Image` or
   `CompressedImage` with its `CameraInfo`), posed by a lidar_slam run instead of
