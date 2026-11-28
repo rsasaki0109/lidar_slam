@@ -2431,3 +2431,33 @@ committed were each judged by their own checks. This compares the maps a user ge
   If the MME and the thickness disagree, the result is mixed. The p95 thickness, the patch count
   and the point counts are reported alongside. No ground truth is read. The result is reported
   whatever it is.
+
+#### Results of the map-quality comparison (2026-11-28)
+
+The three reports of each map are byte-identical (`lifelong/map_quality.jsonl`):
+
+| | A (as first committed) | E (corrected, evidence after) |
+| --- | ---: | ---: |
+| points (after the 0.1 m downsample) | 14,907,965 | 14,245,842 |
+| MME | −0.7356 nats | −0.7448 nats |
+| mean plane thickness | 0.0646 m | 0.0776 m |
+| p95 plane thickness | 0.1111 m | 0.1195 m |
+| planar patches | 136,386 | 95,474 |
+| planar coverage | 0.263 | 0.318 |
+| occupied root voxels | 226,438 | 201,978 |
+
+| Rule | | |
+| --- | --- | --- |
+| byte-identical reports | both | met |
+| MME lower for E | −0.7356 → −0.7448 | met |
+| mean plane thickness lower for E | 0.0646 → 0.0776 m | not met |
+| planar coverage at most 0.02 below A's | 0.263 → 0.318 | met |
+
+**Mixed:** the MME and the plane thickness disagree, so E is not shown to be the better map by
+these metrics. E is slightly sharper by the entropy, fills 11% fewer root voxels with 4% fewer
+points, and more of it is planar (0.318 against 0.263), but in fewer, thicker patches. The
+frozen extractor accepts a patch up to 0.15 m thick, so the thickness is the mean over different
+sets of patches: where A's sessions sit at different heights, the extractor can split a surface
+into thin patches per layer, or leave it unaccepted, while E's merged surface becomes one wider
+patch. These metrics cannot separate that from a thicker surface; the height consistency
+(0.1105 m in E) and the audits remain the evidence for the corrections. No ground truth was read.
