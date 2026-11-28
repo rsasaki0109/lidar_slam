@@ -111,3 +111,21 @@ Addendum 2 (2026-11-28, after phase A's first runs on the four red drives; befor
   translation 200 -> 2e3, 2e4), the adjacent rotation/translation ratio, and the optimiser iterations, to find why the
   correction is not spread along the loop. A backend change to the default needs its own preregistered rule on all
   development data of the walking preset; FoMo alone decides nothing.
+
+Addendum 3 (2026-11-28, after the backend replays of addendum 2; before the frontend variants below)
+  Backend: reproduced the backend's optimisation from pose_graph.g2o with a stand-alone g2o tool (identical ATE).
+  It is converged (10 and 100 iterations give the same result), and no reweighting helps: loop translation
+  information x10 / x100, adjacent rotation information x0.1 to x0.001, adjacent translation x0.1 / x10 all stay
+  worse than no loop (red 03-10 / 08-20 / 09-24: 0.080-0.082 / 0.085-0.086 / 0.069-0.070 vs 0.0698 / 0.0786 / 0.0667).
+  The loop edge is not the problem; the odometry's error is not of the kind a loop closure removes.
+  Found: a Sim(3) fit gives G22's odometry a scale of 0.99891-0.99912 on all four red drives (winter and summer);
+  upstream 0.99916-0.99955. Sim(3) ATE is ~20 % below SE(3) ATE for G22 (e.g. 0.0802 -> 0.0617). The reference is
+  UTM zone 19 about 244 km west of the central meridian at about 645 m: its grid distances are about 1.00023 x the
+  ground distance (point scale 1.00033, height reduction 0.99990). So against the ground, G22's odometry is about
+  0.12 % too long and upstream about 0.08 %, consistently.
+  Diagnosis to run (red 2025-09-24, then the other three if a variant moves the scale): G22 with one change each,
+  scored as before plus the Sim(3) scale:
+    deskew false; voxel_size 1.0 (upstream's; G22 has 0.25); per-point time reversed within a frame (a check of the
+    converter's time field); the LiDAR frame stamp moved to the frame's end; the Xsens instead of the VectorNav.
+  The scale is "explained" by a variant that brings it within 0.0003 of 1.00023 on all four drives. A change to G
+  or to the converter that comes out of this needs its own rule; FoMo alone decides nothing.
