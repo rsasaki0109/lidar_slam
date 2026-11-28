@@ -129,3 +129,18 @@ Addendum 3 (2026-11-28, after the backend replays of addendum 2; before the fron
     converter's time field); the LiDAR frame stamp moved to the frame's end; the Xsens instead of the VectorNav.
   The scale is "explained" by a variant that brings it within 0.0003 of 1.00023 on all four drives. A change to G
   or to the converter that comes out of this needs its own rule; FoMo alone decides nothing.
+
+Addendum 4 (2026-11-28, the maintainer chose to pin down the scale first; before the runs below)
+  Question: where does G22's ~0.1 % odometry scale on the RoboSense come from (results.txt section 6)?
+  Step 1, red 2025-09-24, G22 with one key changed toward upstream's default (scale and ATE each):
+    vox05 voxel_size 0.5 | vox1 voxel_size 1.0 (done: 0.99923) | minr1 min_range 1.0 | noinit initialization_phase
+    false | kp15 icp_keypoint_voxel_multiplier 1.5 | noclose close_scene_max_median_range 0 | it100 max_iterations 100
+    + convergence_criterion 1e-5 | jerk3 max_expected_jerk 3 | mcd1 max_correspondence_distance 1.0
+  Step 2, sensitivity, same drive: the RoboSense points scaled by 0.9988 in the converter (diagnostic only, never a
+    per-rig input chosen from the reference). Expectation if the scale passes 1:1 into the odometry: G22's scale near
+    0.99896 / 0.9988 = 1.00016.
+  Step 3: every step-1 key that moves the scale by more than 0.0002 toward 1.00023, run on the other three red drives.
+  Reading, fixed now: a key "explains" the G22-specific part if it brings G22 to upstream's scale (within 0.0001 on
+  all four drives). The common part (G22 and upstream both below 1.00023 by 0.0007-0.0011) is attributed to the
+  sensor side only if no algorithm key moves it; that is a hypothesis for the rig, not a finding, until a check
+  without the reference (a calibration target, the dataset authors) confirms it.
