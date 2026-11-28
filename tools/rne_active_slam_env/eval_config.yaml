@@ -7,6 +7,8 @@ lidarslam_param: lidarslam/param/lidarslam_mid360_rko_graph_walking.yaml
 max_seconds: 600
 divergence_m: 2.0
 inflation_radius: 0.8
+# Path follower speed [m/s] for every policy (roadmap "Tunnels at 1.0 m/s").
+speed: 1.0
 
 # active only (sigma's scale depends on the parameter preset; these are for the walking one)
 revisit_trigger_sigma: 0.05

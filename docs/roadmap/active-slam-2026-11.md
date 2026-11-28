@@ -1027,6 +1027,33 @@ tunnels set, all three policies (development, not a test). It answers two questi
 - With the shrink mostly gone, is there drift left that revisiting removes? Reported per policy
   (median ATE, `diagnose_map_error.py`'s loop drift); no policy setting is tuned on this run.
 
+### Tunnels at 1.0 m/s: result (2026-11-28, development, not a test)
+
+18 runs, none failed, no collision, every coverage >= 0.99; no loop edge of 180 off by more
+than 2 m. Speed has no cost in exploration, so by the rule 1.0 m/s is the setting for every
+policy (`eval_config.yaml`, `speed: 1.0`). Final-map ATE [m], per run:
+
+| world, seed | `active` | `frontier_info` | `nearest_frontier` |
+| --- | --- | --- | --- |
+| `tunnel_loop` 1 | 0.034 | 0.043 | 0.045 |
+| `tunnel_loop` 2 | 0.041 | 0.128 | 0.096 |
+| `tunnel_loop` 3 | 0.036 | 0.043 | 0.048 |
+| `long_tunnels` 1 | 0.323 | 0.323 | 0.092 |
+| `long_tunnels` 2 | 0.049 | 0.059 | 0.064 |
+| `long_tunnels` 3 | 0.116 | 0.121 | 0.084 |
+| median | 0.045 | 0.090 | 0.080 |
+
+(0.7 m/s gated baseline medians: 0.427 / 0.658 / 0.595.) With the shrink gone, the pose graph
+now matters for `active`: its median ATE goes from 0.085 m (odometry only) to 0.045 m after the
+graph, while `frontier_info`'s stays at 0.088 / 0.090 m; on `tunnel_loop` 2 its revisit loops
+take the map from 0.136 to 0.041 m. Per world, by the preregistered comparison: `tunnel_loop`
+pass (20 %, 3 of 3), `long_tunnels` fail (4 %, 2 of 3; seed 1 is the same map for both, 0.323 m,
+the shrink left in one stretch). No policy setting was tuned on this run.
+
+Next: the configuration is frozen as it is (the gated baseline's policy settings, 1.0 m/s). The
+third holdout is seen, so a fourth is built the same way, calibrated at 1.0 m/s under the same
+rule (fixed routes, drift 0.3-1.0 %, closest to as built), checked, approved, and run once.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
