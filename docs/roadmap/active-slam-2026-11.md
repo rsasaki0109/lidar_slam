@@ -12,7 +12,9 @@ existing navigation stack (Nav2). This repository gains no motion planner or con
 Status (2026-11-28): P1 done except the live topic; P2/P3 done (`active_exploration.hpp`); P5's
 closed-loop evaluation runs in the prototype harness `tools/rne_active_slam_env` (simulated
 Mid-360, RKO-LIO + graph_based_slam in process), not yet over ROS 2; P4 (the node) not started.
-Four holdouts have been run; none passed. The work is paused here; see the summary below.
+Four holdouts have been run; none passed. A translation-only frontend fix (RKO-LIO fork)
+is adopted in the harness; with it, `active` no longer beats `frontier_info` even on the
+development worlds. The work is paused here; see the summary below.
 
 ## Summary (2026-11-28)
 
@@ -48,10 +50,18 @@ What was learned:
    reachability and route checks, difficulty calibration on fixed routes, the loop degeneracy
    gate (no false loop edge in the last ~1,200), and `diagnose_map_error.py`.
 
-What would be needed to claim the method: an odometry whose corridor error is drift-like
-(observable by loops) or a frontend fix for the corridor registration that survives
-exploration (a translation-only prior blend in the RKO-LIO fork is the untried candidate), then
-a fresh holdout of several worlds. No closed-loop result is claimed, in simulation or on real
+5. A translation-only IMU-prior blend along the weakest translation direction (Schur complement
+   of the Hessian; RKO-LIO fork option `degeneracy_translation_only`) passes its own rule and is
+   the harness frontend: `frontier_info` on `ladder_tunnels` 0.264 -> 0.107 m, on `tunnels`
+   0.090 -> 0.060 m, easy routes unharmed. Re-measured with it, `active` vs `frontier_info` is
+   0.051 / 0.051 and 0.064 / 0.061 on `tunnels`, 0.311 / 0.107 on `ladder_tunnels`: the frontend
+   fix took the error revisits used to remove, and longer revisit paths meet more frontend events.
+
+What would be needed to claim the method: a world class where, with the fixed frontend, error
+is drift that loops observe and `frontier_info` leaves uncorrected (none of the development
+worlds is such a place now), shown in development first, then a fresh holdout of several
+worlds. The translation-only blend is itself a result worth checking on real data (it is off by
+default in the fork and absent from the product presets). No closed-loop result is claimed, in simulation or on real
 data; the speed effect in particular is untested on real scans.
 
 Decisions (maintainer, 2026-11-26):
@@ -1303,6 +1313,33 @@ empty until a fifth is built.
 Next (development, no rule changes): `active` vs `frontier_info` re-measured with this frontend
 on the `tunnels` and `ladder` sets (the `frontier_info` runs of stages B and C are reused: same
 parameters).
+
+### Translation-only frontend: `active` vs `frontier_info` re-measured (2026-11-28, development)
+
+Same harness and policy settings, frontend `rko_lio_mid360_walking_translation_prior.yaml`;
+`frontier_info` runs reused from stages B and C. Rule verdicts are for reference (development
+worlds, not a test).
+
+| world | `active` median ATE [m] | `frontier_info` [m] | `active` lower | failed | verdict |
+| --- | --- | --- | --- | --- | --- |
+| `tunnel_loop` (3 seeds) | 0.051 | 0.0505 | 2 / 3 | 0 / 0 | fail |
+| `long_tunnels` (3 seeds) | 0.064 | 0.061 | 1 / 3 | 0 / 0 | fail |
+| `ladder_tunnels` (101-110) | 0.311 | 0.107 | 5 / 10 | 1 / 0 | fail |
+
+`ladder_tunnels` per seed (`active` / `frontier_info`): 0.481 / 0.063, 1.079 / 0.085,
+0.083 / 0.095, 0.075 / 0.119, 0.093 / 0.079, 1.302 / 1.297, 0.142 / 0.137, 0.720 / 0.817,
+1.083 / 2.056 (`active` diverged), 0.047 / 0.073. `active` drives 5-25 % farther and closes more
+loops (median 20 vs 14). Where its odometry stays good (raw ATE <= 0.33 m: 103, 104, 105, 107,
+110) its map is equal or better (median 0.083 vs 0.095); in 101 and 102 the raw error jumps to
+1.0-1.3 m (101 with 7 wall contacts during revisits) and loops do not bring it back.
+
+Reading: the frontend fix removed most of the error `active` was meant to remove. On `tunnels`
+`frontier_info` already reaches 0.05-0.06 m (it was 0.090 m), the level `active` reached before,
+so revisits have nothing left to gain there. On `ladder_tunnels` the remaining large errors are
+frontend events (raw jumps, contacts), and `active`'s longer, revisit-heavy paths meet more of
+them. Under this frontend the uncertainty-driven revisits are not shown to help in any world;
+the earlier `tunnels` gain (0.085 -> 0.045 m) was compensating for a frontend weakness that is now
+fixed more directly.
 
 ### To build before the runs
 
