@@ -1237,6 +1237,29 @@ blend acts on eigen directions of the 6-DoF Hessian that mix rotation and transl
 IMU-propagated prior is weakest in a turn; a translation-only blend would be a code change in
 the fork, not a parameter, and is not tried under this rule.
 
+### Translation-only compensation: rule (written before its runs)
+
+Requested by the maintainer (2026-11-28) after the 6-DoF blend diverged in turns. New option in
+the RKO-LIO fork, off by default (`degeneracy_translation_only`, with `degeneracy_aware_solve`):
+the weak direction is the smallest eigenvector of the translation information with the rotation
+free (the Schur complement `H_tt - H_tr H_rr^-1 H_rt`), the threshold is on its share of that
+block's trace (1/3 when every direction is alike), and only that pure translation is blended
+with the prior; the other five coordinates take the least-cost adjustment, so the rotation stays
+the ICP's best. Unit tests in `tests/core/test_weakest_translation_share.cpp`; with the option
+off the 120 s smoke route gives the same trajectory bytes as before. The change is kept as
+`tools/rne_active_slam_env/patches/rko_lio_translation_only.patch` until it is adopted.
+
+Smoke route (120 s, seed 101, weight 0.5, before this rule): threshold 1e-3 changes almost
+nothing (raw ATE 0.102 vs 0.102 m); 1e-2 and 5e-2 give 0.087 and 0.082 m. So the grid is:
+
+- Variants: threshold in {1e-2, 3e-2, 1e-1} x weight in {0.25, 0.5} (six).
+- Stages A-C exactly as in "Frontend degeneracy compensation: rule" (same routes, seeds,
+  references and thresholds: A drops a variant whose route reaches 5 m and keeps the two lowest
+  medians; B needs >= 30 % lower median final-map ATE than 0.264 m, lower in >= 7 of 10, at most
+  one failure; C the `tunnels` set and the easy routes within +10 %, no failure).
+- Same consequence if one passes (harness frontend, re-measure, then a fresh holdout); the
+  product presets are not changed by this work either way.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

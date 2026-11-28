@@ -1,0 +1,226 @@
+diff --git a/rko_lio/core/degeneracy_aware_solve.hpp b/rko_lio/core/degeneracy_aware_solve.hpp
+index 6afedb5..71dbff4 100644
+--- a/rko_lio/core/degeneracy_aware_solve.hpp
++++ b/rko_lio/core/degeneracy_aware_solve.hpp
+@@ -39,6 +39,9 @@ struct DegeneracyAwareSolveConfig {
+   double well_conditioned_ratio = 1.0e-6;
+   double multiplicity_relative_gap = 1.0e-8;
+   double degenerate_prior_weight = 0.25;
++  /** Blend the prior only along the weakest pure translation (see
++   *  translation_only_degeneracy_update); the rotation stays the ICP's. */
++  bool translation_only = false;
+   bool require_persistent_direction = false;
+   double persistent_direction_min_absolute_cosine = 0.98;
+   PersistentWeakDirectionState persistent_direction;
+@@ -87,6 +90,54 @@ inline double weakest_translation_share(const Eigen::Matrix<double, 6, 6>& H) {
+   return solver.eigenvalues().minCoeff() / trace;
+ }
+ 
++/** Translation information left once the rotation is free to adjust: the Schur complement
++ *  H_tt - H_tr H_rr^-1 H_rt of ``H`` (translation first, rotation last). Its smallest
++ *  eigenvector is the translation the scan observes least, a tunnel's axis, without the
++ *  rotation-translation mix of the 6-DoF eigenvectors. */
++inline Eigen::Matrix3d translation_schur_information(const Eigen::Matrix<double, 6, 6>& H) {
++  const Eigen::Matrix<double, 6, 6> symmetric = 0.5 * (H + H.transpose());
++  const Eigen::Matrix3d H_tt = symmetric.block<3, 3>(0, 0);
++  const Eigen::Matrix3d H_tr = symmetric.block<3, 3>(0, 3);
++  const Eigen::Matrix3d H_rr = symmetric.block<3, 3>(3, 3);
++  const Eigen::Matrix3d schur = H_tt - H_tr * H_rr.ldlt().solve(H_tr.transpose());
++  return 0.5 * (schur + schur.transpose());
++}
++
++/** Degeneracy-aware update that touches only a pure translation. ``update`` is the ICP's
++ *  Gauss-Newton step; if the weakest eigenvalue of translation_schur_information(H) over its
++ *  trace is below ``share_threshold``, the step's component along that translation axis e is
++ *  replaced by (1 - w) x ICP + w x prior, and the other five coordinates take the least-cost
++ *  adjustment for it (x += H^-1 e d / (e' H^-1 e)), so the rotation stays the ICP's best
++ *  given the translation. Returns whether it intervened. */
++inline bool translation_only_degeneracy_update(const Eigen::Matrix<double, 6, 6>& H,
++                                               const Eigen::Matrix<double, 6, 1>& prior_update,
++                                               const double share_threshold,
++                                               const double prior_weight,
++                                               Eigen::Matrix<double, 6, 1>& update) {
++  const Eigen::Matrix3d schur = translation_schur_information(H);
++  if (!schur.allFinite()) {
++    return false;
++  }
++  const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(schur);
++  const double trace = solver.eigenvalues().sum();
++  if (solver.info() != Eigen::Success || !std::isfinite(trace) || trace <= 1.0e-12 ||
++      solver.eigenvalues()(0) / trace >= share_threshold) {
++    return false;
++  }
++  Eigen::Matrix<double, 6, 1> e = Eigen::Matrix<double, 6, 1>::Zero();
++  e.head<3>() = solver.eigenvectors().col(0);
++  const Eigen::Matrix<double, 6, 1> h_inv_e = (0.5 * (H + H.transpose())).ldlt().solve(e);
++  const double denominator = e.dot(h_inv_e);
++  if (!h_inv_e.allFinite() || !(denominator > 1.0e-12)) {
++    return false;
++  }
++  const double weight = std::max(0.0, std::min(1.0, prior_weight));
++  const double icp_component = e.dot(update);
++  const double target = (1.0 - weight) * icp_component + weight * e.dot(prior_update);
++  update += h_inv_e * ((target - icp_component) / denominator);
++  return weight > 0.0;
++}
++
+ inline DegeneracyAwareSolveResult solve_degeneracy_aware(
+     const Eigen::Matrix<double, 6, 6>& H,
+     const Eigen::Matrix<double, 6, 1>& b,
+@@ -126,6 +177,24 @@ inline DegeneracyAwareSolveResult solve_degeneracy_aware(
+   }
+ 
+   const double prior_weight = std::max(0.0, std::min(1.0, config.degenerate_prior_weight));
++  if (config.translation_only) {
++    result.update = symmetric.ldlt().solve(-b);
++    if (!result.update.allFinite()) {
++      result.update.setZero();
++      return result;
++    }
++    result.intervention_applied = translation_only_degeneracy_update(
++        H, prior_update, config.well_conditioned_ratio, prior_weight, result.update);
++    result.used_prior = result.intervention_applied;
++    result.degenerate_count = result.intervention_applied ? 1 : 0;
++    result.valid = result.update.allFinite();
++    if (!result.valid) {
++      result.update.setZero();
++      result.used_prior = false;
++      result.intervention_applied = false;
++    }
++    return result;
++  }
+   if (config.require_persistent_direction) {
+     result.update = H.ldlt().solve(-b);
+     if (!result.update.allFinite()) {
+diff --git a/rko_lio/core/lio.cpp b/rko_lio/core/lio.cpp
+index 059621c..6792dfd 100644
+--- a/rko_lio/core/lio.cpp
++++ b/rko_lio/core/lio.cpp
+@@ -522,6 +522,7 @@ IcpResult icp(const Vector3dVector& frame,
+       solve_config.well_conditioned_ratio = config.degeneracy_well_conditioned_ratio;
+       solve_config.multiplicity_relative_gap = config.degeneracy_multiplicity_relative_gap;
+       solve_config.degenerate_prior_weight = config.degeneracy_prior_weight;
++      solve_config.translation_only = config.degeneracy_translation_only;
+       solve_config.require_persistent_direction = config.degeneracy_persistence_gate;
+       solve_config.persistent_direction_min_absolute_cosine =
+           config.degeneracy_persistence_min_absolute_cosine;
+diff --git a/rko_lio/core/lio.hpp b/rko_lio/core/lio.hpp
+index 52c89d2..b857903 100644
+--- a/rko_lio/core/lio.hpp
++++ b/rko_lio/core/lio.hpp
+@@ -301,6 +301,11 @@ public:
+     /** Motion-prior weight in an isolated degenerate direction. */
+     double degeneracy_prior_weight = 0.25;
+ 
++    /** degeneracy_aware_solve: blend the prior only along the weakest pure translation (the
++     *  Schur complement's), with degeneracy_well_conditioned_ratio as the threshold on its
++     *  share of the translation information; the rotation stays the ICP's. */
++    bool degeneracy_translation_only = false;
++
+     /** Require a weak world-frame direction to persist across scans before intervention. */
+     bool degeneracy_persistence_gate = false;
+ 
+diff --git a/rko_lio/driver/driver_config.cpp b/rko_lio/driver/driver_config.cpp
+index 263d9b2..a7df111 100644
+--- a/rko_lio/driver/driver_config.cpp
++++ b/rko_lio/driver/driver_config.cpp
+@@ -214,6 +214,8 @@ DriverConfig declare_driver_config(Parameters& params) {
+       "degeneracy_multiplicity_relative_gap", config.lio.degeneracy_multiplicity_relative_gap);
+   config.lio.degeneracy_prior_weight =
+       params.declare<double>("degeneracy_prior_weight", config.lio.degeneracy_prior_weight);
++  config.lio.degeneracy_translation_only =
++      params.declare<bool>("degeneracy_translation_only", config.lio.degeneracy_translation_only);
+   config.lio.degeneracy_persistence_gate =
+       params.declare<bool>("degeneracy_persistence_gate", config.lio.degeneracy_persistence_gate);
+   const auto degeneracy_persistence_min_scans = params.declare<int>(
+diff --git a/rko_lio/ros/base_node.cpp b/rko_lio/ros/base_node.cpp
+index 53081d7..f064be1 100644
+--- a/rko_lio/ros/base_node.cpp
++++ b/rko_lio/ros/base_node.cpp
+@@ -107,6 +107,7 @@ void to_json(BasicJsonType& nlohmann_json_j, const LIO::Config& nlohmann_json_t)
+   nlohmann_json_j["degeneracy_well_conditioned_ratio"] = nlohmann_json_t.degeneracy_well_conditioned_ratio;
+   nlohmann_json_j["degeneracy_multiplicity_relative_gap"] = nlohmann_json_t.degeneracy_multiplicity_relative_gap;
+   nlohmann_json_j["degeneracy_prior_weight"] = nlohmann_json_t.degeneracy_prior_weight;
++  nlohmann_json_j["degeneracy_translation_only"] = nlohmann_json_t.degeneracy_translation_only;
+   nlohmann_json_j["degeneracy_persistence_gate"] = nlohmann_json_t.degeneracy_persistence_gate;
+   nlohmann_json_j["degeneracy_persistence_min_scans"] = nlohmann_json_t.degeneracy_persistence_min_scans;
+   nlohmann_json_j["degeneracy_persistence_tracking_ratio"] = nlohmann_json_t.degeneracy_persistence_tracking_ratio;
+@@ -273,6 +274,7 @@ void from_json(const BasicJsonType& nlohmann_json_j, LIO::Config& nlohmann_json_
+   nlohmann_json_j.at("degeneracy_multiplicity_relative_gap")
+       .get_to(nlohmann_json_t.degeneracy_multiplicity_relative_gap);
+   nlohmann_json_j.at("degeneracy_prior_weight").get_to(nlohmann_json_t.degeneracy_prior_weight);
++  nlohmann_json_j.at("degeneracy_translation_only").get_to(nlohmann_json_t.degeneracy_translation_only);
+   nlohmann_json_j.at("degeneracy_persistence_gate").get_to(nlohmann_json_t.degeneracy_persistence_gate);
+   nlohmann_json_j.at("degeneracy_persistence_min_scans").get_to(nlohmann_json_t.degeneracy_persistence_min_scans);
+   nlohmann_json_j.at("degeneracy_persistence_tracking_ratio")
+diff --git a/tests/core/test_weakest_translation_share.cpp b/tests/core/test_weakest_translation_share.cpp
+index 4009e50..775d0b7 100644
+--- a/tests/core/test_weakest_translation_share.cpp
++++ b/tests/core/test_weakest_translation_share.cpp
+@@ -30,6 +30,7 @@
+ #include <catch2/catch_approx.hpp>
+ #include <catch2/catch_test_macros.hpp>
+ 
++using rko_lio::core::translation_only_degeneracy_update;
+ using rko_lio::core::weakest_translation_share;
+ 
+ TEST_CASE("A scan that sees every direction alike shares a third", "[degeneracy]") {
+@@ -53,3 +54,58 @@ TEST_CASE("An empty or broken system observes nothing to compare", "[degeneracy]
+   H(0, 0) = std::numeric_limits<double>::quiet_NaN();
+   REQUIRE(std::isnan(weakest_translation_share(H)));
+ }
++
++namespace {
++// A tunnel along a rotated axis whose translation is coupled to the yaw, as in a turn.
++Eigen::Matrix<double, 6, 6> coupled_tunnel(const Eigen::Vector3d& axis) {
++  Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Zero();
++  H.block<3, 3>(0, 0) = Eigen::Matrix3d::Identity() - 0.999 * axis * axis.transpose();
++  H.block<3, 3>(3, 3) = 50.0 * Eigen::Matrix3d::Identity();
++  const Eigen::Vector3d coupling = 0.5 * Eigen::Vector3d(0.0, 1.0, 0.0).cross(axis);
++  H.block<3, 3>(0, 3) = coupling * Eigen::Vector3d::UnitZ().transpose();
++  H.block<3, 3>(3, 0) = H.block<3, 3>(0, 3).transpose();
++  return H;
++}
++} // namespace
++
++TEST_CASE("The translation-only blend moves the tunnel axis to the blend of ICP and prior", "[degeneracy]") {
++  const Eigen::Vector3d axis = Eigen::Vector3d(1.0, 0.0, 0.0);
++  const Eigen::Matrix<double, 6, 6> H = coupled_tunnel(axis);
++  Eigen::Matrix<double, 6, 1> b;
++  b << 0.01, 0.2, -0.1, 0.3, -0.2, 0.1;
++  const Eigen::Matrix<double, 6, 1> icp = H.ldlt().solve(-b);
++  Eigen::Matrix<double, 6, 1> prior = Eigen::Matrix<double, 6, 1>::Zero();
++  prior(0) = icp(0) + 0.4;
++  Eigen::Matrix<double, 6, 1> update = icp;
++  REQUIRE(translation_only_degeneracy_update(H, prior, 0.01, 0.5, update));
++  REQUIRE(update(0) == Catch::Approx(icp(0) + 0.2).margin(1e-9));
++  // The rest is the least-cost adjustment: the residual gradient is along the axis only.
++  const Eigen::Matrix<double, 6, 1> gradient = H * update + b;
++  REQUIRE(gradient.tail<5>().norm() == Catch::Approx(0.0).margin(1e-9));
++}
++
++TEST_CASE("The translation-only blend leaves a well observed scan alone", "[degeneracy]") {
++  const Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Identity();
++  Eigen::Matrix<double, 6, 1> update = Eigen::Matrix<double, 6, 1>::Constant(0.1);
++  const Eigen::Matrix<double, 6, 1> before = update;
++  REQUIRE_FALSE(translation_only_degeneracy_update(H, Eigen::Matrix<double, 6, 1>::Zero(), 0.01, 0.5, update));
++  REQUIRE(update == before);
++}
++
++TEST_CASE("The translation-only solve never blends a rotation", "[degeneracy]") {
++  // Weak yaw, well observed translation: the 6-DoF solve would blend the yaw, this does not.
++  Eigen::Matrix<double, 6, 6> H = Eigen::Matrix<double, 6, 6>::Identity();
++  H(5, 5) = 1e-9;
++  Eigen::Matrix<double, 6, 1> b = Eigen::Matrix<double, 6, 1>::Zero();
++  b(5) = -1e-10;
++  Eigen::Matrix<double, 6, 1> prior = Eigen::Matrix<double, 6, 1>::Zero();
++  prior(5) = 0.3;
++  rko_lio::core::DegeneracyAwareSolveConfig config;
++  config.well_conditioned_ratio = 1e-3;
++  config.degenerate_prior_weight = 1.0;
++  config.translation_only = true;
++  const auto result = rko_lio::core::solve_degeneracy_aware(H, b, prior, config);
++  REQUIRE(result.valid);
++  REQUIRE_FALSE(result.intervention_applied);
++  REQUIRE(result.update(5) == Catch::Approx(0.1).margin(1e-9));
++}
