@@ -22,3 +22,9 @@ over the seven drives is below G22's. Otherwise G24 is dropped. Peak RSS and RTF
 If a family cannot be fetched or converted on this VM, the screen is incomplete and no verdict is written.
 
 Record
+  2026-11-28, run 1 (exp04; /home/user/screen/exp04, pip path, ATE m by ape_from_tum.py --interpolate):
+    G22 0.053487 (md5 d262b586: byte-identical to the ROS offline node's G22 in screen_g23/phase1.csv, the harness
+    check holds), G24 0.057369 (md5 d5a4362a): 1.0726 x G22's (limit 1.05): fails.
+    By the reading fixed above G24 does not go on to a decision rule. The limit is not moved.
+    Runs 2 and 3 (MapsHD, Odyssey) are still done, as information for the maintainer (as for G23): whether the key
+    helps only in open scenes is input for choosing the operating point from the scan (chapter 66, conclusion 3).
