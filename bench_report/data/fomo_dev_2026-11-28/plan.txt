@@ -74,3 +74,24 @@ What this can decide
 
 Record
   Each later step is appended here before it is run; results go to results.txt next to this file.
+
+Addendum 1 (2026-11-28, before any run; no gt.txt, IMU or LiDAR byte of the drives named here has been read)
+  Found after the plan was pushed, on the project site (fomo.norlab.ulaval.ca, the GNSS download panel): "Nov21,
+  Jan29 and Jun26 deployments are excluded (reserved for evaluation)" for the raw RINEX logs. gt.txt itself is in the
+  bucket for every deployment (key listing and sizes only were read: e.g. red 2025-01-29 247104 bytes). The authors
+  thus keep 2024-11-21, 2025-01-29 and 2025-06-26 as their evaluation deployments. Developing on two of them would
+  work against that and would spend the one seasonal test set the family offers (early winter, deep snow, summer).
+  Changed split (replaces the development table above):
+    winter  2025-01-10  red (17.3 GB)             (no blue drive on this deployment)
+    winter  2025-03-10  red ( 9.7 GB)             blue (26.4 GB)
+    summer  2025-08-20  red ( 8.7 GB)             blue (15.8 GB)
+    summer  2025-09-24  red ( 8.0 GB)             blue (16.9 GB)   (late summer; leaves on is not checked)
+  Phase A: the four red drives. Phase B: the three blue drives.
+  Holdout, not read, in addition to the routes green and magenta: every route on 2024-11-21, 2025-01-29 and
+  2025-06-26. A later blind run in forests is selected from these before any of their bytes are fetched.
+  Also found while writing the converter (p10_fomo_stream_to_ros2.py, checked on the first 50 frames of red
+  2025-08-20): a RoboSense frame is 26 bytes a point (float32 x, y, z, intensity; uint16 ring; int64 absolute time in
+  us), not the tutorial's 6 x float32; the file name is the first point's time and a frame spans 0.100 s.
+  Frame check without a reference: with transforms.json read as T_from_to, the first IMU rows of both IMUs (mounted
+  90 deg apart) map to base_link gravity (-0.24, -0.30, 9.68) and (-0.22, -0.30, 9.88): the same direction, so the
+  convention holds. base_link <- vectornav: x -0.823, y 0.106, z -0.375 m, yaw -90 deg.
