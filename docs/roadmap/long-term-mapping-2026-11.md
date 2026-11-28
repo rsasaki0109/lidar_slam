@@ -2486,3 +2486,20 @@ holds, less strongly, for every audit session older than the removing session: t
 comparison of D and E is unaffected, but a contradicted share also counts real changes after the
 audit session. 2013-04-05, the only audit session after every session of the chain, has the
 lowest share (0.086 in E).
+
+### Rule for later audits of removals (2026-11-28)
+
+The probe of 2012-04-29 showed that a session older than the session that removed a voxel can
+contradict a removal that was right: the place changed in between. From here on, a check that
+scores removals against sessions outside the store follows these rules, fixed before its data:
+
+- **Primary score:** only the removals decided by store sessions **older than the audit
+  session** are scored. A removal by a later session is not evidence against the audit session's
+  view, nor the other way round.
+- **Reported alongside:** the share over all removals, as before, and the share split by whether
+  the removing session is older or newer than the audit session.
+- **Audit sessions:** sessions recorded after the store's latest session are preferred; an audit
+  session older than every removing session scores nothing and is reported as such.
+
+Earlier results are not rescored: the comparison of D and E is paired (the same audit sessions,
+removals by the same sessions in both), and its rule was fixed before its data.
