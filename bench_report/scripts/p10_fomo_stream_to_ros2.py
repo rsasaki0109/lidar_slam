@@ -110,6 +110,8 @@ def main():
     ap.add_argument('--imu', default='vectornav', choices=['vectornav', 'xsens'])
     ap.add_argument('--lidar', default='robosense', choices=['robosense', 'leishen'])
     ap.add_argument('--max-lidar', type=int)
+    ap.add_argument('--point-scale', type=float, default=1.0,
+                    help='diagnostic only: multiply every point by this (a range-scale sensitivity check)')
     ap.add_argument('--rig-yaml')
     ap.add_argument('--summary')
     ap.add_argument('--jobs', type=int, default=16)
@@ -194,8 +196,9 @@ def main():
             p = np.frombuffer(data, RAW)
             us = int(key.rsplit('/', 1)[1][:-4])
             out = np.empty(len(p), POINT)
-            for f in ('x', 'y', 'z', 'ring'):
-                out[f] = p[f]
+            for f in ('x', 'y', 'z'):
+                out[f] = p[f] * np.float32(a.point_scale) if a.point_scale != 1.0 else p[f]
+            out['ring'] = p['ring']
             out['intensity'] = p['i']
             off = (p['t'] - us).astype(np.float64) * 1e-6
             out['t'] = off.astype(np.float32)
@@ -212,7 +215,7 @@ def main():
                 print(f'{n}/{len(keys)}', file=sys.stderr, flush=True)
     flush_imu(stats[LIDAR].get('last_us', 0) + 10**6 if a.max_lidar else 1 << 62)
     writer.close()
-    summary = {'drive': a.drive, 'imu': a.imu, 'lidar': a.lidar, 'lidar_files': len(keys), 'lidar_sha256_concat': sha.hexdigest(),
+    summary = {'drive': a.drive, 'imu': a.imu, 'lidar': a.lidar, 'point_scale': a.point_scale, 'lidar_files': len(keys), 'lidar_sha256_concat': sha.hexdigest(),
                'imu_csv_sha256': hashlib.sha256(imu_raw).hexdigest(), 'rig': rig, 'written': stats}
     text = json.dumps(summary, indent=1)
     print(text)
