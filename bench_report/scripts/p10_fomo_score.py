@@ -72,18 +72,15 @@ def main():
         out.update(ate=float(np.sqrt((err ** 2).mean())), median=float(np.median(err)), max=float(err.max()),
                    spikes=int(spike.sum()), ate_nospike=float(np.sqrt((err2 ** 2).mean())))
     if a.cov:
-        import csv
-        rows = list(csv.reader(open(a.cov)))
-        head, data = rows[0], np.array([[float(x) for x in r] for r in rows[1:] if r], float)
-        out['cov_columns'] = head
-        # horizontal sigma from the xx and yy variances when the columns name them
-        names = [h.strip().lower() for h in head]
-        ix = next((i for i, n in enumerate(names) if n in ('xx', 'cov_xx', 'var_x', 'c00', 'sxx')), None)
-        iy = next((i for i, n in enumerate(names) if n in ('yy', 'cov_yy', 'var_y', 'c11', 'syy')), None)
-        if ix is not None and iy is not None:
-            sh = np.sqrt(data[:, ix] + data[:, iy])
-            out['ref_sigma_h_median'] = float(np.median(sh))
-            out['ref_sigma_h_p95'] = float(np.percentile(sh, 95))
+        # FoMo's gt_covariance.csv: no header; t, then the 3 x 3 position covariance row by row [m^2]
+        c = np.loadtxt(a.cov, delimiter=',', ndmin=2)
+        if c.shape[1] == 10:
+            sh = np.sqrt(c[:, 1] + c[:, 5])
+            sv = np.sqrt(c[:, 9])
+            out.update(ref_sigma_h_median=float(np.median(sh)), ref_sigma_h_p95=float(np.percentile(sh, 95)),
+                       ref_sigma_h_max=float(sh.max()), ref_sigma_v_median=float(np.median(sv)))
+        else:
+            out['cov_columns'] = int(c.shape[1])
     text = json.dumps(out, indent=1)
     print(text)
     if a.json:
