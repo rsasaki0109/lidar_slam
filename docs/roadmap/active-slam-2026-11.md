@@ -1260,6 +1260,50 @@ nothing (raw ATE 0.102 vs 0.102 m); 1e-2 and 5e-2 give 0.087 and 0.082 m. So the
 - Same consequence if one passes (harness frontend, re-measure, then a fresh holdout); the
   product presets are not changed by this work either way.
 
+### Translation-only compensation: result (2026-11-28): passes A-C, adopted in the harness
+
+Stage A (`ladder_tunnels` route, seeds 1-3; baseline median raw ATE 0.304 m, largest live error
+0.78 m). Raw ATE [m] per seed, largest live error in brackets:
+
+| threshold | weight 0.25 | weight 0.5 |
+| --- | --- | --- |
+| 1e-2 | 1.201 / 0.214 / 0.275 (2.25) | 1.597 / 0.186 / 0.304 (2.92) |
+| 3e-2 | 0.164 / 0.201 / 0.301 (0.72) | 0.796 / 0.189 / 0.712 (10.04, dropped) |
+| 1e-1 | 0.167 / 1.411 / 0.685 (10.14, dropped) | 1.457 / 0.228 / 3.664 (4.49) |
+
+On these routes it is worse than the 6-DoF blend; the two lowest medians (3e-2 / 0.25: 0.201 m,
+1e-2 / 0.25: 0.275 m) went on.
+
+Stage B (`frontier_info`, seeds 101-110, against 0.264 m and one failure):
+
+| variant | median final-map ATE [m] | lower in | failed |
+| --- | --- | --- | --- |
+| 3e-2 / 0.25 | 0.928 | 3 / 10 | 0 |
+| 1e-2 / 0.25 | 0.107 (-59 %) | 7 / 10 | 0 |
+
+1e-2 / 0.25 passes. Per seed (variant / baseline): 0.063 / 0.390, 0.085 / 0.120, 0.095 / 0.113,
+0.119 / 0.084, 0.079 / 0.089, 1.297 / 2.209, 0.137 / 0.323, 0.817 / 0.206, 2.056 / 1.624,
+0.073 / 3.813; largest live error <= 0.55 m in 7 of 10 runs. Seed 109 ends at 0.69 coverage
+(not a failure by the rule's 0.5).
+
+Stage C (1e-2 / 0.25): `tunnels` with `frontier_info` median 0.060 m (reference 0.090 m; runs
+0.037 / 0.222 / 0.051 on `tunnel_loop`, 0.061 / 0.162 / 0.059 on `long_tunnels`), no failure; easy
+worlds' routes median raw SE(2) ATE 0.0265 m (reference 0.0301 m, same measure:
+`diagnose_map_error.py`'s `ate_raw`), largest live error 0.27 m, no collision. Passes.
+
+Reading: the 3e-2 variant's failure in stage B and the route divergences of others show the
+blend is sensitive; the choice is one point of a six-point grid on one world, so it is a
+development result. By the rule it becomes the harness frontend
+(`tools/rne_active_slam_env/rko_lio_mid360_walking_translation_prior.yaml`: the walking preset
+plus the four parameters; `eval_config.yaml`'s `rko_param`), the RKO-LIO option is in the fork
+(branch `claude/epic-rubin-070eia`, off by default), and the product presets are unchanged.
+`ladder_tunnels` moves to the seen worlds and the config's `ladder` set; the holdout set is
+empty until a fifth is built.
+
+Next (development, no rule changes): `active` vs `frontier_info` re-measured with this frontend
+on the `tunnels` and `ladder` sets (the `frontier_info` runs of stages B and C are reused: same
+parameters).
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE

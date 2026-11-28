@@ -6,10 +6,10 @@ floor, for the coverage metric: ``outer`` minus ``holes``, or the union of ``fre
 
 Development worlds (tuned on): ``ring``, ``grid``, and ``branches2``, ``long_loop2`` (the second
 holdout, run once on 2026-11-27 with a sensor bug, so seen). ``branches`` and ``big_loop`` were
-the first holdout, retired. ``dogleg_loop`` and ``mine_branches`` the third (seen);
-``ladder_tunnels`` and ``serpentine`` are the fourth holdout. All are built the same way: walls
-2.5 m high, a floor box, and pilasters (0.3 m wide, 0.2 m deep) along
-the walls as door frames; flat walls alone leave a corridor's axis unobservable to the LiDAR.
+the first holdout, retired. ``dogleg_loop`` and ``mine_branches`` the third, ``ladder_tunnels``
+the fourth (all seen); ``serpentine`` was built with it and never run. All are built the same
+way: walls 2.5 m high, a floor box, and pilasters (0.3 m wide, 0.2 m deep) along the walls as
+door frames; flat walls alone leave a corridor's axis unobservable to the LiDAR.
 """
 
 from __future__ import annotations
@@ -330,12 +330,12 @@ DEVELOPMENT = {'ring': world_ring, 'grid': world_grid, 'branches2': world_branch
                'long_tunnels': world_long_tunnels}
 # The first holdout worlds, run once on 2026-11-27 and found unusable (see the roadmap); seen.
 RETIRED = {'branches': world_branches, 'big_loop': world_big_loop}
-# The third holdout (run once on 2026-11-27, failed; seen).
-SEEN_HOLDOUT = {'dogleg_loop': world_dogleg_loop, 'mine_branches': world_mine_branches}
-# The fourth holdout: built 2026-11-28 after the 1.0 m/s configuration was frozen; checked (reach,
-# start clearance, odometry drift on fixed routes, a 60 s check run from every start) and
-# approved before it is run once.
-HOLDOUT = {'ladder_tunnels': world_ladder_tunnels, 'serpentine': world_serpentine}
+# The third and fourth holdouts (run once on 2026-11-27 and 2026-11-28, failed; seen).
+SEEN_HOLDOUT = {'dogleg_loop': world_dogleg_loop, 'mine_branches': world_mine_branches,
+                'ladder_tunnels': world_ladder_tunnels}
+# Built with the fourth holdout but never run (no difficulty setting in the calibration band);
+# not a holdout candidate for a configuration tuned on ladder_tunnels' neighbours either way.
+HOLDOUT = {'serpentine': world_serpentine}
 WORLDS = {**DEVELOPMENT, **RETIRED, **SEEN_HOLDOUT, **HOLDOUT}
 
 

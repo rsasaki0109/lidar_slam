@@ -151,7 +151,7 @@ def markdown(summary: dict[str, Any], header: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--set', required=True, choices=['development', 'tunnels', 'holdout'])
+    parser.add_argument('--set', required=True, help="a set of the config's 'sets'")
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--config', type=Path, default=HERE / 'eval_config.yaml')
     parser.add_argument('--jobs', type=int, default=2)
@@ -172,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
               '--frozen and commit every change first', file=sys.stderr)
         return 2
 
+    if args.set not in config['sets']:
+        print(f'error: no set {args.set!r} in {args.config}', file=sys.stderr)
+        return 2
     chosen = config['sets'][args.set]
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
