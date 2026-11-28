@@ -247,10 +247,36 @@ Known limits of this version, next in P3:
 
 ### P4. `lidarslam_active` node
 
-- Subscribes to `SlamUncertainty` and `ActiveGoalCandidates`, asks Nav2 for path costs, sends
-  `NavigateToPose`, re-plans on goal reached / failed / timeout.
-- Opt-in launch file only. Humble and Jazzy builds in CI; no Nav2 dependency for any other
-  package.
+Specification (2026-11-28). What the evaluation supports is autonomous frontier exploration with
+an accurate map, not a map-accuracy gain from revisits; the node ships that and keeps `active`
+as a later option.
+
+- Package `lidarslam_active/` (C++17, ament_cmake), opt-in: its own launch file only, not in any
+  default launch file. No Nav2 dependency: goals go out as `geometry_msgs/PoseStamped` on
+  `goal_pose`, the topic Nav2's `bt_navigator` already listens to (any navigator that takes a
+  goal pose works).
+- Inputs: a point cloud topic (`cloud`, e.g. RKO-LIO's deskewed scan) and TF
+  (`global_frame` <- cloud frame at the cloud stamp, `global_frame` <- `robot_frame` now). The
+  live graph publishes its submaps only when it accepts a loop (`modified_map_array`), so the
+  node keeps its own coverage grid: a keyframe every `keyframe_distance` [m] or
+  `keyframe_angle` [rad] goes into `active_exploration::CoverageGrid`, as the offline pipeline
+  adds each submap's scan.
+- Decision, every `decision_period` [s]: frontiers and paths from `active_exploration.hpp`
+  (`findFrontiers`, `PathField`, `selectGoal`), with the same fallback through unknown cells as
+  `OfflinePipeline::decideExploration`. A new goal is chosen when there is none, when the robot is
+  within `goal_tolerance` of it, when it is no longer a reachable frontier goal, after
+  `goal_timeout` [s], or when the robot moved less than `stall_distance` in `stall_timeout` [s]
+  (the last three mark the goal rejected, as `rejectExplorationGoal`).
+- Policy: `frontier_info` (frontier information per path length, the harness policy of the same
+  name). `active` is refused at start-up until the graph's uncertainty is published live.
+- Outputs: `goal_pose`, `exploration_grid` (`nav_msgs/OccupancyGrid`), `exploration_path`
+  (`nav_msgs/Path`, the planned path), `exploration_status` (`std_msgs/String`: `exploring`,
+  `exploration_done`, `no_reachable_goal`, `waiting_for_data`).
+- Stop: on `exploration_done` the node publishes no further goal; it does not save the map
+  (`/map_save` stays the user's call).
+- Tests: the decision logic is a ROS-free class (`ExplorationPlanner`) with gtests on synthetic
+  scans (goal choice, reached / timeout / stall rejection, done). The node is built and linted in
+  the Humble and Jazzy CI. Driving it with Nav2 on a robot or in RNE is not part of this step.
 
 ### P5. Closed-loop evaluation in RNE
 
