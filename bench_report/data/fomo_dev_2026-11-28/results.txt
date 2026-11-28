@@ -54,3 +54,38 @@ Reading
   - The loop closure hurts on all three drives with a loop, even where the loop edge is better than the odometry.
     Anchored at the start, the optimised trajectory changes only in its last ~30 keyframes (addendum 2).
   - G22's frontend memory (0.7-1.0 GB) and speed on 128 beams remain the known cost of voxel 0.25 m (chapter 65).
+
+5. Backend replays from pose_graph.g2o (bench_report/scripts/p10_g2o_reopt.cpp; reproduces the backend's optimised
+   trajectory exactly), ATE at keyframe stamps, red 03-10 / 08-20 / 09-24 (no loop: 0.0698 / 0.0786 / 0.0667)
+  default (10 iterations)                      0.0807 0.0852 0.0693
+  100 iterations                               0.0807 0.0852 0.0693   (converged)
+  loop translation information x10 / x100      0.0816 0.0859 0.0698 / 0.0817 0.0860 0.0698
+  adjacent rotation information x0.1 .. x0.001 0.0813-0.0823 0.0860-0.0861 0.0697-0.0699
+  adjacent translation information x0.1 / x10  0.0804 0.0848 0.0690 / 0.0800 0.0850 0.0692
+  No weighting makes the loop help.
+
+6. Sim(3) scale of the odometry (estimate x scale = reference; UTM grid here is ~1.00023 x ground, so a correct
+   odometry shows ~1.00023)
+                     G22       upstream   G22 SE(3) -> Sim(3) ATE
+  red 2025-01-10     0.99912   0.99955    0.0747 -> 0.0621
+  red 2025-03-10     0.99907   0.99916    0.0791 -> 0.0642
+  red 2025-08-20     0.99891   0.99943    0.0802 -> 0.0617
+  red 2025-09-24     0.99896   0.99938    0.0688 -> 0.0498
+  Variants on red 2025-09-24 (G22 + one key):  ATE     scale
+    G22                                         0.0688  0.99896
+    deskew false                                0.1569  0.99867
+    voxel_size 1.0                              0.0663  0.99923
+  The per-point time of a RoboSense frame is monotonic in azimuth (-3597 deg/s, 0.1001 s a turn): the time field is
+  right. rko_lio reads it as relative float seconds (process_timestamps.cpp).
+  Leishen instead of RoboSense (same drive, G22, rig from transforms.json; 4 rings, forward field of view, per-point
+  time spans only 7.8 ms of a 0.1 s frame):  ATE 0.4796 scale 1.00019; deskew false 0.4566 scale 1.00025.
+  The Leishen's odometry has the UTM scale, but its ATE is too large for the scale to be precise.
+  Direct check, robot standing at each drive's start (p10_fomo_range_check.py, 5 frames of each LiDAR, Leishen
+  points against RoboSense planes): residuals are dominated by a 2.5-6.5 cm offset that changes with the range band
+  (the LiDAR-to-LiDAR extrinsic, most likely); the fitted range ratio is 1.0001-1.0014 and not stable. Inconclusive.
+
+Reading (after 5 and 6)
+  - G22's odometry is about 0.1 % long against this reference in both seasons; upstream about 0.06 %. Removing it
+    would take ~20 % off G22's ATE. Whether the RoboSense, the extrinsic or G22 causes it is not settled; voxel 1.0
+    takes part of it away (0.99923).
+  - The loop closure's harm is not a weighting or convergence problem of the backend.
