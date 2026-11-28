@@ -14,7 +14,8 @@ closed-loop evaluation runs in the prototype harness `tools/rne_active_slam_env`
 Mid-360, RKO-LIO + graph_based_slam in process), not yet over ROS 2; P4 (the node) not started.
 Four holdouts have been run; none passed. A translation-only frontend fix (RKO-LIO fork)
 is adopted in the harness; with it, `active` no longer beats `frontier_info` even on the
-development worlds. The work is paused here; see the summary below.
+development worlds, and on real data (HILTI exp07) the fix with its simulated settings made
+the odometry worse. The work is paused here (maintainer, 2026-11-28); see the summary below.
 
 ## Summary (2026-11-28)
 
