@@ -83,5 +83,9 @@ can be reviewed and edited, by a person or an agent, before it is used:
 - **Map-quality metrics do not show the corrections.** The corrected store's entropy is slightly
   lower and more of it is planar, but its plane patches are thicker on average, so the
   preregistered comparison was mixed.
-- **Relocalization costs search time.** `--relocalize-anywhere` in real time searches fewer
-  keyframes, and a session that is in the store only briefly may not anchor.
+- **A brief visit may not anchor.** `--relocalize-anywhere` anchors once two searches agree on
+  a verified place. A session that is in the store only for a short while may not give them:
+  on NCLT, 2012-04-29, which is in a new store for a few seconds and then for its last 20 s,
+  did not anchor in real time, and 2012-02-12 anchored only at the end of its first 17 s visit.
+  The search itself is fast enough at the shipped Scan Context gate (the median search takes
+  0.05-2.3 s per session in real time).
