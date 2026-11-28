@@ -144,3 +144,19 @@ Addendum 4 (2026-11-28, the maintainer chose to pin down the scale first; before
   all four drives). The common part (G22 and upstream both below 1.00023 by 0.0007-0.0011) is attributed to the
   sensor side only if no algorithm key moves it; that is a hypothesis for the rig, not a finding, until a check
   without the reference (a calibration target, the dataset authors) confirms it.
+
+Addendum 5 (2026-11-28, after steps 1-2 of addendum 4; before step 3)
+  Correction: gt.txt is not UTM. Its easting (255853 m) fits NAD83 / MTM zone 7 (EPSG:32187, central meridian
+  -70.5 deg, false easting 304800, k0 0.9999): pyproj places the first pose at 47.3221 N, 71.1475 W (Foret
+  Montmorency); UTM 19N would put it at 72.23 W. Grid scale there 0.999929, height reduction at ~645 m 0.999899:
+  a correct odometry shows a Sim(3) scale of about 0.99983, not 1.00023 (addendum 3 and results.txt section 6 used the
+  wrong projection). Against 0.99983: G22 is 0.07-0.09 % long, upstream 0.03-0.07 % long, the Leishen run 0.04 %
+  short. The reading thresholds of addendum 4 are taken against 0.99983.
+  Step 1 (red 2025-09-24): only the sampling resolution moves the scale: voxel_size 1.0 +0.00027, keypoint
+  multiplier 1.5 +0.00016, voxel_size 0.5 +0.00011; initialization off -0.00006; five other keys 0.
+  Step 2: the RoboSense points x 0.9988 give scale 1.00016 (expected 0.99896 / 0.9988 = 1.00016): a range scale
+  passes 1:1 into the odometry; ATE 0.0688 -> 0.0502.
+  Reference-free LiDAR-to-LiDAR Sim(3) ICP at standstill (p10_fomo_lidar_sim3.py): not identifiable with the
+  Leishen's 4 rings and forward field of view (scale 0.9995-1.0127 and extrinsic shifts up to 0.7 m across drives).
+  Step 3 (by the rule: change > 0.0002): voxel_size 1.0 on the other three red drives. Added as an extra, marked as
+  such, because it gave the lowest ATE in step 1 (0.0636): icp_keypoint_voxel_multiplier 1.5 on the same three.
