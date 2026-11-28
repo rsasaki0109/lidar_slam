@@ -1121,8 +1121,7 @@ seeds (rule: >= 7), coverage difference +0.12 points, failures 1 vs 1. **Fail.**
 
 - Seed 101 diverged (live error 10 m) under both active and frontier_info; seed 104 under
   nearest_frontier.
-- Three seeds end with ATE above 1.5 m under at least two policies (105, 106, 109, 110 between them);
-  the calibration routes stayed under 0.78 m live error, so closed-loop runs here are harder than
+- Three seeds (106, 109, 110) end with ATE above 1.5 m under at least two policies; the calibration routes stayed under 0.78 m live error, so closed-loop runs here are harder than
   the routes suggested.
 - Loops are not the cause: 484 loop edges, none off by more than 2 m, median measurement error
   about 0.01 m, and the drift they see is about 0.05 m. As in the tunnels diagnosis, the large
