@@ -36,6 +36,10 @@ class MapChanges:
         self.next_sample = -float('inf')
         self.capture_poses = {}
         self.suppressed_new_voxels = None
+        # With ``defer``, anchored scans are kept and traced only by :meth:`trace`, once the
+        # session's placement in the store is final (after the height corrections of `live`).
+        self.defer = False
+        self.deferred = []
 
     def observe(self, pose, scan, startup):
         """Queue early scans and trace them once the session joins the store."""
@@ -47,25 +51,42 @@ class MapChanges:
             submap = pose['submaps'] - 1 if pose['new_submap'] else None
             if submap is not None or sample:
                 endpoints = np.asarray(scan).reshape(-1, 3).copy()
-                self.pending.append((pose_matrix(pose['map']), submap, sample, endpoints))
+                owner = max(pose['submaps'] - 1, 0)
+                self.pending.append((pose_matrix(pose['map']), submap, sample, owner, endpoints))
         if startup.transform is None:
             if not startup.active:
                 self.pending.clear()
             return
         if self.pending:
             startup.release_unless_tracking()
-        for local_from_base, submap, sample, endpoints in self.pending:
+        for local_from_base, submap, sample, owner, endpoints in self.pending:
             world_from_base = startup.transform @ local_from_base
-            if submap is not None and self.new_evidence is not None:
-                self.capture_poses[submap] = world_from_base
-            transform = world_from_base @ self.extrinsic
-            world = endpoints @ transform[:3, :3].T + transform[:3, 3]
-            world = np.ascontiguousarray(world, dtype='f4')
-            if submap is not None:
-                self.evidence.observe(transform[:3, 3], world)
-            if sample and self.new_evidence is not None:
-                self.new_evidence.observe(transform[:3, 3], world)
+            if self.defer:
+                self.deferred.append((world_from_base, submap, sample, owner, endpoints))
+            else:
+                self._trace(world_from_base, submap, sample, endpoints)
         self.pending.clear()
+
+    def trace(self, corrections=None):
+        """Traces the deferred scans. ``corrections[k]`` (4 x 4, store frame) moves the scans
+        taken while submap ``k`` was the newest from where the anchor placed them to where the
+        session is committed; without it they are traced where the anchor placed them."""
+        deferred, self.deferred = self.deferred, []
+        for world_from_base, submap, sample, owner, endpoints in deferred:
+            if corrections is not None:
+                world_from_base = corrections[min(owner, len(corrections) - 1)] @ world_from_base
+            self._trace(world_from_base, submap, sample, endpoints)
+
+    def _trace(self, world_from_base, submap, sample, endpoints):
+        if submap is not None and self.new_evidence is not None:
+            self.capture_poses[submap] = world_from_base
+        transform = world_from_base @ self.extrinsic
+        world = endpoints @ transform[:3, :3].T + transform[:3, 3]
+        world = np.ascontiguousarray(world, dtype='f4')
+        if submap is not None:
+            self.evidence.observe(transform[:3, 3], world)
+        if sample and self.new_evidence is not None:
+            self.new_evidence.observe(transform[:3, 3], world)
 
     @property
     def evidence(self):
