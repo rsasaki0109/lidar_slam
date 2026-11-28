@@ -86,10 +86,17 @@ On this window (262 training / 38 held-out views, every 8th):
 
 | | held-out PSNR | rendered depth vs LiDAR, median relative error |
 |---|---:|---:|
-| `base.ply` (photometric only) | 38.67 dB | DEPTH_BASE |
-| `w10.ply` (`--depth-prior`, weight 10) | 38.11 dB | DEPTH_W10 |
+| `base.ply` (photometric only) | 38.67 dB | 93 % |
+| `w10.ply` (`--depth-prior`, weight 10) | 38.11 dB | 92 % |
 
-DEPTH_NOTE
+This window is a dim hall and the images are dark (mean pixel value 7-18 of 255),
+so the photometric loss is small everywhere and both models explain the images with a dark haze
+0.3-1 m in front of each camera: the high PSNR is not a sign of a good geometry, and at weight 10
+on 5 % of the pixels (the loss is averaged over all pixels) the prior does not hold the geometry
+either (on KITTI, 10 % of the pixels, the same weight takes the depth error from 6 % to 2.5 %).
+The depth is compared as camera z, each view rendered as a pinhole canvas around the fisheye.
+The run is a walk-through of the pipeline, not a quality
+claim. A brighter window or a higher `--depth-weight` is the next thing to try.
 
 `lidarslam-map` is the product command of the ROS 2 install: the package carries its scripts,
 schemas and parameter files under `lidarslam/share/lidarslam`, in the tree the ROS 2 package
