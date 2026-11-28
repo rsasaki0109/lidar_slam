@@ -52,6 +52,45 @@ run's poses at its own stamp, so a LiDAR and a camera that are not triggered tog
 line up. The LiDAR mount comes from `/tf_static` (`--lidar-frame` when the scans' `frame_id`
 is not in it) or `--lidar-extrinsic x y z qx qy qz qw`.
 
+### Tutorial: a GrandTour mission to depth-supervised 3DGS
+
+From a rosbag to a trained splat on a legged robot outside KITTI: GrandTour (ETH Zürich,
+`leggedrobotics/grand_tour_dataset` on Hugging Face, MIT) mission `2024-12-09-09-34-43`, the
+Hesai XT32, the STIM320 IMU and the front HDR fisheye camera. Fetch `data/stim320_imu.tar`,
+`data/hesai_points.tar` and `data/hdr_front.tar` (zarr) into `MISSION/` and `images/hdr_front.tar`
+(jpeg) into `IMAGES/`, then:
+
+```bash
+# 1. LiDAR + IMU -> rosbag2 (with ROS 2 sourced; prep_con.sh below does it without ROS 2)
+python bench_report/scripts/p1_grandtour_to_ros2.py --imu stim320_imu --lidar hesai_points MISSION BAG
+# 2. map it; params.yaml = configs/sota_v7/rko_lio_grandtour_hs_G15g_2026-10-28.yaml with the rig's
+#    topics and extrinsics, as bench_report/data/refine_relative_2026-11-26/tools/prep_con.sh writes it
+python -m lidarslam map BAG --odometry-params params.yaml \
+    --backend-params lidarslam/param/lidarslam.yaml --out RUN
+# 3. a 60 s window with the camera and /tf_static (base_link = stim320_imu -> hdr_front, hesai_lidar)
+python -I tools/gaussian_splatting/grandtour_camera_bag.py MISSION IMAGES BAG CAM_BAG T0 T0+60
+# 4. the scene, with LiDAR depth priors
+python -m lidarslam colmap CAM_BAG --run RUN --image-topic /hdr_front/image_raw/compressed \
+    --out SCENE --every 2 --scale 0.4 --depth-lidar-topic /hesai_points
+# 5. train (visloc-rs), without and with the prior
+gsplat_train --data SCENE --steps 7000 --out base.ply
+gsplat_train --data SCENE --steps 7000 --depth-prior SCENE/depth_priors --depth-weight 10 --depth-every 4 --out w10.ply
+```
+
+Step 4 writes 300 `OPENCV_FISHEYE` 768×512 views with LiDAR depth on 5.3 % of the pixels (32
+beams, one scan per image). GrandTour stores each sensor's `transform` as the inverse of
+box_base → sensor; step 3 inverts it, so the scans fall on the image (the LiDAR is not triggered
+with the camera; the run's poses place each scan at its own stamp).
+
+On this window (262 training / 38 held-out views, every 8th):
+
+| | held-out PSNR | rendered depth vs LiDAR, median relative error |
+|---|---:|---:|
+| `base.ply` (photometric only) | 38.67 dB | DEPTH_BASE |
+| `w10.ply` (`--depth-prior`, weight 10) | 38.11 dB | DEPTH_W10 |
+
+DEPTH_NOTE
+
 `lidarslam-map` is the product command of the ROS 2 install: the package carries its scripts,
 schemas and parameter files under `lidarslam/share/lidarslam`, in the tree the ROS 2 package
 installs, from the same file lists (`lidarslam/product-runtime-files.txt`,
