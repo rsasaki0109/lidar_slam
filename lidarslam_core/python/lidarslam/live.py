@@ -24,6 +24,8 @@ import sys
 import time
 from typing import Any, Callable
 
+import numpy as np
+
 from lidarslam import _core
 from lidarslam.io import IMU, NAV_SAT_FIX, POINT_CLOUD2, SensorLog
 from lidarslam.mapping import deskewed_cloud, odometry_message
@@ -52,7 +54,9 @@ class Session:
     resulting absolute submap poses with the session.
     ``track_shared_surfaces`` enables tracking and uses geometry seen in multiple stored
     sessions when a shared registration target can be built.
-    ``detect_changes`` accumulates removal evidence from anchored keyframe scans.
+    ``detect_changes`` accumulates removal evidence from anchored keyframe scans; with
+    ``correct_tilt`` or ``height_profile`` they are traced before the commit, where the
+    corrected session places them.
     ``filter_new_points`` also masks new voxels without repeated scan support in exports.
     ``refine_visibility`` also counts free space before the first hit for new submaps.
     ``max_height_drift`` (metres; None or 0 turns it off) keeps an anchored session out of the
@@ -137,6 +141,9 @@ class Session:
         self._max_height_drift = max_height_drift
         self._correct_tilt = correct_tilt and not (track_store or track_shared_surfaces)
         self._height_profile = height_profile and not (track_store or track_shared_surfaces)
+        if self._changes is not None:
+            # The change evidence is traced where the session is committed, after the corrections.
+            self._changes.defer = self._correct_tilt or self._height_profile
         backend_params.setdefault('offline_map_bundle', True)
         backend_params.setdefault('bag_path', str(self.out / 'live'))
         backend_params['output_dir'] = str(self.out)
@@ -288,19 +295,24 @@ class Session:
                     info['store_from_session'] = self._startup.transform.tolist()
                     summary['store_from_session'] = info['store_from_session']
                     if self._changes is not None:
-                        self._change_rows = self._changes.rows()
                         info['map_change_evidence'] = True
                         if self._changes.refined_visibility:
                             info['map_change_refined_visibility'] = True
-                        summary['store_removed_voxels'] = int((self._change_rows[:, 8] == 2).sum())
+                        if not self._changes.defer:
+                            self._change_rows = self._changes.rows()
+                            summary['store_removed_voxels'] = int(
+                                (self._change_rows[:, 8] == 2).sum())
             before_commit = None
             if ((self._correct_tilt or self._height_profile or self._max_height_drift) and
                     info.get('store_from_session') is not None):
                 aligned = self._store._aligned_sessions()
 
                 def before_commit(directory: str) -> dict[str, Any] | None:
-                    from lidarslam.height_check import check, correct, profile
+                    from lidarslam.height_check import check, correct, profile, submap_poses
                     updates = None
+                    deferred = self._changes is not None and self._changes.defer
+                    if deferred:
+                        anchored = submap_poses([directory], [info['store_from_session']])[0]
                     if self._correct_tilt:
                         result = correct(aligned, directory, info['store_from_session'])
                         summary['store_tilt_correction'] = {
@@ -326,6 +338,16 @@ class Session:
                                 f"{result['p95_abs_dz_m']} m height difference (95th percentile "
                                 f"over {result['compared_submaps']} submaps) to the stored "
                                 f"sessions, above {self._max_height_drift} m")
+                    if deferred:
+                        corrections = None
+                        if updates:
+                            placed = submap_poses([directory], [transform])[0]
+                            corrections = placed @ np.linalg.inv(anchored)
+                        self._changes.trace(corrections)
+                        self._change_rows = self._changes.rows()
+                        self._changes.write(directory, self._change_rows)
+                        summary['store_removed_voxels'] = int(
+                            (self._change_rows[:, 8] == 2).sum())
                     return updates
             summary['store'] = str(self._store.path)
             try:

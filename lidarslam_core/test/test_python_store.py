@@ -422,6 +422,56 @@ def test_height_profile_writes_lowered_submap_poses(tmp_path: Path, monkeypatch)
     assert not (store_path / 'sessions' / '0002' / 'store_submap_poses.npy').exists()
 
 
+def test_change_evidence_is_traced_where_the_session_is_committed(tmp_path: Path,
+                                                                  monkeypatch) -> None:
+    import shutil
+
+    from lidarslam import height_check
+    from lidarslam.map_changes import EVIDENCE_FILE, MapChanges
+    log = tmp_path / 'log'
+    _write_log(log)
+    base = tmp_path / 'base_store'
+    live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / 'base', store=base,
+                detect_changes=True)
+    traced = []
+    trace = MapChanges._trace
+
+    def recording(self, world_from_base, submap, sample, endpoints):
+        traced[-1].append(np.array(world_from_base))
+        trace(self, world_from_base, submap, sample, endpoints)
+
+    monkeypatch.setattr(MapChanges, '_trace', recording)
+
+    def update(name, **options):
+        store_path = tmp_path / name
+        shutil.copytree(base, store_path)
+        traced.append([])
+        live.replay(log, ODOMETRY_PARAMS, BACKEND_PARAMS, tmp_path / f'{name}_run',
+                    store=store_path, initial_pose=[0.05, 0, 0, 0, 0, 0, 1],
+                    detect_changes=True, **options)
+        with np.load(store_path / 'sessions' / '0001' / EVIDENCE_FILE) as evidence:
+            return evidence['rows']
+
+    immediate = update('immediate', correct_tilt=False, height_profile=False)
+    assert traced[-1]
+    # Deferred, without a correction to apply, the evidence is that of the immediate trace.
+    monkeypatch.setattr(height_check, 'MIN_COMPARED', 10 ** 6)
+    deferred = update('deferred')
+    assert np.array_equal(deferred, immediate)
+    assert all(np.array_equal(a, b) for a, b in zip(traced[-1], traced[0]))
+
+    # With a correction, every scan is traced where the corrected session places it.
+    lowered = np.eye(4)
+    lowered[2, 3] = -0.6
+    monkeypatch.setattr(height_check, 'correct', lambda aligned, directory, transform: {
+        'corrected': True, 'roll_deg': 0.0, 'pitch_deg': 0.0, 'offset_m': 0.6,
+        'store_from_session': (lowered @ np.asarray(transform)).tolist()})
+    corrected = update('corrected', height_profile=False)
+    assert len(traced[-1]) == len(traced[0])
+    assert all(np.allclose(a, lowered @ b) for a, b in zip(traced[-1], traced[0]))
+    assert not np.array_equal(corrected, immediate)
+
+
 def test_tilt_correction_replaces_the_committed_transform(tmp_path: Path, monkeypatch) -> None:
     from lidarslam import height_check
     log = tmp_path / 'log'

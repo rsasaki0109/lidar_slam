@@ -2291,3 +2291,85 @@ store is now D, whose odd sessions were themselves corrected, so A and T are low
 (2012-01-08 against the odd sessions of the uncorrected store was 2.51 m as committed). The
 largest gain is on 2012-02-19 (0.51 → 0.13 m), whose drift grows along the pass. No ground truth
 was read to score.
+
+### The change evidence of a corrected session (development, 2026-11-28)
+
+`--detect-changes` traced each keyframe scan into the stored sessions while the session ran,
+where its anchor transform placed it. The height corrections then move the session before it is
+committed, so its removals were decided from rays that the map no longer contains. In the store
+rebuilt with the profile (D), the corrections move 17 of the 19 updates by more than the 0.3 m
+ray margin of the evidence (0.15 m voxels) somewhere along the session. 2012-03-31 is moved by up
+to 6.9 m, and 2012-05-11, 2012-06-15 and 2012-11-04 by 1.5-3.1 m. Placed too low, a session
+sees through the stored ground and walls, which the evidence can take for a removal.
+
+With the tilt correction or the height profile on, `live` now keeps the anchored scans and traces
+them only before the commit (`MapChanges.trace`). The scans taken while submap k is the newest
+are moved by the correction of submap k (its committed pose times the inverse of its anchored
+pose), so the evidence is traced where the session is committed. Without a correction to apply,
+the evidence is that of the trace during the run, byte for byte (test). The scans are held until
+the commit, about 50 MB for an NCLT session.
+
+#### Tracing the change evidence where the session is committed (preregistered 2026-11-28, before the run)
+
+- **Chains:** D is the store rebuilt with the profile (`stores/lifelong_profile`), with the
+  evidence traced at the anchor. E is built again from the same base session with the same 19
+  updates, bags, order and options (`lifelong/trace_chain.sh`), with the evidence traced after
+  the corrections. No ground truth is read.
+- **Audit (`lifelong/trace_audit_run.sh`, `lifelong/trace_audit_score.py`):** the sessions
+  outside the chain (`nclt/fresh_windows.json`, the passes of the earlier checks) never decide a
+  removal of D or E. Each is appended with the `live` defaults (`--relocalize-anywhere
+  --detect-changes --max-height-drift 0`) to its own copy of D and of E. Its evidence then
+  decides each stored voxel it saw: kept (hit at least twice, and at least as often as seen
+  through), removed, or undecided. A voxel the store has removed (the removal masks of its 20
+  sessions) that the audit session keeps is **contradicted**.
+- **Score:** per audit session and store, the contradicted share: contradicted removed voxels
+  over removed voxels the audit session decided. An audit session is scored when it is committed
+  to both copies and has decided at least 1000 removed voxels in each.
+- **Rule:** tracing after the corrections **removes fewer standing voxels** when all of the
+  following hold:
+  - the pooled contradicted share is lower for E than for D;
+  - the share is lower for E in more than half of the scored audit sessions;
+  - all 19 updates of E are committed;
+  - the median height consistency of E (`consistency_score.py`) is at most 0.01 m above D's;
+  - E exports.
+  With fewer than three scored audit sessions the check is inconclusive. If the rule fails, the
+  change is not merged. The number of removals of each store, and the kept voxels the audit
+  session removes, are reported alongside. The result is reported whatever it is.
+
+#### Results of tracing the change evidence where the session is committed (2026-11-28)
+
+E was built with all 19 updates committed (`lifelong/trace_chain.jsonl`; the record of 2012-03-17
+was rebuilt from the store after the container restarted during its export, and the export of
+the whole store succeeded). The first update has no correction, and E removed the same 21,527
+voxels as D there. The height consistency of E is that of D (median 0.1105 m for both,
+`lifelong/consistency_E.jsonl`), as the evidence does not move any pose. After the removal
+masks of the 20 sessions, D has removed 11.06 M voxels and E 9.26 M.
+
+All six audit sessions were committed to both copies and scored (`lifelong/trace_audit_score.jsonl`):
+
+| Audit session | D decided / contradicted | D share | E decided / contradicted | E share |
+| --- | ---: | ---: | ---: | ---: |
+| 2012-01-08 | 1,847,034 / 470,192 | 0.255 | 1,661,378 / 295,711 | 0.178 |
+| 2012-02-04 | 1,727,310 / 414,684 | 0.240 | 1,659,211 / 375,173 | 0.226 |
+| 2012-02-12 | 1,936,119 / 393,059 | 0.203 | 1,820,659 / 288,380 | 0.158 |
+| 2012-02-19 | 1,221,654 / 323,818 | 0.265 | 1,113,289 / 241,303 | 0.217 |
+| 2012-04-29 | 29,032 / 24,860 | 0.856 | 29,776 / 25,207 | 0.847 |
+| 2013-04-05 | 2,253,132 / 374,612 | 0.166 | 2,187,335 / 187,539 | 0.086 |
+| pooled | 9,014,281 / 2,001,225 | 0.222 | 8,471,648 / 1,413,313 | 0.167 |
+
+| Rule | | |
+| --- | --- | --- |
+| pooled share lower for E | 0.222 → 0.167 | met |
+| lower for E in more than half of the scored sessions | 6 of 6 | met |
+| all 19 updates of E committed | 19 | met |
+| median consistency at most 0.01 m above D's | 0.1105 m for both | met |
+| E exports | yes | met |
+| scored audit sessions | 6 | ≥ 3: conclusive |
+
+**PASS:** tracing after the corrections removes fewer standing voxels. E has 29% fewer removed voxels
+that a later session sees standing (1.41 M against 2.00 M), while the audit sessions decided
+8.47 M of its removed voxels against 9.01 M for D. The kept voxels that the audit sessions would remove are
+reported alongside: from 2,951 to 778,928 per session for both stores, slightly more for E in
+four sessions (by 2-8%) and fewer in the other two (2012-04-29 by 13%, 2013-04-05 by 17%).
+2012-04-29 overlaps the store little, and most of what it decides is contradicted in both. The
+deferred trace stays on whenever a correction is on. No ground truth was read.
