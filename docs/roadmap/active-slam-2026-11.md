@@ -9,8 +9,50 @@ itself: where the map is still unobserved, where the trajectory is weakly constr
 revisit would close a loop. The SLAM proposes goals and scores them; driving there is left to an
 existing navigation stack (Nav2). This repository gains no motion planner or controller.
 
-Status: P1 done except the live topic; P2/P3 first version done (`active_exploration.hpp`,
-below, P3 "Done"); P4/P5 not started.
+Status (2026-11-28): P1 done except the live topic; P2/P3 done (`active_exploration.hpp`); P5's
+closed-loop evaluation runs in the prototype harness `tools/rne_active_slam_env` (simulated
+Mid-360, RKO-LIO + graph_based_slam in process), not yet over ROS 2; P4 (the node) not started.
+Four holdouts have been run; none passed. The work is paused here; see the summary below.
+
+## Summary (2026-11-28)
+
+Question: for the same budget, does choosing goals from the SLAM's own uncertainty (`active`:
+frontiers plus revisits that close loops) give a more accurate map than exploring by frontier
+information alone (`frontier_info`), without losing coverage? Judged by a rule written before
+any holdout (median ATE reduction >= 15 %, lower in >= 7 of 10 seeds, coverage >= -5 points,
+no more failures), each holdout run once at a frozen configuration from a clean tree.
+
+| holdout | worlds | `active` / `frontier_info` median ATE [m] | verdict | what it says |
+| --- | --- | --- | --- | --- |
+| 1st | `branches`, `big_loop` | 0.026 / 0.026, 0.149 / 0.149 | fail | nothing: worlds mostly unreachable |
+| 2nd | `branches2`, `long_loop2` | 0.095 / 0.099, 0.132 / 0.176 | fail | nothing: the simulated sensor lay on its side |
+| 3rd | `dogleg_loop`, `mine_branches` (0.7 m/s) | 0.193 / 0.169, 0.050 / 0.051 | fail | revisits close more loops, the map is no better |
+| 4th | `ladder_tunnels` only (1.0 m/s) | 0.188 / 0.264 | fail (10.5 %, 6 / 10) | right direction, too small and not consistent |
+
+What was learned:
+
+1. The method works where its assumption holds. With drift that loops can see (development
+   tunnels at 1.0 m/s) `active`'s graph halves the map error (0.085 -> 0.045 m) while
+   `frontier_info`'s stays at 0.090 m; `tunnel_loop` passes the rule, `long_tunnels` does not.
+2. In the degenerate simulated worlds the error that dominates is not drift. It is the frontend
+   under- or over-registering along corridors (scale 0.97-1.05, 54-99 % of the error along the
+   heading), place-dependent, invisible to loop closure (loops see ~0.05 m of drift, their own
+   error ~0.01 m) and to the graph's covariance (rank correlation with the error ~0). Revisiting
+   cannot remove it, so the holdout outcome depends on which corridors a run happens to stretch.
+3. Levers tried on it, each under its own rule: the policy's revisit gain, trigger and a map
+   objective (not adopted); slower driving (worse); frontend voxel / correspondence /
+   localizability settings (none enough); 1.0 m/s (shrink nearly gone on fixed routes, still
+   present in exploration); `degeneracy_aware_solve` with the IMU prior (better on routes,
+   diverges in low-speed turns during exploration).
+4. Infrastructure that holds: the evaluation harness with seeds, preregistered rules,
+   reachability and route checks, difficulty calibration on fixed routes, the loop degeneracy
+   gate (no false loop edge in the last ~1,200), and `diagnose_map_error.py`.
+
+What would be needed to claim the method: an odometry whose corridor error is drift-like
+(observable by loops) or a frontend fix for the corridor registration that survives
+exploration (a translation-only prior blend in the RKO-LIO fork is the untried candidate), then
+a fresh holdout of several worlds. No closed-loop result is claimed, in simulation or on real
+data; the speed effect in particular is untested on real scans.
 
 Decisions (maintainer, 2026-11-26):
 
