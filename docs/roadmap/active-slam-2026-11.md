@@ -1098,6 +1098,12 @@ wall or a corner within the Mid-360's range, and the drift stays at 0.17-0.19 %.
 and not run. The holdout set is `ladder_tunnels` alone (10 seeds x 3 policies), frozen in
 `eval_config.yaml` before any policy runs on it.
 
+### Fourth holdout: check runs (2026-11-28)
+
+`ladder_tunnels`, `nearest_frontier`, 60 s at 1.0 m/s, seeds 101-110 (all ten starts): all move
+42-56 m and see 6-14 % of the floor, with no collision, no divergence and no rejected goal;
+largest live error 0.62 m. ATE not looked at. Ready for the maintainer's approval.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
