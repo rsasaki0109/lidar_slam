@@ -35,3 +35,9 @@ Record
     Harness check: the eight G22 scores equal screen_g23's ROS-path scores to six digits (the rosbags port of the
     MapsHD converter, mapshd_to_ros2_rosbags.py, feeds the same data).
     So the key is not an open-scene effect: it helps MapsHD (mostly indoor) and FoMo, and hurts exp04 (+7.3 %).
+  2026-11-28, run 3 (Odyssey, information only; /home/user/screen/odyssey/odyssey.csv, p8_blind_score_h9 ATE m,
+    G22 / G24 / ratio), first four drives (the run hit the session's background time limit after Beltway3 and was
+    restarted for Beltway1, Beltway2, Marketplace3):
+    Tunnel2 1.53998 / 1.80159 / 1.170, UndergroundCarPark2 0.13143 / 0.12409 / 0.944,
+    UndergroundCarPark1 0.10611 / 0.10022 / 0.944, Beltway3 1.56059 / 1.68710 / 1.081.
+    Harness check: Tunnel2's G22 equals its sealed H9 score (1.5400).
