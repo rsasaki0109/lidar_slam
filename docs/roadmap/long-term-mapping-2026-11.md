@@ -2373,3 +2373,37 @@ reported alongside: from 2,951 to 778,928 per session for both stores, slightly 
 four sessions (by 2-8%) and fewer in the other two (2012-04-29 by 13%, 2013-04-05 by 17%).
 2012-04-29 overlaps the store little, and most of what it decides is contradicted in both. The
 deferred trace stays on whenever a correction is on. No ground truth was read.
+
+### Where the removals of store E are contradicted (development, 2026-11-28)
+
+Four of the audit sessions (2012-01-08, 2012-02-04, 2012-02-12 and 2012-02-19) were appended
+again to copies of E, keeping their evidence (`lifelong/removal_breakdown_run.sh`). 2012-04-29
+and 2013-04-05 were not used, so they stay out of this development. The removed voxels the four
+sessions decided are split by `lifelong/removal_breakdown.py` (`lifelong/removal_breakdown.json`).
+The totals are those of the audit (6.25 M decided, 1.20 M contradicted, share 0.192):
+
+| Last removing decision: misses / max(1, hits) | Decided | Contradicted share |
+| --- | ---: | ---: |
+| 8-9 | 2,878,713 | 0.237 |
+| 10-11 | 1,855,118 | 0.184 |
+| 12-15 | 1,309,835 | 0.125 |
+| 16-31 | 210,845 | 0.058 |
+
+| Height above the store's submap positions within 10 m | Decided | Contradicted share |
+| --- | ---: | ---: |
+| -0.8 to 0.5 m | 1,932,199 | 0.114 |
+| 0.5 to 3 m | 3,425,173 | 0.229 |
+| above 3 m | 739,567 | 0.216 |
+
+| Days between mapping and removal | Decided | Contradicted share |
+| --- | ---: | ---: |
+| under 30 | 397,731 | 0.162 |
+| 30-120 | 1,620,907 | 0.173 |
+| 120-365 | 3,523,924 | 0.179 |
+| over 365 | 711,975 | 0.315 |
+
+The contradictions are the removals decided closest to the rule (misses at least 8 times the
+hits, which are zero for 93% of them): the share falls steadily as the misses grow. Removals of
+voxels above the sensor height are contradicted twice as often as those near it, and removals of
+voxels mapped more than a year earlier more often still. The range from the store's submap
+positions makes less difference (`removal_breakdown.json`). No ground truth was read.
