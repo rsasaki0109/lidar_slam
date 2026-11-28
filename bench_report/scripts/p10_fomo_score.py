@@ -78,6 +78,15 @@ def main():
             spike[1:-1] = (gp > 1.0) & (gn > 1.0) & (across < 0.5 + 5.0 * (rt[2:] - rt[:-2]))
         R2, t2 = align(ep[~spike], rp[~spike])
         err2 = np.linalg.norm(ep[~spike] @ R2.T + t2 - rp[~spike], axis=1)
+        # Sim(3) scale (diagnostic): the factor on the estimate that fits the reference best
+        me, mr = ep.mean(0), rp.mean(0)
+        E, Rr = ep - me, rp - mr
+        u, sv, vt = np.linalg.svd(Rr.T @ E / len(ep))
+        D = np.diag([1, 1, np.sign(np.linalg.det(u @ vt))])
+        c = float((sv * np.diag(D)).sum() / ((E ** 2).sum() / len(ep)))
+        Rs = u @ D @ vt
+        ds = c * E @ Rs.T + mr - rp
+        out.update(sim3_scale=c, ate_sim3=float(np.sqrt((ds ** 2).sum(1).mean())))
         out.update(ate=float(np.sqrt((err ** 2).mean())), median=float(np.median(err)), max=float(err.max()),
                    spikes=int(spike.sum()), ate_nospike=float(np.sqrt((err2 ** 2).mean())))
     if a.cov:

@@ -29,7 +29,7 @@ yaml.safe_dump({'/**': {'ros__parameters': merged}}, sys.stdout, sort_keys=True)
 EOF
 cd "$OUT"
 start=$(date +%s.%N)
-/usr/bin/time -v "$PY" -m lidarslam odometry "$W/bags/$NAME" --params params.yaml --out front \
+[ -z "${SKIP_FRONT:-}" ] && /usr/bin/time -v "$PY" -m lidarslam odometry "$W/bags/$NAME" --params params.yaml --out front \
   --lidar-topic /points --imu-topic /imu > front.log 2> time_front.txt || echo "odometry exit $?" >> front.log
 echo "wall_front $(echo "$(date +%s.%N) - $start" | bc)" > run_info.txt
 if [ -z "${SKIP_BACKEND:-}" ]; then

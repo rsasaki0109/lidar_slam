@@ -2,7 +2,8 @@
 """FoMo (Foret Montmorency, s3://fomo-dataset, CC BY 4.0) drive, streamed from S3, into a ROS 2 bag (mcap) with the
 RoboSense LiDAR and one IMU, plus the rig's RKO-LIO extrinsics.
 
-usage: p10_fomo_stream_to_ros2.py DEPLOYMENT/TRAJECTORY OUT_BAG [--imu vectornav|xsens] [--max-lidar N]
+usage: p10_fomo_stream_to_ros2.py DEPLOYMENT/TRAJECTORY OUT_BAG [--imu vectornav|xsens] [--lidar robosense|leishen]
+                                  [--max-lidar N]
                                   [--rig-yaml OUT.yaml] [--summary OUT.json] [--jobs 16]
        e.g. 2025-08-20/red_2025-08-20-10-42
 
@@ -14,7 +15,8 @@ Read (and nothing else; gt.txt, gt_covariance.csv, odom.csv and metadata/ are ne
   calib/transforms.json  entries {from, to, position, orientation}: the pose of "to" in "from" (T_from_to), e.g.
                        base_link -> footprint is z = -1.114.
 
-Written: /points (sensor_msgs/PointCloud2, frame robosense, stamp = file name; fields x, y, z, intensity float32,
+--lidar leishen reads leishen/<us>.bin (same 26-byte layout, 4 rings, forward field of view) instead.
+Written: /points (sensor_msgs/PointCloud2, frame = the LiDAR's name, stamp = file name; fields x, y, z, intensity float32,
 ring uint16, t float32 seconds since the stamp: 22 bytes a point, every point kept) and /imu (sensor_msgs/Imu, frame
 = the IMU's name, no orientation), in stamp order. --rig-yaml writes extrinsic_lidar2base and extrinsic_imu2base
 (quat xyzw, xyz; T_base_lidar and T_base_imu) for base_frame base_link.
@@ -106,6 +108,7 @@ def main():
     ap.add_argument('drive')
     ap.add_argument('out')
     ap.add_argument('--imu', default='vectornav', choices=['vectornav', 'xsens'])
+    ap.add_argument('--lidar', default='robosense', choices=['robosense', 'leishen'])
     ap.add_argument('--max-lidar', type=int)
     ap.add_argument('--rig-yaml')
     ap.add_argument('--summary')
@@ -115,7 +118,7 @@ def main():
 
     transforms = json.loads(get(prefix + 'calib/transforms.json'))
     rig = {}
-    for name, frame in (('lidar', 'robosense'), ('imu', a.imu)):
+    for name, frame in (('lidar', a.lidar), ('imu', a.imu)):
         T = chain(transforms, 'base_link', frame)
         rig[name] = [*R_to_quat(T[:3, :3]).tolist(), *T[:3, 3].tolist()]
     if a.rig_yaml:
@@ -132,7 +135,7 @@ def main():
     order = np.argsort(imu_us, kind='stable')
     imu_us, imu = imu_us[order], imu[order]
 
-    keys = sorted(k for k in list_keys(prefix + 'robosense/') if re.search(r'/\d+\.bin$', k))
+    keys = sorted(k for k in list_keys(prefix + a.lidar + '/') if re.search(r'/\d+\.bin$', k))
     keys.sort(key=lambda k: int(k.rsplit('/', 1)[1][:-4]))
     if a.max_lidar:
         keys = keys[:a.max_lidar]
@@ -201,7 +204,7 @@ def main():
                 stats[LIDAR]['min_t_offset_s'] = min(stats[LIDAR]['min_t_offset_s'], float(off.min()))
             flush_imu(us)
             write(LIDAR, us, T['sensor_msgs/msg/PointCloud2'](
-                header=header(us, 'robosense'), height=1, width=len(out), fields=fields, is_bigendian=False,
+                header=header(us, a.lidar), height=1, width=len(out), fields=fields, is_bigendian=False,
                 point_step=POINT.itemsize, row_step=POINT.itemsize * len(out), data=out.view(np.uint8).ravel(),
                 is_dense=True), 'sensor_msgs/msg/PointCloud2')
             stats[LIDAR]['points'] += len(out)
@@ -209,7 +212,7 @@ def main():
                 print(f'{n}/{len(keys)}', file=sys.stderr, flush=True)
     flush_imu(stats[LIDAR].get('last_us', 0) + 10**6 if a.max_lidar else 1 << 62)
     writer.close()
-    summary = {'drive': a.drive, 'imu': a.imu, 'lidar_files': len(keys), 'lidar_sha256_concat': sha.hexdigest(),
+    summary = {'drive': a.drive, 'imu': a.imu, 'lidar': a.lidar, 'lidar_files': len(keys), 'lidar_sha256_concat': sha.hexdigest(),
                'imu_csv_sha256': hashlib.sha256(imu_raw).hexdigest(), 'rig': rig, 'written': stats}
     text = json.dumps(summary, indent=1)
     print(text)
