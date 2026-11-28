@@ -1166,6 +1166,35 @@ only; the product presets are not changed by this work.
   worlds is proposed. If none passes, the compensation is recorded as not enough at these
   settings, with the per-variant numbers.
 
+### Frontend degeneracy compensation: result (2026-11-28): fails, it diverges in exploration
+
+Stage A (`ladder_tunnels` route, seeds 1-3, odometry only; baseline raw ATE 0.260 / 0.304 /
+0.336 m, largest live error 0.78 m). Raw ATE [m] per seed, largest live error in brackets:
+
+| ratio | weight 0.25 | weight 0.5 |
+| --- | --- | --- |
+| 1e-5 | 0.205 / 0.236 / 0.280 (0.64) | 2.409 / 0.202 / 0.256 (4.29) |
+| 1e-4 | 0.149 / 0.718 / 0.232 (1.36) | 0.085 / 0.122 / 0.304 (0.62) |
+| 1e-3 | 0.216 / 0.251 / 0.180 (0.57) | 0.104 / 0.183 / 0.231 (0.51) |
+
+None reached 5 m; the two lowest medians (1e-4 / 0.5: 0.122 m, 1e-3 / 0.5: 0.183 m) went on.
+
+Stage B (`frontier_info` closed loop, seeds 101-110, against the fourth holdout's 0.264 m and
+one failure):
+
+| variant | median final-map ATE [m] | lower in | failed |
+| --- | --- | --- | --- |
+| 1e-4 / 0.5 | 0.448 (+70 %) | 6 / 10 | 5 |
+| 1e-3 / 0.5 | 0.385 (+46 %) | 7 / 10 | 6 |
+
+Both fail by the rule; stage C is not run, and nothing changes in the harness. Where a run
+does not diverge it is often much better (seed 101: 0.07 vs 0.39 m; 109: 0.20 vs 1.62 m), but
+in 10 of the 17 runs whose live error passed 1 m it grew from 0.3 m to 1 m within 5 s, 7 of
+those 10 while turning (|w| >= 0.2 rad/s) at low speed, which the fixed routes hardly do. The
+blend acts on eigen directions of the 6-DoF Hessian that mix rotation and translation, and the
+IMU-propagated prior is weakest in a turn; a translation-only blend would be a code change in
+the fork, not a parameter, and is not tried under this rule.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
