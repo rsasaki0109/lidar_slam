@@ -27,6 +27,7 @@ world_overrides:
   long_tunnels: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
   dogleg_loop: {pilaster_spacing: 36, max_seconds: 1500, divergence_m: 10.0}
   mine_branches: {pilaster_spacing: 48, max_seconds: 1500, divergence_m: 10.0}
+  ladder_tunnels: {pilaster_spacing: 60, max_seconds: 1500, divergence_m: 10.0}
 
 policies: [nearest_frontier, frontier_info, active]
 sets:
@@ -37,5 +38,6 @@ sets:
     worlds: [tunnel_loop, long_tunnels]
     seeds: [1, 2, 3]
   holdout:
-    worlds: [dogleg_loop, mine_branches]  # third holdout (roadmap "Third holdout")
+    # fourth holdout (roadmap "Fourth holdout"); serpentine has no setting in the band
+    worlds: [ladder_tunnels]
     seeds: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]

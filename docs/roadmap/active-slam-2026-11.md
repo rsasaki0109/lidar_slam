@@ -1076,6 +1076,28 @@ none is reported and not run. Budget 1500 s, divergence limit 10 m. Then a 60 s
 `nearest_frontier` check run from each start (ATE not looked at), the maintainer's approval,
 and one run of the set `holdout` with `--frozen` from a clean tree.
 
+### Fourth holdout: calibration result (2026-11-28)
+
+48 routes at 1.0 m/s, no collision. Median drift over 50 m [%] over seeds 1-3 (largest live
+error [m]):
+
+| pilaster spacing [m] | ladder_tunnels | serpentine |
+| --- | --- | --- |
+| 6 (as built) | 0.180 (0.30) | 0.172 (0.36) |
+| 24 | 0.195 (0.55) | 0.181 (0.52) |
+| 36 | 0.303 (9.91) | 0.180 (0.61) |
+| 48 | 0.285 (0.79) | 0.185 (0.65) |
+| 60 | 0.304 (0.78) | 0.181 (0.57) |
+| 72 | 1.821 (4.11) | 0.184 (0.52) |
+| 96 | 3.387 (56.9) | 0.186 (0.64) |
+| none | 7.718 (15.9) | 0.188 (0.61) |
+
+By the rule: `ladder_tunnels` at 60 m (36 m is in the band but one route reaches 9.9 m).
+`serpentine` has no setting in the band: even without pilasters its legs (~120 m) keep an end
+wall or a corner within the Mid-360's range, and the drift stays at 0.17-0.19 %. It is reported
+and not run. The holdout set is `ladder_tunnels` alone (10 seeds x 3 policies), frozen in
+`eval_config.yaml` before any policy runs on it.
+
 ### To build before the runs
 
 `--seed` in the harness (start pose and noise seeds), the two holdout worlds, the final-map ATE
