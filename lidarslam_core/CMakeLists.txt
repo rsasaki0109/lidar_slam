@@ -257,7 +257,8 @@ if(LIDARSLAM_CORE_BUILD_TESTS AND LIDARSLAM_CORE_BUILD_BACKEND)
     test_degeneracy_diagnostics_csv test_degeneracy_report_summary test_map_refiner
     test_hba_pyramid test_plane_feature_association test_adaptive_voxel_plane_extractor
     test_map_quality_metrics test_registration_determinism test_dynamic_object_filter
-    test_planar_map_filter test_multisession_join test_map_export)
+    test_planar_map_filter test_multisession_join test_map_export test_active_exploration
+    test_pose_graph_uncertainty test_pose_graph_uncertainty_g2o)
   # graph_slam_application calls ThreeDBBSLoopVerifier, whose source each consumer compiles. The
   # ROS tests compile it without GRAPH_BASED_SLAM_HAVE_3D_BBS (the verifier reports itself
   # unavailable); the tests here link the same build of it.
