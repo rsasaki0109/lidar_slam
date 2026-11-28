@@ -101,6 +101,7 @@ BUILD_TARGETS=(
   scanmatcher
   lidarslam
   rko_lio
+  lidarslam_active
 )
 
 TEST_TARGETS=(
@@ -113,6 +114,7 @@ TEST_TARGETS=(
   graph_based_slam
   lidarslam
   rko_lio
+  lidarslam_active
 )
 
 # Tests excluded from the default permissive-license gate.

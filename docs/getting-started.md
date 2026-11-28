@@ -267,7 +267,7 @@ inventory. It builds `graph_based_slam`, `lidarslam`, `lidarslam_msgs`,
 depend on (`lidarslam_plugin_interfaces`, `lidarslam_default_plugins`,
 `lidarslam_registration_loader`, `lidarslam_fake_registration_plugins`), passing
 that explicit list to `--packages-select`. `lidarslam_registration_plugin_template`
-is expected but not built. An omitted
+and the opt-in exploration node `lidarslam_active` are expected but not built. An omitted
 package or an unexpected experimental package fails as
 `[source-package-inventory-mismatch]` instead of silently expanding or weakening
 the beginner build.

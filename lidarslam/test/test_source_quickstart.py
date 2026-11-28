@@ -57,6 +57,7 @@ EXPECTED_PACKAGES = (
 )
 # Discovered by colcon in the repository but outside the beginner build.
 UNBUILT_PACKAGES = (
+    'lidarslam_active',
     'lidarslam_registration_plugin_template',
 )
 DISCOVERED_PACKAGES = tuple(sorted(EXPECTED_PACKAGES + UNBUILT_PACKAGES))

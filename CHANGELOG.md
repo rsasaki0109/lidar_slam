@@ -4,6 +4,12 @@
 
 ### Added
 
+- `lidarslam_active` (opt-in package): a frontier exploration node that keeps a coverage grid
+  from the point clouds and TF and sends the next goal on `goal_pose` (Nav2's `bt_navigator`
+  topic; no Nav2 dependency), with `exploration_grid`, `exploration_path` and
+  `exploration_status`; goals not reached in time or without progress are dropped
+  (`docs/roadmap/active-slam-2026-11.md`, P4). Unit-tested on synthetic scans; not part of the
+  default launch files.
 - Pose-graph uncertainty report (`ros2 run graph_based_slam pose_graph_uncertainty_report
   --input <map_bundle_dir | pose_graph.g2o> --output-dir <dir>`), the first step of the
   active SLAM plan (`docs/roadmap/active-slam-2026-11.md`, P1). It linearizes the saved
