@@ -12,7 +12,7 @@ import tempfile
 
 import numpy as np
 
-EVO_APE = '/home/user/mapshd/venv/bin/evo_ape'
+EVO_APE = os.environ.get('EVO_APE', '/home/user/mapshd/venv/bin/evo_ape')
 T_IMU_LIDAR = np.array([-0.011, -0.02329, 0.04412])
 
 
