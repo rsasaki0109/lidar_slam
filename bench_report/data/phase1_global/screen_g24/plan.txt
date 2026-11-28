@@ -1,0 +1,24 @@
+Screen for a candidate G24 = G22 + icp_keypoint_voxel_multiplier 1.5 (2026-11-28; written before any run with this key
+on the data below). Not a decision rule: a screen to see whether a rule is worth writing, as for G23
+(screen_g23/plan.txt).
+
+Why: on FoMo's four red development drives (forest, two winter and two summer;
+data/fomo_dev_2026-11-28/results.txt section 7) the key lowered G22's ATE on all four (-4 % to -14 %; winter
+geometric mean -11 %, summer -6 %). Chapter 66 saw the same key help two Odyssey drives in a rebase trial. It was
+found on FoMo, so FoMo is reported but is not a criterion.
+
+File: data/phase1_global/rko_lio_candidate_G24_2026-11-28.yaml. Build: rko_lio 74e6c27 through the pip package
+(lidarslam 0.13.0 of this branch; ros-free-core M3: byte-identical to the ROS offline node on exp14). G22 is run
+again beside G24 through the same pip path on every sequence, so that both sides share the harness; where an
+earlier G22 score exists (screen_g23/phase1.csv, the sealed H9 scores) it is printed beside it as a harness check.
+Runs, one each, frontend only, G22 and G24 with the family's rig file underneath (as p7_g16_phase1.sh):
+  1. exp04 (rig params/exp04_gyro002_jerk1000.yaml; HILTI control points, ape_from_tum.py --interpolate).
+  2. MapsHD's eight trials (rig params/mapshd_gyro002_jerk1000.yaml; front_score.py's APE).
+  3. Odyssey's seven drives (rig data/blind_v7_run2_2026-11-10/g_params_odyssey.yaml with its tactical-gyro keys;
+     p8_blind_score_h9.py's ATE).
+Reading, fixed now (the criteria of screen_g23): G24 goes on to a decision rule on all development data only if the
+MapsHD geometric mean of G24 / G22 is at most 1.02, exp04 is at most 1.05 x G22's, and the Odyssey geometric mean
+over the seven drives is below G22's. Otherwise G24 is dropped. Peak RSS and RTF are reported, not judged.
+If a family cannot be fetched or converted on this VM, the screen is incomplete and no verdict is written.
+
+Record
