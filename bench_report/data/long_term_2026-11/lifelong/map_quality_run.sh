@@ -17,7 +17,7 @@ for s in lifelong:A lifelong_trace:E; do
   sums=""
   for run in 1 2 3; do
     out=map_quality/$label/run$run
-    rm -rf "$out"
+    rm -rf "$out" && mkdir -p "$out"
     "$BIN" --input "stores/$store/export/map.pcd" --output-dir "$out" --downsample 0.1 > "$out.log" 2>&1
     sums="$sums $(md5sum "$out/map_quality_report.yaml" | cut -d' ' -f1)"
   done
